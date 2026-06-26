@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Entrypoint do dev-box claude (roda como root só para preparar, depois cai p/ usuario nao-root):
-#  - o Claude Code recusa --dangerously-skip-permissions como root, entao tudo roda como "ubuntu"
+# Entrypoint do dev-box claude (roda como root só p/ preparar, depois cai p/ usuario nao-root):
+#  - o Claude Code recusa bypass de permissoes como root, entao tudo roda como "ubuntu"
+#  - cria automaticamente ~/.claude/settings.json com bypassPermissions (permite tudo, sem prompt)
 #  - cria/garante a sessao tmux "claude" persistente rodando o Claude Code
 #  - sobe o code-server (IDE) se IDE_ENABLED=true (senha = $PASSWORD)
 #
@@ -11,6 +12,19 @@ set -euo pipefail
 
 U=ubuntu
 H=/root   # home do usuario ubuntu = o volume persistente
+
+# settings do Claude: permite tudo automaticamente (equiv. --dangerously-skip-permissions).
+# Criado so se nao existir, para respeitar customizacoes suas.
+mkdir -p "$H/.claude"
+if [ ! -f "$H/.claude/settings.json" ]; then
+  cat > "$H/.claude/settings.json" <<'JSON'
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions"
+  }
+}
+JSON
+fi
 
 # garante que o usuario nao-root e dono do volume (montado em /root)
 chown -R "$U:$U" "$H" 2>/dev/null || true

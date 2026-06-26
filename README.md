@@ -30,6 +30,11 @@ O Claude Code já está rodando nessa sessão. Os dois caminhos (IDE e Console) 
 Na 1ª vez, o Claude estará na tela de **login** (API key ou conta). Depois de logar, fica
 salvo em `/root/.claude` (volume) e **não pede de novo** nos próximos deploys.
 
+> 🔓 **Permissões:** roda como usuário **não-root** (`ubuntu`) e o `start.sh` já cria
+> `~/.claude/settings.json` com `"defaultMode": "bypassPermissions"` — o Claude **permite
+> tudo automaticamente** (não pede confirmação), sem precisar do `--dangerously-skip-permissions`.
+> Para voltar a pedir confirmação, edite/remova esse `settings.json`.
+
 ---
 
 ## 🧩 tmux — sessão que não fecha
