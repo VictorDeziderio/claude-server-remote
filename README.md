@@ -77,9 +77,11 @@ No start, o container automaticamente: garante a pasta `/root/$PROJECT_FOLDER` (
 → cria a sessão tmux `claude` nela → roda o `claude` → após carregar, envia
 `CLAUDE_AUTOCMD` + `REMOTE_CONTROL_NAME` (ex.: `/remote-control easypanel meu-servidor`).
 É só `tmux attach -t claude` que já está rodando.
-> ⚠️ O comando só dispara se **(1) o `/login` já estiver feito** E **(2) o Claude estiver
-> ativo** na sessão. Sem login (ex.: 1ª vez) ou com o Claude parado, **não envia nada** —
-> deixa normal. Faça o login uma vez; nos próximos restarts o remote-control dispara sozinho.
+> ⚠️ O comando só dispara se **(1) `/login` feito**, **(2) Claude ativo** e **(3) ainda não
+> foi estabelecido antes**. Sem login/Claude parado → não envia (deixa normal). E roda
+> **uma vez só**: um marcador (`/root/.claude/.remote-control-established`) evita **duplicar**
+> o remote-control nos próximos starts (o Claude já restaura o anterior sozinho).
+> Para forçar de novo: apague esse marcador ou rode `/remote-control ...` manualmente.
 > ⚠️ Na **1ª vez** o Claude pede login — faça uma vez (persiste em `/root/.claude`); nos
 > próximos restarts o auto-comando funciona direto.
 

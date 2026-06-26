@@ -57,13 +57,16 @@ if ! as_user tmux has-session -t claude 2>/dev/null; then
   as_user tmux new-session -d -s claude -c "$PROJ"
   as_user tmux send-keys -t claude 'claude' Enter
   # apos o Claude carregar, envia o comando automatico (ex.: /remote-control easypanel meu-servidor).
-  # SO dispara se: (1) o /login ja estiver feito  E  (2) o Claude estiver ativo na sessao.
-  # Senao (sem login, ou Claude nao rodando), deixa normal e nao envia nada.
-  if [ -n "$FULL_AUTOCMD" ]; then
+  # SO dispara se: (1) /login feito  E  (2) Claude ativo  E  (3) ainda nao foi estabelecido antes.
+  # O marcador evita DUPLICAR o remote-control (o Claude ja restaura o anterior do volume no start).
+  # Para forcar de novo: apague /root/.claude/.remote-control-established (ou rode /remote-control manual).
+  RC_MARKER="$H/.claude/.remote-control-established"
+  if [ -n "$FULL_AUTOCMD" ] && [ ! -f "$RC_MARKER" ]; then
     ( sleep "$CLAUDE_AUTOCMD_DELAY"
       cur=$(as_user tmux display-message -p -t claude '#{pane_current_command}' 2>/dev/null || true)
       if is_logged_in && { [ "$cur" = node ] || [ "$cur" = claude ]; }; then
         as_user tmux send-keys -t claude "$FULL_AUTOCMD" Enter
+        touch "$RC_MARKER" && chown "$U:$U" "$RC_MARKER" 2>/dev/null || true
       fi
     ) &
   fi
