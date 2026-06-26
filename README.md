@@ -30,10 +30,12 @@ O Claude Code já está rodando nessa sessão. Os dois caminhos (IDE e Console) 
 Na 1ª vez, o Claude estará na tela de **login** (API key ou conta). Depois de logar, fica
 salvo em `/root/.claude` (volume) e **não pede de novo** nos próximos deploys.
 
-> 🔓 **Permissões:** roda como usuário **não-root** (`ubuntu`) e o `start.sh` já cria
-> `~/.claude/settings.json` com `"defaultMode": "bypassPermissions"` — o Claude **permite
-> tudo automaticamente** (não pede confirmação), sem precisar do `--dangerously-skip-permissions`.
-> Para voltar a pedir confirmação, edite/remova esse `settings.json`.
+> 🔓 **Permissões (global no server):** roda como usuário **não-root** (`ubuntu`) e há uma
+> **política global** em `/etc/claude-code/managed-settings.json` com
+> `"defaultMode": "bypassPermissions"` — o Claude **permite tudo automaticamente** (não pede
+> confirmação) para **qualquer usuário/projeto** no container, sem precisar de flag.
+> (Há também um `~/.claude/settings.json` por usuário, mas a política global tem precedência.)
+> Para voltar a pedir confirmação, edite/remova o `managed-settings.json` (no `claude/` do repo).
 
 ---
 

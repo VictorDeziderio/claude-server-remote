@@ -61,6 +61,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends tmux gosu \
     && echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu \
     && chmod 0440 /etc/sudoers.d/ubuntu
 
+# Politica GLOBAL do Claude Code (managed settings) — permissao para TUDO em todo o
+# container, para qualquer usuario/projeto. Fica em /etc (nao e ocultado pelo volume /root)
+# e tem a maior precedencia (sobrepoe settings de usuario/projeto).
+RUN mkdir -p /etc/claude-code
+COPY managed-settings.json /etc/claude-code/managed-settings.json
+
 # entrypoint: sobe sessao tmux "claude" (Claude Code) + code-server (IDE)
 COPY start.sh /usr/local/bin/start.sh
 RUN chmod +x /usr/local/bin/start.sh
