@@ -51,9 +51,15 @@ RUN playwright install --with-deps chromium \
 # 6) code-server (VS Code no navegador)
 RUN curl -fsSL https://code-server.dev/install.sh | sh
 
-# 7) tmux (sessao persistente do Claude) — camada tardia p/ nao invalidar o cache pesado acima
-RUN apt-get update && apt-get install -y --no-install-recommends tmux \
-    && rm -rf /var/lib/apt/lists/*
+# 7) tmux + gosu + usuario nao-root — camada tardia p/ nao invalidar o cache pesado acima.
+# O Claude Code se recusa a rodar como root com --dangerously-skip-permissions, entao
+# rodamos como o usuario "ubuntu" (uid 1000), usando /root (o volume) como home dele.
+RUN apt-get update && apt-get install -y --no-install-recommends tmux gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && (id ubuntu >/dev/null 2>&1 || useradd -m -s /bin/bash -u 1000 ubuntu) \
+    && usermod -d /root ubuntu \
+    && echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu \
+    && chmod 0440 /etc/sudoers.d/ubuntu
 
 # entrypoint: sobe sessao tmux "claude" (Claude Code) + code-server (IDE)
 COPY start.sh /usr/local/bin/start.sh
