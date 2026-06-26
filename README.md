@@ -31,6 +31,14 @@ Primeira vez pede login/API key. Como `/root` é volume persistente, o login
 > Auth: rode `claude` e siga o login, ou defina `ANTHROPIC_API_KEY` no campo
 > **Environment** do serviço.
 
+## Persistência (não perde dados no redeploy)
+- **Imagem** (sempre recriada no deploy): ubuntu, node, claude, playwright, ferramentas.
+- **Volume em `/root`** (persiste): **seus projetos**, **login/config do Claude**
+  (`~/.claude`), histórico de shell. Trabalhe sempre dentro de `/root`.
+- Como é um **Volume do EasyPanel** (não bind mount), os dados **sobrevivem** a cada
+  "Implantar". Só o que estiver fora de `/root` volta ao estado da imagem.
+
 ## Notas
 - Não expõe portas (é um shell, não um web service) — sem domínio.
-- Para projetos, trabalhe dentro de `/root` (ou subpastas) para persistir.
+- Toolchain incluso: git, gh (GitHub CLI), ripgrep, fd, jq, build-essential, python3,
+  node 22, playwright (chromium).
