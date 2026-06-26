@@ -4,7 +4,7 @@ Ubuntu 24.04 com **code-server (VS Code no navegador)** + **Claude Code CLI** ro
 **tmux** + **Playwright** + toolchain de dev completo. Persistente: seus projetos e o login
 do Claude **não somem** no redeploy.
 
-- **IDE:** https://tools-claude.exemplo.easypanel.host (senha = variável `PASSWORD`)
+- **IDE:** https://tools-claude.exemplo.easypanel.host (senha = variável `IDE_PASSWORD`)
 - **Projeto/serviço EasyPanel:** `tools` / `claude`
 
 ---
@@ -12,7 +12,7 @@ do Claude **não somem** no redeploy.
 ## 🚀 Como usar (passo a passo)
 
 ### 1. Abrir o IDE
-Abra **https://tools-claude.exemplo.easypanel.host** → digite a senha (`PASSWORD` do Environment).
+Abra **https://tools-claude.exemplo.easypanel.host** → digite a senha (`IDE_PASSWORD` do Environment).
 Abre o VS Code no navegador, já no diretório `/root`.
 
 ### 2. Abrir um terminal
@@ -66,15 +66,19 @@ reiniciar). Comandos:
 | Variável | Default | O quê |
 |----------|---------|-------|
 | `IDE_ENABLED` | `true` | liga/desliga o IDE web |
-| `PASSWORD` | (gerada) | senha de acesso ao IDE |
+| `IDE_PASSWORD` | (gerada) | senha de acesso ao IDE |
+| `REMOTE_CONTROL_NAME` | `meu-servidor` | nome anexado ao comando (ex.: `/remote-control easypanel meu-servidor`) |
 | `PROJECT_FOLDER` | `projects` | pasta (dentro de `/root`) onde o Claude inicia — **criada automaticamente se não existir** |
 | `CLAUDE_AUTOCMD` | `/remote-control easypanel` | comando enviado ao Claude no start (`""` desativa) |
 | `CLAUDE_AUTOCMD_DELAY` | `15` | segundos antes de enviar o comando |
 
 ### 🔁 Auto-start (ao reiniciar)
 No start, o container automaticamente: garante a pasta `/root/$PROJECT_FOLDER` (cria se faltar)
-→ cria a sessão tmux `claude` nela → roda o `claude` → após carregar, envia `CLAUDE_AUTOCMD`
-(ex.: `/remote-control easypanel`). É só `tmux attach -t claude` que já está rodando.
+→ cria a sessão tmux `claude` nela → roda o `claude` → após carregar, envia
+`CLAUDE_AUTOCMD` + `REMOTE_CONTROL_NAME` (ex.: `/remote-control easypanel meu-servidor`).
+É só `tmux attach -t claude` que já está rodando.
+> ⚠️ O comando só dispara **se o Claude estiver realmente ativo** na sessão; senão, deixa
+> normal (não envia nada).
 > ⚠️ Na **1ª vez** o Claude pede login — faça uma vez (persiste em `/root/.claude`); nos
 > próximos restarts o auto-comando funciona direto.
 
@@ -100,5 +104,5 @@ Adicionar mais browsers Playwright: `playwright install firefox webkit`.
   ramo `main`, build path `/claude`, Dockerfile) · **Armazenamento → Volume** `claude-data`
   → `/root` · **Domínios** → porta `8080` · Deploy.
 
-> 🔒 O IDE fica num domínio público com senha. Use uma senha forte em `PASSWORD` e
+> 🔒 O IDE fica num domínio público com senha. Use uma senha forte em `IDE_PASSWORD` e
 > considere basic-auth/IP-restriction na aba Segurança.

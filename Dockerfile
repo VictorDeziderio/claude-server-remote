@@ -11,9 +11,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
     # IDE (code-server): habilita/desabilita + senha. Sobrescreva no Environment do EasyPanel.
     IDE_ENABLED=true \
-    PASSWORD=senha-antiga-removida \
-    # pasta (dentro de /root) onde o Claude inicia + comando automatico no start
+    IDE_PASSWORD=senha-antiga-removida \
+    # auto-start do Claude: pasta de trabalho + nome do remote-control + comando + delay
     PROJECT_FOLDER=projects \
+    REMOTE_CONTROL_NAME=meu-servidor \
     CLAUDE_AUTOCMD="/remote-control easypanel" \
     CLAUDE_AUTOCMD_DELAY=15
 
