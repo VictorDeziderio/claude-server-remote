@@ -1,44 +1,36 @@
-# claude — Ubuntu server com Claude Code + Playwright (EasyPanel)
+# claude — Dev-box (IDE web + Claude Code + Playwright) no EasyPanel
 
-Sandbox/dev-box persistente: Ubuntu 24.04 + Node 22 + **Claude Code CLI** + **Playwright**
-(browser chromium + deps de SO), mantido vivo (`sleep infinity`). Acesse pelo **Console**
-do EasyPanel e rode `claude`.
-
-Browsers do Playwright ficam em `/opt/ms-playwright` (fora de `/root`, para o volume
-persistente não os esconder). Para adicionar firefox/webkit: `playwright install firefox webkit`.
+Ubuntu 24.04 com **code-server (VS Code no navegador)** + **Claude Code CLI** +
+**Playwright** + toolchain de dev completo. Acesso pelo navegador (IDE com terminal
+integrado) e pelo Console do EasyPanel.
 
 ## Deploy no EasyPanel (projeto `tools`, serviço `claude`)
 
 1. **Create Service → App**, nome `claude`.
-2. **Source → Git:** este repo · ramo `main` · **Build path:** `/claude` ·
-   **Builder:** Dockerfile (`Dockerfile`).
-3. **Mounts → Add Volume** (NÃO bind mount):
-   - **Volume name:** `claude-data`
-   - **Mount path:** `/root`
-   - > Volume do EasyPanel persiste entre deploys (o bind mount no diretório do código é
-   >   apagado no git sync). Por isso usamos **Volume**.
-4. **Deploy.** O container fica vivo aguardando.
+2. **Source → Git:** este repo · ramo `main` · **Build path:** `/claude` · Dockerfile.
+3. **Armazenamento → Adicionar Montagem de Volume:** `claude-data` → `/root`
+   (Volume do EasyPanel, **persiste** no redeploy — não use bind mount).
+4. **Domínios:** aponte um domínio para a **porta `8080`** (o code-server).
+5. **Deploy.**
 
-## Usar
-
-No **Console** do serviço:
+## Acessar o IDE
+Abra o domínio do serviço (ex.: `https://tools-claude.<...>.easypanel.host`) →
+senha = variável **`PASSWORD`** (default no Dockerfile; troque no campo **Environment**).
+No terminal integrado do VS Code rode:
 ```bash
-claude            # inicia o Claude Code
+claude            # inicia o Claude Code (primeira vez pede login/API key)
 ```
-Primeira vez pede login/API key. Como `/root` é volume persistente, o login
-(`~/.claude`) e seus arquivos **não somem** no redeploy.
-
-> Auth: rode `claude` e siga o login, ou defina `ANTHROPIC_API_KEY` no campo
-> **Environment** do serviço.
 
 ## Persistência (não perde dados no redeploy)
-- **Imagem** (sempre recriada no deploy): ubuntu, node, claude, playwright, ferramentas.
-- **Volume em `/root`** (persiste): **seus projetos**, **login/config do Claude**
-  (`~/.claude`), histórico de shell. Trabalhe sempre dentro de `/root`.
-- Como é um **Volume do EasyPanel** (não bind mount), os dados **sobrevivem** a cada
-  "Implantar". Só o que estiver fora de `/root` volta ao estado da imagem.
+- **Imagem** (recriada no deploy): code-server, claude, playwright, node, ferramentas.
+- **Volume em `/root`** (persiste): projetos, login do Claude (`~/.claude`), config/extensões
+  do VS Code (`~/.config/code-server`, `~/.local/share/code-server`).
 
-## Notas
-- Não expõe portas (é um shell, não um web service) — sem domínio.
-- Toolchain incluso: git, gh (GitHub CLI), ripgrep, fd, jq, build-essential, python3,
-  node 22, playwright (chromium).
+## Toolchain incluído
+node 22 · npm/pnpm/yarn/bun · git · gh (GitHub CLI) · ripgrep · fd · jq · tree ·
+build-essential · python3/pip/venv · postgresql-client (`psql`) · playwright (chromium) ·
+claude-code · code-server.
+
+> 🔒 O IDE fica num domínio público com senha. Use uma senha forte (`PASSWORD` no
+> Environment) e considere IP-restriction/basic-auth do EasyPanel para mais segurança.
+> Adicionar mais browsers Playwright: `playwright install firefox webkit`.
