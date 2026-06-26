@@ -9,7 +9,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8 \
     # browsers do Playwright FORA de /root (senao o volume montado em /root os esconde)
     PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
-    # senha do IDE (code-server). Troque no campo Environment do EasyPanel se quiser.
+    # IDE (code-server): habilita/desabilita + senha. Sobrescreva no Environment do EasyPanel.
+    IDE_ENABLED=true \
     PASSWORD=senha-antiga-removida
 
 # 1) Toolchain de dev + dependencias do Claude (git, ripgrep, build, python, psql...)
@@ -50,10 +51,19 @@ RUN playwright install --with-deps chromium \
 # 6) code-server (VS Code no navegador)
 RUN curl -fsSL https://code-server.dev/install.sh | sh
 
+# 7) tmux (sessao persistente do Claude) — camada tardia p/ nao invalidar o cache pesado acima
+RUN apt-get update && apt-get install -y --no-install-recommends tmux \
+    && rm -rf /var/lib/apt/lists/*
+
+# entrypoint: sobe sessao tmux "claude" (Claude Code) + code-server (IDE)
+COPY start.sh /usr/local/bin/start.sh
+RUN chmod +x /usr/local/bin/start.sh
+
 WORKDIR /root
 EXPOSE 8080
 
-# Roda o IDE (mantem o container vivo). Terminal integrado do VS Code roda `claude`.
+# IDE em primeiro plano + sessao tmux "claude" persistente.
 # Config/extensoes do code-server ficam em /root (volume) -> persistem no redeploy.
+# Acesse a sessao do Claude: `tmux attach -t claude` (no terminal do IDE ou Console).
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["code-server", "--bind-addr", "0.0.0.0:8080", "--auth", "password", "/root"]
+CMD ["/usr/local/bin/start.sh"]

@@ -13,13 +13,28 @@ integrado) e pelo Console do EasyPanel.
 4. **Domínios:** aponte um domínio para a **porta `8080`** (o code-server).
 5. **Deploy.**
 
+## Variáveis (campo Environment do EasyPanel)
+| Variável | Valor | O quê |
+|----------|-------|-------|
+| `IDE_ENABLED` | `true` / `false` | habilita/desabilita o IDE web |
+| `PASSWORD` | senha | senha de acesso ao IDE (code-server tem só senha, sem usuário) |
+
+> Para usuário+senha de verdade, ative o **basic-auth** na aba **Segurança** do serviço.
+
 ## Acessar o IDE
 Abra o domínio do serviço (ex.: `https://tools-claude.<...>.easypanel.host`) →
-senha = variável **`PASSWORD`** (default no Dockerfile; troque no campo **Environment**).
-No terminal integrado do VS Code rode:
+senha = **`PASSWORD`**. No terminal integrado do VS Code:
 ```bash
-claude            # inicia o Claude Code (primeira vez pede login/API key)
+tmux attach -t claude   # entra na sessão persistente do Claude Code
+# (ou inicie outra: `claude`)
 ```
+
+## tmux — sessão que não fecha
+Na subida, o container já cria uma sessão **tmux `claude`** rodando o Claude Code. Ela
+**sobrevive** a desconexões do IDE/terminal (só reinicia se o container reiniciar).
+- Entrar: `tmux attach -t claude`
+- Sair sem fechar: `Ctrl+b` depois `d`
+- Funciona tanto no terminal do IDE quanto no **Console** do EasyPanel.
 
 ## Persistência (não perde dados no redeploy)
 - **Imagem** (recriada no deploy): code-server, claude, playwright, node, ferramentas.
