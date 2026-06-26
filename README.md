@@ -63,10 +63,20 @@ reiniciar). Comandos:
 ---
 
 ## ⚙️ Variáveis (aba Environment do serviço)
-| Variável | Valor | O quê |
-|----------|-------|-------|
-| `IDE_ENABLED` | `true` / `false` | liga/desliga o IDE web |
-| `PASSWORD` | senha | senha de acesso ao IDE |
+| Variável | Default | O quê |
+|----------|---------|-------|
+| `IDE_ENABLED` | `true` | liga/desliga o IDE web |
+| `PASSWORD` | (gerada) | senha de acesso ao IDE |
+| `PROJECT_FOLDER` | `projects` | pasta (dentro de `/root`) onde o Claude inicia — **criada automaticamente se não existir** |
+| `CLAUDE_AUTOCMD` | `/remote-control easypanel` | comando enviado ao Claude no start (`""` desativa) |
+| `CLAUDE_AUTOCMD_DELAY` | `15` | segundos antes de enviar o comando |
+
+### 🔁 Auto-start (ao reiniciar)
+No start, o container automaticamente: garante a pasta `/root/$PROJECT_FOLDER` (cria se faltar)
+→ cria a sessão tmux `claude` nela → roda o `claude` → após carregar, envia `CLAUDE_AUTOCMD`
+(ex.: `/remote-control easypanel`). É só `tmux attach -t claude` que já está rodando.
+> ⚠️ Na **1ª vez** o Claude pede login — faça uma vez (persiste em `/root/.claude`); nos
+> próximos restarts o auto-comando funciona direto.
 
 > O code-server usa **só senha** (sem usuário). Para usuário+senha, ative o **basic-auth**
 > na aba **Segurança** do serviço.

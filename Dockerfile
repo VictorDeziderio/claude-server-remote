@@ -11,7 +11,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
     # IDE (code-server): habilita/desabilita + senha. Sobrescreva no Environment do EasyPanel.
     IDE_ENABLED=true \
-    PASSWORD=senha-antiga-removida
+    PASSWORD=senha-antiga-removida \
+    # pasta (dentro de /root) onde o Claude inicia + comando automatico no start
+    PROJECT_FOLDER=projects \
+    CLAUDE_AUTOCMD="/remote-control easypanel" \
+    CLAUDE_AUTOCMD_DELAY=15
 
 # 1) Toolchain de dev + dependencias do Claude (git, ripgrep, build, python, psql...)
 RUN apt-get update && apt-get install -y --no-install-recommends \
