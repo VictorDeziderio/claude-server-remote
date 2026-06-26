@@ -44,20 +44,27 @@ chown -R "$U:$U" "$H" 2>/dev/null || true
 # helper: roda como ubuntu, com HOME no volume
 as_user() { gosu "$U" env HOME="$H" USER="$U" "$@"; }
 
+# verdadeiro se o Claude ja estiver logado (/login feito) — via API key ou credenciais salvas
+is_logged_in() {
+  [ -n "${ANTHROPIC_API_KEY:-}" ] && return 0
+  [ -s "$H/.claude/.credentials.json" ] && return 0
+  grep -qE '"oauthAccount"|"accessToken"|"apiKey"|"primaryApiKey"' "$H/.claude.json" 2>/dev/null && return 0
+  return 1
+}
+
 # Sessao tmux "claude" iniciada na pasta de projetos, rodando o Claude Code
 if ! as_user tmux has-session -t claude 2>/dev/null; then
   as_user tmux new-session -d -s claude -c "$PROJ"
   as_user tmux send-keys -t claude 'claude' Enter
-  # apos o Claude carregar, envia o comando automatico (ex.: /remote-control easypanel meu-servidor)
-  # SO envia se o Claude estiver realmente ativo na sessao (pane rodando node/claude).
-  # Se o Claude nao estiver rodando (caiu, shell normal, etc.), deixa normal e nao envia.
+  # apos o Claude carregar, envia o comando automatico (ex.: /remote-control easypanel meu-servidor).
+  # SO dispara se: (1) o /login ja estiver feito  E  (2) o Claude estiver ativo na sessao.
+  # Senao (sem login, ou Claude nao rodando), deixa normal e nao envia nada.
   if [ -n "$FULL_AUTOCMD" ]; then
     ( sleep "$CLAUDE_AUTOCMD_DELAY"
       cur=$(as_user tmux display-message -p -t claude '#{pane_current_command}' 2>/dev/null || true)
-      case "$cur" in
-        node|claude) as_user tmux send-keys -t claude "$FULL_AUTOCMD" Enter ;;
-        *) : ;;  # Claude nao esta ativo -> nao dispara o remote-control
-      esac
+      if is_logged_in && { [ "$cur" = node ] || [ "$cur" = claude ]; }; then
+        as_user tmux send-keys -t claude "$FULL_AUTOCMD" Enter
+      fi
     ) &
   fi
 fi
