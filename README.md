@@ -1,51 +1,87 @@
 # claude — Dev-box (IDE web + Claude Code + Playwright) no EasyPanel
 
-Ubuntu 24.04 com **code-server (VS Code no navegador)** + **Claude Code CLI** +
-**Playwright** + toolchain de dev completo. Acesso pelo navegador (IDE com terminal
-integrado) e pelo Console do EasyPanel.
+Ubuntu 24.04 com **code-server (VS Code no navegador)** + **Claude Code CLI** rodando em
+**tmux** + **Playwright** + toolchain de dev completo. Persistente: seus projetos e o login
+do Claude **não somem** no redeploy.
 
-## Deploy no EasyPanel (projeto `tools`, serviço `claude`)
+- **IDE:** https://tools-claude.exemplo.easypanel.host (senha = variável `PASSWORD`)
+- **Projeto/serviço EasyPanel:** `tools` / `claude`
 
-1. **Create Service → App**, nome `claude`.
-2. **Source → Git:** este repo · ramo `main` · **Build path:** `/claude` · Dockerfile.
-3. **Armazenamento → Adicionar Montagem de Volume:** `claude-data` → `/root`
-   (Volume do EasyPanel, **persiste** no redeploy — não use bind mount).
-4. **Domínios:** aponte um domínio para a **porta `8080`** (o code-server).
-5. **Deploy.**
+---
 
-## Variáveis (campo Environment do EasyPanel)
+## 🚀 Como usar (passo a passo)
+
+### 1. Abrir o IDE
+Abra **https://tools-claude.exemplo.easypanel.host** → digite a senha (`PASSWORD` do Environment).
+Abre o VS Code no navegador, já no diretório `/root`.
+
+### 2. Abrir um terminal
+No VS Code: menu **Terminal → New Terminal** (atalho `` Ctrl+` ``).
+> Alternativa: no serviço `claude` no EasyPanel, botão **"Console"**.
+
+### 3. Entrar na sessão do Claude (tmux)
+```bash
+tmux attach -t claude
+```
+O Claude Code já está rodando nessa sessão. Os dois caminhos (IDE e Console) entram na
+**mesma** sessão.
+
+### 4. Primeiro login do Claude
+Na 1ª vez, o Claude estará na tela de **login** (API key ou conta). Depois de logar, fica
+salvo em `/root/.claude` (volume) e **não pede de novo** nos próximos deploys.
+
+---
+
+## 🧩 tmux — sessão que não fecha
+A sessão `claude` sobrevive a desconexões do IDE/terminal (só reinicia se o container
+reiniciar). Comandos:
+
+| Ação | Atalho/Comando |
+|------|----------------|
+| Entrar na sessão | `tmux attach -t claude` |
+| **Sair sem fechar** (Claude continua rodando) | `Ctrl+b` e depois `d` |
+| Listar sessões | `tmux ls` |
+| Rolar a tela | `Ctrl+b` e depois `[` (sai com `q`) |
+| Nova sessão | `tmux new -s nome` |
+
+---
+
+## 💾 Persistência (o que NÃO some no redeploy)
+- **Volume `claude-data` → `/root`** (persiste): **seus projetos**, login do Claude
+  (`~/.claude`), config/extensões do VS Code, histórico do shell.
+  👉 **Trabalhe sempre dentro de `/root`.**
+- **Imagem** (recriada a cada deploy, sempre fresca): ubuntu, node, claude, playwright,
+  code-server, ferramentas. O que estiver fora de `/root` volta ao estado da imagem.
+
+---
+
+## ⚙️ Variáveis (aba Environment do serviço)
 | Variável | Valor | O quê |
 |----------|-------|-------|
-| `IDE_ENABLED` | `true` / `false` | habilita/desabilita o IDE web |
-| `PASSWORD` | senha | senha de acesso ao IDE (code-server tem só senha, sem usuário) |
+| `IDE_ENABLED` | `true` / `false` | liga/desliga o IDE web |
+| `PASSWORD` | senha | senha de acesso ao IDE |
 
-> Para usuário+senha de verdade, ative o **basic-auth** na aba **Segurança** do serviço.
+> O code-server usa **só senha** (sem usuário). Para usuário+senha, ative o **basic-auth**
+> na aba **Segurança** do serviço.
 
-## Acessar o IDE
-Abra o domínio do serviço (ex.: `https://tools-claude.<...>.easypanel.host`) →
-senha = **`PASSWORD`**. No terminal integrado do VS Code:
-```bash
-tmux attach -t claude   # entra na sessão persistente do Claude Code
-# (ou inicie outra: `claude`)
-```
+---
 
-## tmux — sessão que não fecha
-Na subida, o container já cria uma sessão **tmux `claude`** rodando o Claude Code. Ela
-**sobrevive** a desconexões do IDE/terminal (só reinicia se o container reiniciar).
-- Entrar: `tmux attach -t claude`
-- Sair sem fechar: `Ctrl+b` depois `d`
-- Funciona tanto no terminal do IDE quanto no **Console** do EasyPanel.
+## 🛠️ Toolchain incluído
+`claude-code` · `playwright` (chromium) · node 22 · npm/pnpm/yarn/bun · git · `gh` (GitHub CLI) ·
+ripgrep · fd · jq · tree · build-essential · python3/pip/venv · `psql` (postgresql-client) ·
+tmux · code-server.
 
-## Persistência (não perde dados no redeploy)
-- **Imagem** (recriada no deploy): code-server, claude, playwright, node, ferramentas.
-- **Volume em `/root`** (persiste): projetos, login do Claude (`~/.claude`), config/extensões
-  do VS Code (`~/.config/code-server`, `~/.local/share/code-server`).
+Adicionar mais browsers Playwright: `playwright install firefox webkit`.
 
-## Toolchain incluído
-node 22 · npm/pnpm/yarn/bun · git · gh (GitHub CLI) · ripgrep · fd · jq · tree ·
-build-essential · python3/pip/venv · postgresql-client (`psql`) · playwright (chromium) ·
-claude-code · code-server.
+---
 
-> 🔒 O IDE fica num domínio público com senha. Use uma senha forte (`PASSWORD` no
-> Environment) e considere IP-restriction/basic-auth do EasyPanel para mais segurança.
-> Adicionar mais browsers Playwright: `playwright install firefox webkit`.
+## 🔁 Deploy / atualizações
+- Só o **1º build** é lento (baixa tudo). Os próximos reusam o **cache do Docker** → rápidos.
+- No dia a dia você **não precisa redeployar** — o container fica vivo e o trabalho está no
+  volume. Redeploy só para **atualizar a imagem** (ex.: novas ferramentas no Dockerfile).
+- Como instalar no EasyPanel: **Create Service → App** `claude` · Source Git (este repo,
+  ramo `main`, build path `/claude`, Dockerfile) · **Armazenamento → Volume** `claude-data`
+  → `/root` · **Domínios** → porta `8080` · Deploy.
+
+> 🔒 O IDE fica num domínio público com senha. Use uma senha forte em `PASSWORD` e
+> considere basic-auth/IP-restriction na aba Segurança.
