@@ -7,8 +7,8 @@
 #
 # Variaveis (campo Environment do EasyPanel):
 #   IDE_ENABLED          true|false  -> habilita/desabilita o IDE web (default: true)
-#   PROJECT_FOLDER       projects    -> pasta (dentro de /root) onde o Claude inicia
-#   REMOTE_CONTROL_NAME  meu-servidor      -> nome anexado ao comando (ex.: /remote-control meu-servidor)
+#   PROJECT_FOLDER       projects    -> nome do projeto default (se o container subir sem nenhum)
+#   REMOTE_CONTROL_NAME  (vazio)     -> remote usa o NOME DO PROJETO; defina p/ forcar um nome fixo
 #   CLAUDE_AUTOCMD_DELAY 15          -> segundos de espera antes de enviar o comando
 set -euo pipefail
 
@@ -92,13 +92,14 @@ ensure_all_sessions() {
     n="$(basename "${d%/}")"
     case "$n" in .*) continue ;; esac      # ignora pastas ocultas
     any=1
-    ensure_one "$n"
+    # nunca deixa a falha de UMA sessao abortar o boot (set -e) -> o gateway precisa subir
+    ensure_one "$n" || echo ">> aviso: sessao do projeto '$n' falhou ao subir (segue o boot)"
   done
   # container ainda sem nenhum projeto -> cria o default ($PROJECT_FOLDER) e sobe a sessao dele
   if [ "$any" = "0" ]; then
     local def="${PROJECT_FOLDER:-projects}"
     mkdir -p "$PROJECTS_DIR/$def"; chown -R "$U:$U" "$PROJECTS_DIR/$def" 2>/dev/null || true
-    ensure_one "$def"
+    ensure_one "$def" || echo ">> aviso: sessao default '$def' falhou ao subir (segue o boot)"
   fi
 }
 
