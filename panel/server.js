@@ -2,11 +2,11 @@
 'use strict';
 /*
  * Claude Remote — servidor do painel do dev-box (Node puro, sem dependencias de runtime).
+ * Modelo multi-tmux: UMA sessao tmux por projeto (claude-<nome>), Claude em paralelo por projeto.
  * - Serve a SPA (React/Vite) buildada em ./dist
- * - Expoe a API JSON em /api/*: state, create, rename, config, restart, remote
- * - Acoes na sessao tmux "claude" + leitura do panel.json + status/consumo do Claude
- * Auth: o gateway (Caddy) ja autentica o painel; aqui nao ha auth propria.
- * Roda como ubuntu (HOME=/root).
+ * - Expoe a API JSON em /api/*: state, create, rename, config, restart, remote, login, logout
+ * - Acoes nas sessoes tmux "claude-<projeto>" + leitura do panel.json + status/consumo do Claude
+ * Auth: pagina de login propria (cookie de sessao assinado). Roda como ubuntu (HOME=/root).
  */
 const http = require('http');
 const fs = require('fs');
@@ -20,12 +20,12 @@ const HOME = process.env.HOME || '/root';
 const PORT = parseInt(process.env.PANEL_PORT || '7001', 10);
 const BIND = process.env.PANEL_BIND || '127.0.0.1';
 const PROJECTS_DIR = process.env.PROJECTS_DIR || path.join(HOME, 'projects');
-const ACTIVE_FILE = path.join(HOME, '.claude', 'active-project');
 const CONFIG_FILE = process.env.PANEL_CONFIG || path.join(HOME, '.claude', 'panel.json');
+const RUN_DIR = path.join(HOME, '.claude', 'run');            // flags "<sessao>.running"
 const IDE_PATH = (process.env.IDE_PATH || '/ide').replace(/\/+$/, '');
 const SESSION_SCRIPT = '/usr/local/bin/claude-session.sh';
-const SESSION = 'claude';
-const FULL_AUTOCMD = process.env.FULL_AUTOCMD || '';
+// nome do remote-control: por padrao = nome do projeto; REMOTE_CONTROL_NAME (se setado) forca um fixo.
+const REMOTE_CONTROL_NAME = process.env.REMOTE_CONTROL_NAME || '';
 const DIST = path.join(__dirname, 'dist');
 
 // Auth do painel: pagina de login propria (cookie assinado), em vez do basic_auth do gateway.
@@ -39,9 +39,6 @@ const COOKIE = 'cr_auth';
 fs.mkdirSync(PROJECTS_DIR, { recursive: true });
 
 // ---------- helpers ----------
-function activeProject() {
-  try { return fs.readFileSync(ACTIVE_FILE, 'utf8').split('\n')[0].trim(); } catch { return ''; }
-}
 function listProjects() {
   try {
     return fs.readdirSync(PROJECTS_DIR, { withFileTypes: true })
@@ -50,6 +47,9 @@ function listProjects() {
   } catch { return []; }
 }
 const validName = (n) => typeof n === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(n) && n !== '.' && n !== '..';
+// nome da sessao tmux do projeto (mesma sanitizacao do claude-session.sh: tr -c 'A-Za-z0-9_-' '_')
+const sessionName = (name) => 'claude-' + String(name).replace(/[^A-Za-z0-9_-]/g, '_');
+const remoteCmdFor = (name) => '/remote-control ' + (REMOTE_CONTROL_NAME || name);
 
 function sh(cmd, args) {
   return new Promise((resolve) => {
@@ -120,15 +120,24 @@ function setProjConfig(name, patch) {
 }
 
 // ---------- status / consumo do Claude ----------
-function isLoggedIn() {
-  if (process.env.ANTHROPIC_API_KEY) return true;
-  try { if (fs.statSync(path.join(HOME, '.claude', '.credentials.json')).size > 0) return true; } catch { /**/ }
-  try {
-    const j = fs.readFileSync(path.join(HOME, '.claude.json'), 'utf8');
-    if (/"oauthAccount"|"accessToken"|"apiKey"|"primaryApiKey"/.test(j)) return true;
-  } catch { /**/ }
-  return false;
+// Login + conta: le oauthAccount.emailAddress de ~/.claude.json (ou API key via env).
+function loginInfo() {
+  if (process.env.ANTHROPIC_API_KEY) return { logged: true, account: 'API key (env)' };
+  let account = '';
+  let raw = '';
+  try { raw = fs.readFileSync(path.join(HOME, '.claude.json'), 'utf8'); } catch { /**/ }
+  if (raw) {
+    try {
+      const oa = JSON.parse(raw).oauthAccount;
+      if (oa) account = oa.emailAddress || oa.email || oa.organizationName || '';
+    } catch { /**/ }
+  }
+  let logged = !!account;
+  try { if (fs.statSync(path.join(HOME, '.claude', '.credentials.json')).size > 0) logged = true; } catch { /**/ }
+  if (!logged && raw && /"oauthAccount"|"accessToken"|"apiKey"|"primaryApiKey"/.test(raw)) logged = true;
+  return { logged, account };
 }
+
 // versao do Claude e estavel em runtime -> resolve uma vez e cacheia (evita spawn por request)
 let verCache = '';
 async function claudeVersion() {
@@ -136,16 +145,17 @@ async function claudeVersion() {
   verCache = ((await sh('claude', ['--version'])).stdout || '').trim().split('\n')[0] || '?';
   return verCache;
 }
-async function getStatus() {
-  const up = (await sh('tmux', ['has-session', '-t', SESSION])).ok;
-  let pane = '';
-  if (up) {
-    const r = await sh('tmux', ['display-message', '-p', '-t', SESSION, '#{pane_current_command}']);
-    pane = (r.stdout || '').trim();
-  }
-  const ver = await claudeVersion();
-  return { up, pane, claudeRunning: up && /node|claude/.test(pane), ver, logged: isLoggedIn(), active: activeProject() };
+
+// sessao tmux do projeto de pe? (match exato com "=")
+async function sessionUp(name) {
+  return (await sh('tmux', ['has-session', '-t', '=' + sessionName(name)])).ok;
 }
+// Claude de fato rodando nessa sessao? Le o flag file que o claude-loop.sh mantem
+// (o pane_current_command mostra "bash"/o supervisor e dava falso-negativo de "parado").
+function claudeRunningFlag(name) {
+  try { return fs.existsSync(path.join(RUN_DIR, sessionName(name) + '.running')); } catch { return false; }
+}
+
 function claudeUsage() {
   const base = path.join(HOME, '.claude', 'projects');
   const out = {
@@ -192,7 +202,7 @@ function usageCached() {
   return usageCache.v;
 }
 
-// ---------- acoes ----------
+// ---------- acoes (por projeto / sessao) ----------
 async function createProject(name, autoStartClaude, autoRemote) {
   if (!validName(name)) return { ok: false, msg: 'nome invalido (use letras, numeros, . _ -)' };
   const dir = path.join(PROJECTS_DIR, name);
@@ -200,17 +210,17 @@ async function createProject(name, autoStartClaude, autoRemote) {
   fs.mkdirSync(dir, { recursive: true });
   await sh('git', ['-C', dir, 'init', '-q']);
   setProjConfig(name, { autoStartClaude: !!autoStartClaude, autoRemote: !!autoRemote });
-  return { ok: true, msg: `projeto "${name}" criado (Claude ${autoStartClaude ? 'ON' : 'OFF'}, remote ${autoRemote ? 'ON' : 'OFF'})` };
+  await sh('bash', [SESSION_SCRIPT, name]); // sobe a sessao tmux do novo projeto
+  return { ok: true, msg: `projeto "${name}" criado e sessao iniciada (Claude ${autoStartClaude ? 'ON' : 'OFF'}, remote ${autoRemote ? 'ON' : 'OFF'})` };
 }
-async function restartOn(name) {
+async function restartProject(name) {
   if (!validName(name)) return { ok: false, msg: 'nome invalido' };
   const dir = path.join(PROJECTS_DIR, name);
   if (!fs.existsSync(dir)) return { ok: false, msg: 'pasta inexistente' };
-  fs.writeFileSync(ACTIVE_FILE, dir + '\n');
-  await sh('tmux', ['kill-session', '-t', SESSION]);
-  await sh('bash', [SESSION_SCRIPT]);
+  await sh('tmux', ['kill-session', '-t', '=' + sessionName(name)]);
+  await sh('bash', [SESSION_SCRIPT, name]);
   const c = projConfig(name);
-  return { ok: true, msg: `sessao reiniciada em "${name}" (Claude ${c.autoStartClaude ? 'ON' : 'OFF'}, remote ${c.autoRemote ? 'ON' : 'OFF'})` };
+  return { ok: true, msg: `sessao de "${name}" reiniciada (Claude ${c.autoStartClaude ? 'ON' : 'OFF'}, remote ${c.autoRemote ? 'ON' : 'OFF'})` };
 }
 // Claude guarda o historico em ~/.claude/projects/<cwd codificado> (nao-alfanumerico -> "-").
 function migrateClaudeHistory(oldDir, newDir) {
@@ -230,8 +240,7 @@ async function renameProject(oldName, newName) {
   const newDir = path.join(PROJECTS_DIR, newName);
   if (!fs.existsSync(oldDir)) return { ok: false, msg: 'pasta inexistente' };
   if (fs.existsSync(newDir)) return { ok: false, msg: `ja existe um projeto "${newName}"` };
-  const wasActive = (oldDir === activeProject());
-  if (wasActive) await sh('tmux', ['kill-session', '-t', SESSION]);
+  await sh('tmux', ['kill-session', '-t', '=' + sessionName(oldName)]); // encerra a sessao antiga
   try { fs.renameSync(oldDir, newDir); }
   catch (e) { return { ok: false, msg: 'falha ao renomear: ' + e.message }; }
   const histMoved = migrateClaudeHistory(oldDir, newDir);
@@ -241,43 +250,65 @@ async function renameProject(oldName, newName) {
     delete c.projects[oldName];
     saveConfig(c);
   }
-  if (wasActive) { fs.writeFileSync(ACTIVE_FILE, newDir + '\n'); await sh('bash', [SESSION_SCRIPT]); }
+  await sh('bash', [SESSION_SCRIPT, newName]); // sobe a sessao ja com o novo nome
   return {
     ok: true,
-    msg: `"${oldName}" -> "${newName}"${histMoved ? ' (historico migrado)' : ''}${wasActive ? ' (sessao reiniciada)' : ''}`,
+    msg: `"${oldName}" -> "${newName}"${histMoved ? ' (historico migrado)' : ''} (sessao recriada)`,
   };
+}
+async function sendRemote(name) {
+  if (!validName(name)) return { ok: false, msg: 'nome invalido' };
+  if (!(await sessionUp(name))) return { ok: false, msg: 'sessao tmux nao esta de pe' };
+  if (!loginInfo().logged) return { ok: false, msg: 'Claude nao esta logado' };
+  const sess = sessionName(name);
+  const cmd = remoteCmdFor(name);
+  await sh('tmux', ['send-keys', '-t', '=' + sess, cmd]);
+  await new Promise((r) => setTimeout(r, 1000));
+  await sh('tmux', ['send-keys', '-t', '=' + sess, 'Enter']);
+  return { ok: true, msg: `remote reenviado: ${cmd}` };
 }
 async function setConfig(name, key, value) {
   if (!validName(name)) return { ok: false, msg: 'nome invalido' };
   if (key !== 'autoStartClaude' && key !== 'autoRemote') return { ok: false, msg: 'chave invalida' };
   const val = truthy(value);
   if (!setProjConfig(name, { [key]: val })) return { ok: false, msg: 'falha ao salvar panel.json' };
-  const label = key === 'autoStartClaude' ? 'auto-start do Claude' : 'auto religar remote-control';
-  const tail = (path.join(PROJECTS_DIR, name) === activeProject()) ? ' — reinicie a sessao p/ aplicar' : '';
-  return { ok: true, msg: `"${name}": ${label} = ${val ? 'ON' : 'OFF'}${tail}` };
-}
-async function sendRemote() {
-  if (!(await sh('tmux', ['has-session', '-t', SESSION])).ok) return { ok: false, msg: 'sessao tmux nao esta de pe' };
-  if (!FULL_AUTOCMD) return { ok: false, msg: 'remote-control desativado globalmente' };
-  await sh('tmux', ['send-keys', '-t', SESSION, FULL_AUTOCMD]);
-  await new Promise((r) => setTimeout(r, 1000));
-  await sh('tmux', ['send-keys', '-t', SESSION, 'Enter']);
-  return { ok: true, msg: `remote-control reenviado: ${FULL_AUTOCMD}` };
+  if (key === 'autoRemote') {
+    // toggle imediato: ligar -> envia o remote agora; desligar -> so grava (o atual encerra ao reiniciar)
+    if (val) {
+      const r = await sendRemote(name);
+      return {
+        ok: true,
+        msg: r.ok ? `"${name}": remote LIGADO e reenviado (${remoteCmdFor(name)})`
+                  : `"${name}": remote LIGADO (sera enviado quando sessao/login estiver pronto)`,
+      };
+    }
+    return { ok: true, msg: `"${name}": remote DESLIGADO (nao religa mais; o atual encerra ao reiniciar a sessao)` };
+  }
+  // autoStartClaude: aplicado na proxima (re)criacao da sessao
+  return { ok: true, msg: `"${name}": auto-start do Claude = ${val ? 'ON' : 'OFF'} — reinicie a sessao p/ aplicar` };
 }
 
 async function buildState() {
-  const active = activeProject();
-  const projects = listProjects().map((name) => {
-    const dir = path.join(PROJECTS_DIR, name);
+  const projects = [];
+  for (const name of listProjects()) {
+    const up = await sessionUp(name);
     const c = projConfig(name);
-    return { name, dir, active: dir === active, autoStartClaude: c.autoStartClaude, autoRemote: c.autoRemote };
-  });
+    projects.push({
+      name,
+      dir: path.join(PROJECTS_DIR, name),
+      up,
+      claudeRunning: up && claudeRunningFlag(name),
+      autoStartClaude: c.autoStartClaude,
+      autoRemote: c.autoRemote,
+      remoteCmd: remoteCmdFor(name),
+    });
+  }
   return {
     projectsDir: PROJECTS_DIR,
-    activeProject: active,
-    remoteCmd: FULL_AUTOCMD,
     idePath: IDE_PATH,
-    status: await getStatus(),
+    login: loginInfo(),
+    version: await claudeVersion(),
+    remoteNameForced: REMOTE_CONTROL_NAME,
     usage: usageCached(),
     projects,
   };
@@ -334,8 +365,8 @@ const server = http.createServer(async (req, res) => {
         if (url === '/api/create') r = await createProject(body.name, !!body.autoStartClaude, !!body.autoRemote);
         else if (url === '/api/rename') r = await renameProject(body.name, body.newName);
         else if (url === '/api/config') r = await setConfig(body.name, body.key, body.value);
-        else if (url === '/api/restart') r = await restartOn(body.name);
-        else if (url === '/api/remote') r = await sendRemote();
+        else if (url === '/api/restart') r = await restartProject(body.name);
+        else if (url === '/api/remote') r = await sendRemote(body.name);
         else return sendJson(res, 404, { ok: false, msg: 'rota desconhecida' });
         return sendJson(res, 200, r);
       }

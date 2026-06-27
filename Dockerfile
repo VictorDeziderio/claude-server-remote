@@ -78,10 +78,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends tmux gosu \
 # ============================================================================
 # Variaveis de runtime (sobrescreva no Environment do EasyPanel)
 ENV IDE_ENABLED=true \
-    # auto-start do Claude: pasta de trabalho + nome do remote-control + delay.
-    # O comando do remote e FIXO "/remote-control"; ligar/desligar e por projeto (panel.json).
+    # Multi-tmux: cada projeto tem sua sessao "claude-<nome>" e seu remote-control.
+    # PROJECT_FOLDER = nome do projeto default (criado se o container subir sem nenhum).
+    # REMOTE_CONTROL_NAME vazio -> o remote usa o NOME DO PROJETO (ex.: /remote-control pilot).
+    #   Defina um valor so se quiser FORCAR um nome fixo para todos os projetos.
     PROJECT_FOLDER=projects \
-    REMOTE_CONTROL_NAME=meu-servidor \
+    REMOTE_CONTROL_NAME= \
     CLAUDE_AUTOCMD_DELAY=15 \
     # GitHub: token (escopo repo) p/ auto-login do gh e push do backup. Defina no Environment.
     GH_TOKEN= \

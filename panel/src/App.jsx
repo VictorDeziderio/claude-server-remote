@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
-  Activity, Cpu, KeyRound, Tag, GitBranch, Radio, RefreshCw, MonitorPlay,
+  Cpu, KeyRound, GitBranch, Radio, RefreshCw, MonitorPlay, Activity,
   Pencil, Plus, Power, Wifi, WifiOff, Check, X, Loader2, Terminal, LogOut,
+  Lock, Save, UserRound,
 } from 'lucide-react'
 import Logo from './components/Logo.jsx'
 import Login from './components/Login.jsx'
@@ -67,9 +68,31 @@ function Chip({ on, onClick, busy, labelOn, labelOff, Icon }) {
            : 'bg-rose-500/10 text-rose-300 ring-1 ring-rose-500/25'
       }`}
     >
-      <Icon className="h-3.5 w-3.5" />
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5" />}
       {on ? labelOn : labelOff}
     </button>
+  )
+}
+
+// status inline de um projeto (tmux / Claude / remote) — cada projeto tem sua sessao tmux
+function ProjStatus({ p }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+      <span className="inline-flex items-center gap-1.5">
+        <Activity className="h-3.5 w-3.5 text-slate-500" /> tmux
+        <Dot on={p.up} /> {p.up ? 'de pé' : 'fora'}
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <Cpu className="h-3.5 w-3.5 text-slate-500" /> Claude
+        <Dot on={p.claudeRunning} /> {p.claudeRunning ? 'rodando' : 'parado'}
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <Radio className="h-3.5 w-3.5 text-slate-500" /> remote
+        {p.autoRemote
+          ? <code className="text-slate-300">{p.remoteCmd}</code>
+          : <span className="text-slate-500">desligado</span>}
+      </span>
+    </div>
   )
 }
 
@@ -79,6 +102,7 @@ export default function App() {
   const [flash, setFlash] = useState(null)
   const [busy, setBusy] = useState('')
   const [drafts, setDrafts] = useState({})
+  const [editing, setEditing] = useState({}) // qual projeto teve o campo de nome destravado
   const [form, setForm] = useState({ name: '', autoStartClaude: true, autoRemote: true })
 
   const refresh = useCallback(async () => {
@@ -124,6 +148,29 @@ export default function App() {
     }
   }
 
+  // Renomear projeto: bloqueado por padrao. "Alterar" pede confirmacao (alerta) avisando
+  // que renomear TROCA a pasta no servidor, e so entao destrava o campo.
+  const startRename = (name) => {
+    const ok = window.confirm(
+      `Renomear "${name}" vai RENOMEAR A PASTA no servidor (em ${data?.projectsDir || 'PROJECTS_DIR'}) ` +
+      `e migrar o histórico do Claude. A sessão tmux desse projeto será recriada.\n\n` +
+      `Deseja desbloquear o campo para alterar o nome?`,
+    )
+    if (!ok) return
+    setDrafts((d) => ({ ...d, [name]: name }))
+    setEditing((e) => ({ ...e, [name]: true }))
+  }
+  const cancelRename = (name) => {
+    setEditing((e) => ({ ...e, [name]: false }))
+    setDrafts((d) => ({ ...d, [name]: name }))
+  }
+  const commitRename = (name) =>
+    run(`rename:${name}`, async () => {
+      const r = await api.renameProject(name, (drafts[name] || '').trim())
+      if (r.ok) setEditing((e) => ({ ...e, [name]: false }))
+      return r
+    })
+
   if (!data) {
     return (
       <div className="flex h-full items-center justify-center text-slate-400">
@@ -132,7 +179,7 @@ export default function App() {
     )
   }
 
-  const st = data.status || {}
+  const login = data.login || { logged: false, account: '' }
   const u = data.usage || { today: {}, total: {} }
   const idePath = data.idePath || '/ide'
 
@@ -176,26 +223,15 @@ export default function App() {
         </div>
       )}
 
-      {/* Status */}
+      {/* Resumo global: conta + versão + consumo */}
       <section className="mb-5 rounded-2xl bg-ink-800 p-4 ring-1 ring-white/5">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <StatItem icon={Activity} label="Sessão tmux">
-            <span className="inline-flex items-center gap-2"><Dot on={st.up} /> {st.up ? 'de pé' : 'fora do ar'}</span>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <StatItem icon={login.logged ? UserRound : KeyRound} label="Conta Claude">
+            {login.logged
+              ? <span className="inline-flex items-center gap-2"><Dot on /> {login.account || 'logado'}</span>
+              : <span className="inline-flex items-center gap-2"><Dot on={false} /> deslogado</span>}
           </StatItem>
-          <StatItem icon={Cpu} label="Claude">
-            <span className="inline-flex items-center gap-2">
-              <Dot on={st.claudeRunning} /> {st.claudeRunning ? 'rodando' : 'parado'}
-              <span className="text-slate-400">({st.pane || '—'})</span>
-            </span>
-          </StatItem>
-          <StatItem icon={KeyRound} label="Login">
-            <span className="inline-flex items-center gap-2"><Dot on={st.logged} /> {st.logged ? 'logado' : 'deslogado'}</span>
-          </StatItem>
-          <StatItem icon={Terminal} label="Versão">{st.ver || '?'}</StatItem>
-          <StatItem icon={Tag} label="Projeto ativo">{st.active ? st.active.split('/').pop() : '—'}</StatItem>
-          <StatItem icon={Radio} label="Remote-control">
-            {data.remoteCmd ? <code className="text-slate-200">{data.remoteCmd}</code> : <span className="text-slate-500">desativado</span>}
-          </StatItem>
+          <StatItem icon={Terminal} label="Versão">{data.version || '?'}</StatItem>
         </div>
 
         {/* Consumo */}
@@ -238,9 +274,14 @@ export default function App() {
         </div>
       </section>
 
-      {/* Projetos */}
+      {/* Projetos — cada um com sua própria sessão tmux */}
       <section className="space-y-3">
-        <h2 className="px-1 text-sm font-semibold text-slate-300">Projetos</h2>
+        <div className="flex items-center justify-between px-1">
+          <h2 className="text-sm font-semibold text-slate-300">Projetos</h2>
+          {data.remoteNameForced
+            ? <span className="text-[11px] text-slate-500">remote fixo: <code>/remote-control {data.remoteNameForced}</code></span>
+            : <span className="text-[11px] text-slate-500">remote = nome do projeto</span>}
+        </div>
         {(data.projects || []).length === 0 && (
           <p className="px-1 text-sm text-slate-500">Nenhum projeto ainda. Crie um abaixo.</p>
         )}
@@ -249,20 +290,18 @@ export default function App() {
           return (
             <div
               key={p.name}
-              className={`rounded-2xl bg-ink-800 p-4 ring-1 ${p.active ? 'ring-claude/40' : 'ring-white/5'}`}
+              className={`rounded-2xl bg-ink-800 p-4 ring-1 ${p.claudeRunning ? 'ring-claude/30' : 'ring-white/5'}`}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <Dot on={p.active} />
+                    <Dot on={p.up && p.claudeRunning} />
                     <span className="font-medium text-white">{p.name}</span>
-                    {p.active && (
-                      <span className="rounded-full bg-claude/15 px-2 py-0.5 text-[11px] text-claude ring-1 ring-claude/30">
-                        ativo
-                      </span>
-                    )}
                   </div>
                   <div className="mt-1 truncate text-xs text-slate-500">{p.dir}</div>
+
+                  <ProjStatus p={p} />
+
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Chip
                       Icon={Cpu}
@@ -285,36 +324,52 @@ export default function App() {
 
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <Btn variant="accent" busy={busy === `restart:${p.name}`} onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))}>
-                    <RefreshCw className="h-3.5 w-3.5" /> {p.active ? 'Reiniciar sessão' : 'Ativar aqui'}
+                    <RefreshCw className="h-3.5 w-3.5" /> Reiniciar sessão
                   </Btn>
-                  {p.active && (
-                    <Btn busy={busy === 'remote'} onClick={() => run('remote', () => api.reconnectRemote())}>
-                      <Radio className="h-3.5 w-3.5" /> Religar remote
-                    </Btn>
-                  )}
+                  <Btn busy={busy === `remote:${p.name}`} onClick={() => run(`remote:${p.name}`, () => api.reconnectRemote(p.name))}>
+                    <Radio className="h-3.5 w-3.5" /> Religar remote
+                  </Btn>
                   <Btn as="a" href={ideHref}>
                     <MonitorPlay className="h-3.5 w-3.5" /> IDE
                   </Btn>
                 </div>
               </div>
 
-              {/* Renomear */}
-              <div className="mt-3 flex items-center gap-2 border-t border-white/5 pt-3">
-                <Pencil className="h-3.5 w-3.5 text-slate-500" />
+              {/* Renomear — bloqueado por padrao (cadeado); "Alterar" desbloqueia com alerta */}
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/5 pt-3">
+                {editing[p.name]
+                  ? <Pencil className="h-3.5 w-3.5 text-claude" />
+                  : <Lock className="h-3.5 w-3.5 text-slate-500" />}
                 <input
                   value={drafts[p.name] ?? p.name}
                   onChange={(e) => setDrafts((d) => ({ ...d, [p.name]: e.target.value }))}
+                  disabled={!editing[p.name]}
                   pattern="[A-Za-z0-9._-]{1,64}"
-                  className="w-44 rounded-lg bg-ink-900 px-2.5 py-1 text-sm text-slate-200 ring-1 ring-white/10 focus:outline-none focus:ring-claude/40"
+                  className={`w-44 rounded-lg px-2.5 py-1 text-sm ring-1 focus:outline-none ${
+                    editing[p.name]
+                      ? 'bg-ink-900 text-slate-200 ring-white/10 focus:ring-claude/40'
+                      : 'cursor-not-allowed bg-ink-900/50 text-slate-400 ring-white/5'
+                  }`}
                 />
-                <Btn
-                  variant="ghost"
-                  busy={busy === `rename:${p.name}`}
-                  onClick={() => run(`rename:${p.name}`, () => api.renameProject(p.name, drafts[p.name]))}
-                >
-                  Renomear
-                </Btn>
-                <span className="text-xs text-slate-600">renomeia a pasta + migra o histórico do Claude</span>
+                {editing[p.name] ? (
+                  <>
+                    <Btn variant="accent" busy={busy === `rename:${p.name}`} onClick={() => commitRename(p.name)}>
+                      <Save className="h-3.5 w-3.5" /> Salvar
+                    </Btn>
+                    <Btn variant="ghost" onClick={() => cancelRename(p.name)}>
+                      Cancelar
+                    </Btn>
+                  </>
+                ) : (
+                  <Btn variant="ghost" onClick={() => startRename(p.name)}>
+                    <Lock className="h-3.5 w-3.5" /> Alterar
+                  </Btn>
+                )}
+                <span className="text-xs text-slate-600">
+                  {editing[p.name]
+                    ? '⚠ renomear troca a pasta no servidor + migra o histórico do Claude'
+                    : 'nome travado — clique em “Alterar” para editar'}
+                </span>
               </div>
             </div>
           )
@@ -357,7 +412,7 @@ export default function App() {
           </Btn>
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          Cria a pasta em <code>{data.projectsDir}</code> + <code>git init</code> e grava a config no <code>panel.json</code>.
+          Cria a pasta em <code>{data.projectsDir}</code> + <code>git init</code>, grava no <code>panel.json</code> e sobe a sessão tmux do projeto.
         </p>
       </section>
 

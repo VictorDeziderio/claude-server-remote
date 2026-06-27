@@ -20,4 +20,4 @@ export const createProject = (name, autoStartClaude, autoRemote) =>
 export const renameProject = (name, newName) => post('/api/rename', { name, newName })
 export const setConfig = (name, key, value) => post('/api/config', { name, key, value })
 export const restartProject = (name) => post('/api/restart', { name })
-export const reconnectRemote = () => post('/api/remote', {})
+export const reconnectRemote = (name) => post('/api/remote', { name })

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Entrypoint do dev-box claude (prepara como root, depois roda como usuario nao-root):
 #  - settings.json com bypassPermissions (permite tudo)
-#  - sessao tmux "claude" persistente, iniciada DENTRO de $PROJECT_FOLDER, rodando o Claude
+#  - UMA sessao tmux por projeto (claude-<nome>), cada uma rodando o Claude (modelo multi-tmux)
 #  - religa o remote-control conforme a config por projeto (panel.json -> autoRemote)
 #  - sobe o code-server (IDE) se IDE_ENABLED=true
 #
@@ -18,11 +18,10 @@ PROJECT_FOLDER="${PROJECT_FOLDER:-projects}"
 PROJ="$H/$PROJECT_FOLDER"
 REMOTE_CONTROL_NAME="${REMOTE_CONTROL_NAME:-}"
 CLAUDE_AUTOCMD_DELAY="${CLAUDE_AUTOCMD_DELAY:-15}"
-# comando do remote-control = FIXO "/remote-control" + nome (se definido).
-# Quem decide se DISPARA e a flag autoRemote por projeto no panel.json (lida pelo
-# claude-session.sh) -> nao ha mais variavel CLAUDE_AUTOCMD.
-#   ex.: REMOTE_CONTROL_NAME=meu-servidor -> "/remote-control meu-servidor"
-FULL_AUTOCMD="/remote-control${REMOTE_CONTROL_NAME:+ ${REMOTE_CONTROL_NAME}}"
+# Modelo multi-tmux: cada projeto tem sua sessao "claude-<nome>" e seu remote-control,
+# cujo nome = o NOME DO PROJETO (ex.: "/remote-control pilot"). REMOTE_CONTROL_NAME, se
+# definido, FORCA um nome fixo p/ todos (override). Vazio (default) -> usa o nome do projeto.
+# O claude-session.sh monta o comando por projeto; o painel (server.js) faz o mesmo.
 
 # settings do Claude: permite tudo (so cria se nao existir)
 mkdir -p "$H/.claude" "$PROJ"
@@ -35,6 +34,11 @@ if [ ! -f "$H/.claude/settings.json" ]; then
 }
 JSON
 fi
+
+# flags de "Claude rodando" (claude-loop.sh) ficam no volume -> limpa orfas de execucoes
+# anteriores no boot, senao o painel mostraria "rodando" antes de o Claude realmente subir.
+mkdir -p "$H/.claude/run"
+rm -f "$H/.claude/run/"*.running 2>/dev/null || true
 
 # ownership do volume p/ o usuario nao-root
 chown -R "$U:$U" "$H" 2>/dev/null || true
@@ -59,13 +63,10 @@ as_user git config --global user.email >/dev/null 2>&1 || \
 as_user git config --global user.name  >/dev/null 2>&1 || \
   as_user git config --global user.name  "${GIT_AUTHOR_NAME:-claude-devbox}"
 
-# pasta ativa (onde o Claude roda) — fonte da verdade compartilhada com o painel.
-# No boot, se ainda nao definida, inicia com o default $PROJ.
+# diretorio container dos projetos (cada subpasta = um projeto = uma sessao tmux).
 PROJECTS_DIR="${PROJECTS_DIR:-$H/projects}"
-ACTIVE_FILE="$H/.claude/active-project"
 mkdir -p "$PROJECTS_DIR"
-[ -s "$ACTIVE_FILE" ] || echo "$PROJ" > "$ACTIVE_FILE"
-chown -R "$U:$U" "$ACTIVE_FILE" "$PROJECTS_DIR" 2>/dev/null || true
+chown -R "$U:$U" "$PROJECTS_DIR" 2>/dev/null || true
 
 # panel.json: config dos projetos (autoStartClaude/autoRemote por projeto). A copia VIVA
 # fica no volume; semeada da imagem (/usr/local/share/claude/panel.json) so na 1a vez.
@@ -75,24 +76,37 @@ if [ ! -f "$PANEL_CONFIG" ] && [ -f /usr/local/share/claude/panel.json ]; then
 fi
 chown "$U:$U" "$PANEL_CONFIG" 2>/dev/null || true
 
-# Garante a sessao tmux "claude" de pe na PASTA ATIVA, rodando o supervisor.
-#  - claude-session.sh le a pasta ativa (active-project) e sobe o supervisor nela.
-#  - O supervisor (claude-loop.sh) roda o Claude em loop: se sair (exit/crash),
-#    reabre em 3s (Ctrl-C na janela de 3s cai no shell). A CADA (re)inicio RELIGA o
-#    remote-control (apos o delay, se logado) — `claude` sobe conversa nova e NAO
-#    reconecta sozinho. Cobre boot, respawn e recriacao pelo watchdog.
-#  - Idempotente: claude-session.sh nao mexe se a sessao ja existir.
-ensure_claude_session() {
-  as_user env FULL_AUTOCMD="$FULL_AUTOCMD" CLAUDE_AUTOCMD_DELAY="$CLAUDE_AUTOCMD_DELAY" \
-    PROJECT_FOLDER="$PROJECT_FOLDER" bash /usr/local/bin/claude-session.sh
+# Modelo multi-tmux: garante UMA sessao tmux por projeto (claude-<nome>), cada uma rodando
+# o supervisor (claude-loop.sh) na pasta do projeto. O supervisor roda o Claude em loop:
+# se sair (exit/crash), reabre em 3s; a cada (re)inicio religa o remote-control (se logado).
+# Idempotente: claude-session.sh nao mexe em sessao ja existente. Cobre boot, respawn e watchdog.
+ensure_one() {  # $1 = nome do projeto
+  as_user env CLAUDE_AUTOCMD_DELAY="$CLAUDE_AUTOCMD_DELAY" PROJECTS_DIR="$PROJECTS_DIR" \
+    PANEL_CONFIG="$PANEL_CONFIG" REMOTE_CONTROL_NAME="$REMOTE_CONTROL_NAME" \
+    bash /usr/local/bin/claude-session.sh "$1"
+}
+ensure_all_sessions() {
+  shopt -s nullglob
+  local any=0 d n
+  for d in "$PROJECTS_DIR"/*/; do
+    n="$(basename "${d%/}")"
+    case "$n" in .*) continue ;; esac      # ignora pastas ocultas
+    any=1
+    ensure_one "$n"
+  done
+  # container ainda sem nenhum projeto -> cria o default ($PROJECT_FOLDER) e sobe a sessao dele
+  if [ "$any" = "0" ]; then
+    local def="${PROJECT_FOLDER:-projects}"
+    mkdir -p "$PROJECTS_DIR/$def"; chown -R "$U:$U" "$PROJECTS_DIR/$def" 2>/dev/null || true
+    ensure_one "$def"
+  fi
 }
 
-# cria a sessao agora (no boot)
-ensure_claude_session
+# cria as sessoes agora (no boot)
+ensure_all_sessions
 
-# watchdog: se a sessao tmux cair sem o container reiniciar, recria em ~10s.
-# Cobre o caso em que o tmux morre mas o code-server (PID 1) segue vivo.
-( while true; do sleep 10; ensure_claude_session; done ) &
+# watchdog: se alguma sessao cair sem o container reiniciar, recria em ~10s.
+( while true; do sleep 10; ensure_all_sessions; done ) &
 
 # Backup automatico dos projetos (item 6): a cada BACKUP_INTERVAL segundos roda
 # o backup.sh, que faz commit+push de cada repo git em $PROJ. Log em
@@ -153,7 +167,8 @@ if [ "${PANEL_ENABLED:-true}" = "true" ]; then
   echo ">> painel Claude Remote (interno $PANEL_PORT, publicado em / pelo gateway) | projetos: $PROJECTS_DIR"
   run_bg "painel" "$H/.claude/logs/panel.log" \
     env PANEL_BIND=127.0.0.1 PANEL_PORT="$PANEL_PORT" IDE_PATH=/ide \
-      PROJECTS_DIR="$PROJECTS_DIR" FULL_AUTOCMD="$FULL_AUTOCMD" \
+      PROJECTS_DIR="$PROJECTS_DIR" PANEL_CONFIG="$PANEL_CONFIG" \
+      REMOTE_CONTROL_NAME="$REMOTE_CONTROL_NAME" CLAUDE_AUTOCMD_DELAY="$CLAUDE_AUTOCMD_DELAY" \
       PANEL_LOGIN="$PANEL_LOGIN" PANEL_PASSWORD="$PANEL_PASSWORD" \
       node /usr/local/bin/panel/server.js
 fi
