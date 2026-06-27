@@ -42,14 +42,6 @@ chown -R "$U:$U" "$H" 2>/dev/null || true
 # helper: roda como ubuntu, com HOME no volume
 as_user() { gosu "$U" env HOME="$H" USER="$U" "$@"; }
 
-# verdadeiro se o Claude ja estiver logado (/login feito) — via API key ou credenciais salvas
-is_logged_in() {
-  [ -n "${ANTHROPIC_API_KEY:-}" ] && return 0
-  [ -s "$H/.claude/.credentials.json" ] && return 0
-  grep -qE '"oauthAccount"|"accessToken"|"apiKey"|"primaryApiKey"' "$H/.claude.json" 2>/dev/null && return 0
-  return 1
-}
-
 # GitHub CLI: auto-login via GH_TOKEN (item 7) + git usando gh como credential
 # helper (necessario p/ o push do backup). Vazio -> pula (login manual segue ok).
 if [ -n "${GH_TOKEN:-}" ]; then
@@ -122,11 +114,24 @@ fi
 GATEWAY_PORT="${GATEWAY_PORT:-8080}"   # porta publica (aponte o dominio do EasyPanel p/ ela)
 PANEL_PORT=7001                         # painel interno
 IDE_PORT=8081                           # IDE interno
-# Login do PAINEL (basic_auth do gateway).
+# Login do PAINEL (pagina de login propria do server.js).
 PANEL_LOGIN="${PANEL_LOGIN:-admin}"
 PANEL_PASSWORD="${PANEL_PASSWORD:-changeme}"
 # Token do /IDE (senha NATIVA do code-server).
 IDE_TOKEN="${IDE_TOKEN:-changeme}"
+
+# Aviso de seguranca: credenciais fracas/default/iguais. Nao bloqueia (uso pessoal),
+# so alerta no log para o dono trocar no Environment do EasyPanel.
+DEFAULT_CRED='senha-antiga-removida'
+warn_cred() { echo ">> [SEGURANCA] $*"; }
+case "$PANEL_PASSWORD" in
+  ''|changeme|"$DEFAULT_CRED") warn_cred "PANEL_PASSWORD esta no DEFAULT/vazio — troque por uma senha forte." ;;
+esac
+case "$IDE_TOKEN" in
+  ''|changeme|"$DEFAULT_CRED") warn_cred "IDE_TOKEN esta no DEFAULT/vazio — troque por um token forte." ;;
+esac
+[ -n "$PANEL_PASSWORD" ] && [ "$PANEL_PASSWORD" = "$IDE_TOKEN" ] && \
+  warn_cred "PANEL_PASSWORD == IDE_TOKEN — use credenciais DIFERENTES para painel e IDE."
 
 # respawn simples: roda um comando em loop (reabre se cair), como ubuntu, logando em arquivo
 run_bg() {  # $1=label  $2=logfile  resto=comando

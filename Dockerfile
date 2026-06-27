@@ -122,12 +122,12 @@ RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/claude-loop.sh \
         /usr/local/bin/claude-session.sh /usr/local/bin/backup.sh
 
 WORKDIR /root
-EXPOSE 8080 7000
+EXPOSE 8080
 
-# Healthcheck: bate no code-server interno (8081/healthz, sem auth) — independe da
-# GATEWAY_PORT. start-period generoso pro code-server/Caddy subirem.
+# Healthcheck: bate no GATEWAY (Caddy responde /healthz com "ok", sem auth e sempre
+# de pe — independe do IDE estar ligado). start-period generoso pro Caddy/painel subirem.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD curl -fsS http://localhost:8081/healthz || exit 1
+  CMD curl -fsS "http://localhost:${GATEWAY_PORT:-8080}/healthz" || exit 1
 
 # Gateway (Caddy) em primeiro plano + sessao tmux "claude" persistente.
 # Config/extensoes do code-server ficam em /root (volume) -> persistem no redeploy.

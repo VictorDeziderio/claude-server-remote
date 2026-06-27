@@ -15,8 +15,10 @@ const crypto = require('crypto');
 const { execFile } = require('child_process');
 
 const HOME = process.env.HOME || '/root';
-const PORT = parseInt(process.env.PANEL_PORT || '7000', 10);
-const BIND = process.env.PANEL_BIND || '0.0.0.0';
+// Defaults alinhados com o start.sh (gateway -> painel interno). Sempre atras do Caddy:
+// loopback + porta interna 7001. Em producao o start.sh passa esses valores explicitos.
+const PORT = parseInt(process.env.PANEL_PORT || '7001', 10);
+const BIND = process.env.PANEL_BIND || '127.0.0.1';
 const PROJECTS_DIR = process.env.PROJECTS_DIR || path.join(HOME, 'projects');
 const ACTIVE_FILE = path.join(HOME, '.claude', 'active-project');
 const CONFIG_FILE = process.env.PANEL_CONFIG || path.join(HOME, '.claude', 'panel.json');
@@ -74,11 +76,15 @@ function cookie(req, name) {
   return '';
 }
 const isAuthed = (req) => cookie(req, COOKIE) === AUTH_TOKEN;
-function doLogin(body, res) {
+function doLogin(body, res, req) {
   const okUser = String(body.login || '') === PANEL_LOGIN;
   const okPass = !!PANEL_PASSWORD && String(body.password || '') === PANEL_PASSWORD;
   if (okUser && okPass) {
-    res.setHeader('Set-Cookie', `${COOKIE}=${AUTH_TOKEN}; HttpOnly; Path=/; SameSite=Lax; Max-Age=2592000`);
+    // Secure so quando servido via HTTPS (EasyPanel/Caddy enviam X-Forwarded-Proto)
+    // — protege o cookie sob TLS sem quebrar acesso http local.
+    const https = String((req && req.headers['x-forwarded-proto']) || '').split(',')[0].trim() === 'https';
+    res.setHeader('Set-Cookie',
+      `${COOKIE}=${AUTH_TOKEN}; HttpOnly; Path=/; SameSite=Lax; Max-Age=2592000${https ? '; Secure' : ''}`);
     return { ok: true, msg: 'autenticado' };
   }
   return { ok: false, msg: 'login ou senha incorretos' };
@@ -123,6 +129,13 @@ function isLoggedIn() {
   } catch { /**/ }
   return false;
 }
+// versao do Claude e estavel em runtime -> resolve uma vez e cacheia (evita spawn por request)
+let verCache = '';
+async function claudeVersion() {
+  if (verCache) return verCache;
+  verCache = ((await sh('claude', ['--version'])).stdout || '').trim().split('\n')[0] || '?';
+  return verCache;
+}
 async function getStatus() {
   const up = (await sh('tmux', ['has-session', '-t', SESSION])).ok;
   let pane = '';
@@ -130,7 +143,7 @@ async function getStatus() {
     const r = await sh('tmux', ['display-message', '-p', '-t', SESSION, '#{pane_current_command}']);
     pane = (r.stdout || '').trim();
   }
-  const ver = ((await sh('claude', ['--version'])).stdout || '').trim().split('\n')[0] || '?';
+  const ver = await claudeVersion();
   return { up, pane, claudeRunning: up && /node|claude/.test(pane), ver, logged: isLoggedIn(), active: activeProject() };
 }
 function claudeUsage() {
@@ -305,7 +318,7 @@ const server = http.createServer(async (req, res) => {
     const url = req.url.split('?')[0];
 
     // --- endpoints livres (sem auth) ---
-    if (req.method === 'POST' && url === '/api/login') return sendJson(res, 200, doLogin(await readJson(req), res));
+    if (req.method === 'POST' && url === '/api/login') return sendJson(res, 200, doLogin(await readJson(req), res, req));
     if (req.method === 'POST' && url === '/api/logout') {
       res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; Path=/; Max-Age=0`);
       return sendJson(res, 200, { ok: true });
