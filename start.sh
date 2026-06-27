@@ -115,8 +115,8 @@ fi
 
 # ============================================================================
 # Gateway de UMA PORTA SO (Caddy): painel em / (LOGIN+SENHA) e IDE em /ide (TOKEN).
-#   - painel -> 127.0.0.1:7001 (interno; o gateway faz basic_auth PANEL_LOGIN+PANEL_PASSWORD)
-#   - IDE    -> 127.0.0.1:8081 (interno, --auth password = IDE_TOKEN; FORA do basic_auth)
+#   - painel -> 127.0.0.1:7001 (interno; tem PAGINA DE LOGIN propria, cookie de sessao)
+#   - IDE    -> 127.0.0.1:8081 (interno, --auth password = IDE_TOKEN)
 #   O /ide e acessivel so com o IDE_TOKEN (link compartilhavel). Porta publica: GATEWAY_PORT.
 # ============================================================================
 GATEWAY_PORT="${GATEWAY_PORT:-8080}"   # porta publica (aponte o dominio do EasyPanel p/ ela)
@@ -149,12 +149,13 @@ if [ "${PANEL_ENABLED:-true}" = "true" ]; then
   run_bg "painel" "$H/.claude/logs/panel.log" \
     env PANEL_BIND=127.0.0.1 PANEL_PORT="$PANEL_PORT" IDE_PATH=/ide \
       PROJECTS_DIR="$PROJECTS_DIR" FULL_AUTOCMD="$FULL_AUTOCMD" \
+      PANEL_LOGIN="$PANEL_LOGIN" PANEL_PASSWORD="$PANEL_PASSWORD" \
       node /usr/local/bin/panel/server.js
 fi
 
-# Gateway (Caddy) — PID principal. Gera o Caddyfile com a senha hasheada.
+# Gateway (Caddy) — PID principal. So faz proxy: o painel tem PAGINA DE LOGIN propria
+# (cookie de sessao) e o /ide tem o token nativo do code-server. Sem basic_auth aqui.
 CADDYFILE="$H/.claude/Caddyfile"
-PASS_HASH="$(caddy hash-password --plaintext "$PANEL_PASSWORD" 2>/dev/null || true)"
 cat > "$CADDYFILE" <<CADDY
 {
 	auto_https off
@@ -166,21 +167,16 @@ cat > "$CADDYFILE" <<CADDY
 		respond @health "ok" 200
 
 		# IDE: protegido pelo proprio code-server (--auth password = IDE_TOKEN).
-		# Vem ANTES do basic_auth e o handle_path encerra a requisicao -> /ide NAO
-		# passa pelo login do painel (acesso so com o TOKEN).
 		redir /ide /ide/
 		handle_path /ide/* {
 			reverse_proxy 127.0.0.1:${IDE_PORT}
 		}
 
-		# Painel: protegido por LOGIN + PASSWORD (basic_auth do gateway)
-		basic_auth {
-			${PANEL_LOGIN} ${PASS_HASH}
-		}
+		# Painel "Claude Remote": pagina de login propria (PANEL_LOGIN + PANEL_PASSWORD).
 		reverse_proxy 127.0.0.1:${PANEL_PORT}
 	}
 }
 CADDY
 chown "$U:$U" "$CADDYFILE" 2>/dev/null || true
-echo ">> gateway on (${GATEWAY_PORT}) | painel: / (login '${PANEL_LOGIN}' + PANEL_PASSWORD) | IDE: /ide (IDE_TOKEN)"
+echo ">> gateway on (${GATEWAY_PORT}) | painel: / (login proprio '${PANEL_LOGIN}') | IDE: /ide (IDE_TOKEN)"
 exec caddy run --config "$CADDYFILE" --adapter caddyfile

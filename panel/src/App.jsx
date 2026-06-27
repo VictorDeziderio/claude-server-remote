@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   Activity, Cpu, KeyRound, Tag, GitBranch, Radio, RefreshCw, MonitorPlay,
-  Pencil, Plus, Power, Wifi, WifiOff, Check, X, Loader2, Terminal,
+  Pencil, Plus, Power, Wifi, WifiOff, Check, X, Loader2, Terminal, LogOut,
 } from 'lucide-react'
 import Logo from './components/Logo.jsx'
+import Login from './components/Login.jsx'
 import * as api from './api.js'
 
 const fmtInt = (n) => String(n ?? 0).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
@@ -74,6 +75,7 @@ function Chip({ on, onClick, busy, labelOn, labelOff, Icon }) {
 
 export default function App() {
   const [data, setData] = useState(null)
+  const [authed, setAuthed] = useState(true)
   const [flash, setFlash] = useState(null)
   const [busy, setBusy] = useState('')
   const [drafts, setDrafts] = useState({})
@@ -82,6 +84,8 @@ export default function App() {
   const refresh = useCallback(async () => {
     try {
       const d = await api.getState()
+      if (d && d.__unauth) { setAuthed(false); return }
+      setAuthed(true)
       setData(d)
       setDrafts((prev) => {
         const next = { ...prev }
@@ -98,6 +102,14 @@ export default function App() {
     const t = setInterval(refresh, 15000)
     return () => clearInterval(t)
   }, [refresh])
+
+  const doLogout = async () => {
+    try { await api.logout() } catch { /* ignore */ }
+    setData(null)
+    setAuthed(false)
+  }
+
+  if (!authed) return <Login onSuccess={() => { setAuthed(true); refresh() }} />
 
   const run = async (key, fn) => {
     setBusy(key)
@@ -141,9 +153,14 @@ export default function App() {
             </p>
           </div>
         </div>
-        <Btn variant="ghost" onClick={refresh} busy={busy === 'refresh'}>
-          <RefreshCw className="h-3.5 w-3.5" /> atualizar
-        </Btn>
+        <div className="flex items-center gap-2">
+          <Btn variant="ghost" onClick={refresh} busy={busy === 'refresh'}>
+            <RefreshCw className="h-3.5 w-3.5" /> atualizar
+          </Btn>
+          <Btn variant="ghost" onClick={doLogout}>
+            <LogOut className="h-3.5 w-3.5" /> sair
+          </Btn>
+        </div>
       </header>
 
       {/* Flash */}

@@ -1,7 +1,9 @@
-// Cliente da API do painel (mesmo origin, atras do gateway que ja autentica).
+// Cliente da API do painel (mesmo origin). Auth por cookie de sessao (página de login).
 const toJson = (r) => r.json()
 
-export const getState = () => fetch('/api/state', { cache: 'no-store' }).then(toJson)
+// Retorna { __unauth: true } quando nao autenticado (a SPA mostra o login).
+export const getState = () =>
+  fetch('/api/state', { cache: 'no-store' }).then((r) => (r.status === 401 ? { __unauth: true } : r.json()))
 
 const post = (path, body) =>
   fetch(path, {
@@ -9,6 +11,9 @@ const post = (path, body) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body || {}),
   }).then(toJson)
+
+export const login = (loginName, password) => post('/api/login', { login: loginName, password })
+export const logout = () => post('/api/logout', {})
 
 export const createProject = (name, autoStartClaude, autoRemote) =>
   post('/api/create', { name, autoStartClaude, autoRemote })

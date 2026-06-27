@@ -11,6 +11,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 
 const HOME = process.env.HOME || '/root';
@@ -24,6 +25,14 @@ const SESSION_SCRIPT = '/usr/local/bin/claude-session.sh';
 const SESSION = 'claude';
 const FULL_AUTOCMD = process.env.FULL_AUTOCMD || '';
 const DIST = path.join(__dirname, 'dist');
+
+// Auth do painel: pagina de login propria (cookie assinado), em vez do basic_auth do gateway.
+const PANEL_LOGIN = process.env.PANEL_LOGIN || 'admin';
+const PANEL_PASSWORD = process.env.PANEL_PASSWORD || '';
+// token estavel derivado da senha (sobrevive a restart do painel; nao da p/ forjar sem a senha)
+const AUTH_TOKEN = crypto.createHmac('sha256', PANEL_PASSWORD || 'claude-remote')
+  .update('claude-remote-auth-v1').digest('hex');
+const COOKIE = 'cr_auth';
 
 fs.mkdirSync(PROJECTS_DIR, { recursive: true });
 
@@ -54,6 +63,26 @@ function readJson(req) {
   });
 }
 const truthy = (v) => v === true || v === 'true' || v === 'on' || v === '1';
+
+function cookie(req, name) {
+  const h = req.headers.cookie || '';
+  for (const part of h.split(';')) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    if (part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return '';
+}
+const isAuthed = (req) => cookie(req, COOKIE) === AUTH_TOKEN;
+function doLogin(body, res) {
+  const okUser = String(body.login || '') === PANEL_LOGIN;
+  const okPass = !!PANEL_PASSWORD && String(body.password || '') === PANEL_PASSWORD;
+  if (okUser && okPass) {
+    res.setHeader('Set-Cookie', `${COOKIE}=${AUTH_TOKEN}; HttpOnly; Path=/; SameSite=Lax; Max-Age=2592000`);
+    return { ok: true, msg: 'autenticado' };
+  }
+  return { ok: false, msg: 'login ou senha incorretos' };
+}
 
 // ---------- config (panel.json) ----------
 function loadConfig() {
@@ -274,18 +303,33 @@ function serveStatic(req, res) {
 const server = http.createServer(async (req, res) => {
   try {
     const url = req.url.split('?')[0];
-    if (req.method === 'GET' && url === '/api/state') return sendJson(res, 200, await buildState());
-    if (req.method === 'POST' && url.startsWith('/api/')) {
-      const body = await readJson(req);
-      let r;
-      if (url === '/api/create') r = await createProject(body.name, !!body.autoStartClaude, !!body.autoRemote);
-      else if (url === '/api/rename') r = await renameProject(body.name, body.newName);
-      else if (url === '/api/config') r = await setConfig(body.name, body.key, body.value);
-      else if (url === '/api/restart') r = await restartOn(body.name);
-      else if (url === '/api/remote') r = await sendRemote();
-      else return sendJson(res, 404, { ok: false, msg: 'rota desconhecida' });
-      return sendJson(res, 200, r);
+
+    // --- endpoints livres (sem auth) ---
+    if (req.method === 'POST' && url === '/api/login') return sendJson(res, 200, doLogin(await readJson(req), res));
+    if (req.method === 'POST' && url === '/api/logout') {
+      res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; Path=/; Max-Age=0`);
+      return sendJson(res, 200, { ok: true });
     }
+
+    // --- API protegida (cookie de sessao) ---
+    if (url.startsWith('/api/')) {
+      if (!isAuthed(req)) return sendJson(res, 401, { ok: false, msg: 'nao autenticado' });
+      if (req.method === 'GET' && url === '/api/state') return sendJson(res, 200, await buildState());
+      if (req.method === 'POST') {
+        const body = await readJson(req);
+        let r;
+        if (url === '/api/create') r = await createProject(body.name, !!body.autoStartClaude, !!body.autoRemote);
+        else if (url === '/api/rename') r = await renameProject(body.name, body.newName);
+        else if (url === '/api/config') r = await setConfig(body.name, body.key, body.value);
+        else if (url === '/api/restart') r = await restartOn(body.name);
+        else if (url === '/api/remote') r = await sendRemote();
+        else return sendJson(res, 404, { ok: false, msg: 'rota desconhecida' });
+        return sendJson(res, 200, r);
+      }
+      return sendJson(res, 404, { ok: false, msg: 'rota desconhecida' });
+    }
+
+    // --- SPA estatica (a propria SPA mostra o login quando /api/state da 401) ---
     if (req.method === 'GET') return serveStatic(req, res);
     sendJson(res, 405, { ok: false, msg: 'method not allowed' });
   } catch (e) {
