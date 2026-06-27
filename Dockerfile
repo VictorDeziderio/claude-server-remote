@@ -59,8 +59,11 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 RUN npm install -g @anthropic-ai/claude-code playwright pnpm yarn bun \
     && npm cache clean --force
 
-# 5) Browsers do Playwright + dependencias de SO (em /opt/ms-playwright)
-RUN playwright install --with-deps chromium \
+# 5) Browsers do Playwright + dependencias de SO.
+#    - chromium: bundled do Playwright (em /opt/ms-playwright)
+#    - chrome: Google Chrome estavel real (canal "chrome"), instalado no sistema
+#      (/opt/google/chrome) via apt. Use no Playwright com channel: 'chrome'.
+RUN playwright install --with-deps chromium chrome \
     && rm -rf /var/lib/apt/lists/*
 
 # 6) code-server (VS Code no navegador)

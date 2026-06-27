@@ -116,11 +116,12 @@ sobe um **watchdog** (recria a sessão se ela cair) → após carregar, envia
 ---
 
 ## 🛠️ Toolchain incluído
-`claude-code` · `playwright` (chromium) · node 22 · npm/pnpm/yarn/bun · git · `gh` (GitHub CLI) ·
-ripgrep · fd · jq · tree · build-essential · python3/pip/venv · `psql` (postgresql-client) ·
-tmux · code-server.
+`claude-code` · `playwright` (chromium + **Google Chrome** estável) · node 22 · npm/pnpm/yarn/bun ·
+git · `gh` (GitHub CLI) · ripgrep · fd · jq · tree · build-essential · python3/pip/venv ·
+`psql` (postgresql-client) · tmux · code-server.
 
-Adicionar mais browsers Playwright: `playwright install firefox webkit`.
+No Playwright, use o Google Chrome real com `channel: 'chrome'` (senão usa o chromium bundled).
+Adicionar mais browsers: `playwright install firefox webkit`.
 
 ---
 
