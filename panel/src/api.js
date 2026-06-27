@@ -34,3 +34,4 @@ export const fsRename = (p, newPath) => post('/api/fs/rename', { path: p, newPat
 // --- terminal (tmux capture/send) ---
 export const termCapture = (name) => get('/api/term/capture?name=' + encodeURIComponent(name || ''))
 export const termSend = (name, text, key) => post('/api/term/send', { name, text, key })
+export const termExit = (name) => post('/api/term/exit', { name })

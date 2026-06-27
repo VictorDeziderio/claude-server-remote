@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
-  Folder, FileText, RefreshCw, Save, X, Trash2, FilePlus, FolderPlus,
-  Home, Loader2, ChevronRight, Pencil,
+  Folder, FileText, RefreshCw, Save, Trash2, FilePlus, FolderPlus,
+  Home, Loader2, ChevronRight, Pencil, ArrowLeft,
 } from 'lucide-react'
 import * as api from '../api.js'
 
@@ -68,20 +68,18 @@ export default function Files({ initialPath = '', onFlash }) {
       <div className="rounded-2xl bg-ink-800 ring-1 ring-white/5">
         <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2 text-sm">
+            <button onClick={() => setOpen(null)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-ink-500 px-3 py-1.5 text-[13px] font-medium text-slate-100 transition hover:bg-ink-500/70">
+              <ArrowLeft className="h-3.5 w-3.5" /> Voltar
+            </button>
             <FileText className="h-4 w-4 shrink-0 text-claude" />
             <code className="truncate text-slate-200">/root/{open.path}</code>
             {dirty && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-300">não salvo</span>}
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={save} disabled={busy === 'save' || !dirty}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-claude/90 px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-claude disabled:opacity-40">
-              {busy === 'save' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Salvar
-            </button>
-            <button onClick={() => setOpen(null)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-ink-500 px-3 py-1.5 text-[13px] font-medium text-slate-100 transition hover:bg-ink-500/70">
-              <X className="h-3.5 w-3.5" /> Fechar
-            </button>
-          </div>
+          <button onClick={save} disabled={busy === 'save' || !dirty}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-claude/90 px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-claude disabled:opacity-40">
+            {busy === 'save' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Salvar
+          </button>
         </div>
         <textarea
           value={draft}

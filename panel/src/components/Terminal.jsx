@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Loader2, ChevronUp, ChevronDown, Send, ExternalLink, LogIn } from 'lucide-react'
+import { Loader2, ChevronUp, ChevronDown, Send, ExternalLink, LogIn, Power } from 'lucide-react'
 import * as api from '../api.js'
 
 // extrai URLs https da tela (ex.: link de login OAuth que o Claude imprime)
@@ -8,19 +8,16 @@ const findUrls = (txt) => [...new Set((txt.match(/https?:\/\/[^\s'"()\]]+/g) || 
 // Console simples da sessao tmux do projeto: mostra a tela (polling) e envia teclas.
 // Serve para LOGAR o Claude (rodar /login, escolher conta com ↑ ↓ Enter) pelo painel.
 export default function Terminal({ projects = [], initialName = '', onFlash }) {
-  const [sel, setSel] = useState(initialName || projects[0]?.name || '')
+  const [sel, setSel] = useState(initialName || 'shell') // 'shell' = bash em /root
   const [screen, setScreen] = useState('')
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const preRef = useRef(null)
 
   const capture = useCallback(async (name) => {
-    if (!name) return
     const r = await api.termCapture(name)
     setScreen(r.ok ? r.content : `[sessão indisponível: ${r.msg || ''}]`)
   }, [])
-
-  useEffect(() => { if (!sel && projects[0]) setSel(projects[0].name) }, [projects, sel])
 
   useEffect(() => {
     capture(sel)
@@ -39,6 +36,15 @@ export default function Terminal({ projects = [], initialName = '', onFlash }) {
     setTimeout(() => capture(sel), 200)
   }
   const submit = async () => { await send(input, 'Enter'); setInput('') }
+  const exitClaude = async () => {
+    if (!sel) return
+    if (!window.confirm(`Sair do Claude atual em "claude-${sel}"? Se o auto-start estiver ON, uma nova conversa é aberta em seguida.`)) return
+    setBusy(true)
+    const r = await api.termExit(sel)
+    setBusy(false)
+    onFlash?.(r)
+    setTimeout(() => capture(sel), 700)
+  }
 
   const urls = findUrls(screen)
 
@@ -52,7 +58,7 @@ export default function Terminal({ projects = [], initialName = '', onFlash }) {
             onChange={(e) => setSel(e.target.value)}
             className="rounded-lg bg-ink-900 px-2 py-1 text-sm text-slate-200 ring-1 ring-white/10 focus:outline-none focus:ring-claude/40"
           >
-            {projects.length === 0 && <option value="">(nenhum projeto)</option>}
+            <option value="shell">Shell (/root)</option>
             {projects.map((p) => <option key={p.name} value={p.name}>claude-{p.name}</option>)}
           </select>
           <KeyBtn onClick={() => send('claude', 'Enter')}><LogIn className="h-3.5 w-3.5" /> claude</KeyBtn>
@@ -64,6 +70,12 @@ export default function Terminal({ projects = [], initialName = '', onFlash }) {
           <KeyBtn onClick={() => send('', 'Enter')}>Enter</KeyBtn>
           <KeyBtn onClick={() => send('', 'Escape')}>Esc</KeyBtn>
           <KeyBtn onClick={() => send('', 'C-c')}>Ctrl+C</KeyBtn>
+          {sel !== 'shell' && (
+            <button onClick={exitClaude} disabled={busy} title="encerra a conversa atual do Claude"
+              className="inline-flex items-center gap-1 rounded-md bg-rose-500/15 px-2 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-500/25 transition hover:bg-rose-500/25 disabled:opacity-50">
+              <Power className="h-3.5 w-3.5" /> Sair do Claude
+            </button>
+          )}
         </div>
       </div>
 

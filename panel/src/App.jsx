@@ -2,12 +2,13 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   Cpu, GitBranch, Radio, RefreshCw, Activity,
   Pencil, Plus, Power, Wifi, WifiOff, Check, X, Loader2, LogOut,
-  Lock, Save, UserRound, Tag, LayoutDashboard, FolderTree, SquareTerminal, FolderOpen,
+  Lock, Save, UserRound, Tag, LayoutDashboard, FolderTree, SquareTerminal, FolderOpen, BarChart3,
 } from 'lucide-react'
 import Logo from './components/Logo.jsx'
 import Login from './components/Login.jsx'
 import Files from './components/Files.jsx'
 import TerminalView from './components/Terminal.jsx'
+import Report from './components/Report.jsx'
 import * as api from './api.js'
 
 const fmtInt = (n) => String(n ?? 0).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
@@ -81,9 +82,10 @@ export default function App() {
   const [drafts, setDrafts] = useState({})
   const [editing, setEditing] = useState({})
   const [form, setForm] = useState({ name: '', autoStartClaude: true, autoRemote: true })
-  const [view, setView] = useState('dashboard')   // dashboard | files | terminal
+  const [view, setView] = useState('dashboard')   // dashboard | report | files | terminal
   const [filesPath, setFilesPath] = useState('')
   const [termName, setTermName] = useState('')
+  const [showNew, setShowNew] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -131,6 +133,11 @@ export default function App() {
     if (r.ok) setEditing((e) => ({ ...e, [name]: false }))
     return r
   })
+  const createNow = () => run('create', async () => {
+    const r = await api.createProject(form.name.trim(), form.autoStartClaude, form.autoRemote)
+    if (r.ok) { setForm({ name: '', autoStartClaude: true, autoRemote: true }); setShowNew(false) }
+    return r
+  })
 
   if (!data) {
     return <div className="flex h-full items-center justify-center text-slate-400"><Loader2 className="mr-2 h-5 w-5 animate-spin text-claude" /> carregando…</div>
@@ -138,7 +145,7 @@ export default function App() {
 
   const login = data.login || { logged: false, account: '' }
   const u = data.usage || { today: {}, total: {} }
-  const titles = { dashboard: 'Dashboard', files: 'Arquivos', terminal: 'Terminal' }
+  const titles = { dashboard: 'Dashboard', report: 'Relatório', files: 'Arquivos', terminal: 'Terminal' }
 
   const openFiles = (p) => { setFilesPath(p); setView('files') }
   const openTerm = (name) => { setTermName(name); setView('terminal') }
@@ -153,6 +160,7 @@ export default function App() {
         </div>
         <nav className="space-y-1">
           <NavItem icon={LayoutDashboard} label="Dashboard" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
+          <NavItem icon={BarChart3} label="Relatório" active={view === 'report'} onClick={() => setView('report')} />
           <NavItem icon={FolderTree} label="Arquivos" active={view === 'files'} onClick={() => openFiles('')} />
           <NavItem icon={SquareTerminal} label="Terminal" active={view === 'terminal'} onClick={() => setView('terminal')} />
         </nav>
@@ -168,10 +176,10 @@ export default function App() {
       {/* Conteúdo */}
       <main className="min-w-0 flex-1 px-4 py-6 sm:px-8">
         {/* Nav mobile */}
-        <div className="mb-4 flex gap-2 sm:hidden">
-          {[['dashboard', LayoutDashboard], ['files', FolderTree], ['terminal', SquareTerminal]].map(([v, Ic]) => (
+        <div className="mb-4 grid grid-cols-4 gap-2 sm:hidden">
+          {[['dashboard', LayoutDashboard], ['report', BarChart3], ['files', FolderTree], ['terminal', SquareTerminal]].map(([v, Ic]) => (
             <button key={v} onClick={() => (v === 'files' ? openFiles('') : setView(v))}
-              className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-medium ${view === v ? 'bg-claude/15 text-claude ring-1 ring-claude/25' : 'bg-ink-800 text-slate-400'}`}>
+              className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-medium ${view === v ? 'bg-claude/15 text-claude ring-1 ring-claude/25' : 'bg-ink-800 text-slate-400'}`}>
               <Ic className="h-4 w-4" /> {titles[v]}
             </button>
           ))}
@@ -179,7 +187,10 @@ export default function App() {
 
         <div className="mb-5 flex items-center justify-between">
           <h1 className="text-lg font-semibold text-white">{titles[view]}</h1>
-          <Btn variant="ghost" onClick={refresh}><RefreshCw className="h-3.5 w-3.5" /> atualizar</Btn>
+          <div className="flex items-center gap-2">
+            {view === 'dashboard' && <Btn variant="accent" onClick={() => setShowNew(true)}><Plus className="h-3.5 w-3.5" /> Novo projeto</Btn>}
+            <Btn variant="ghost" onClick={refresh}><RefreshCw className="h-3.5 w-3.5" /> atualizar</Btn>
+          </div>
         </div>
 
         {flash && (
@@ -188,6 +199,7 @@ export default function App() {
           </div>
         )}
 
+        {view === 'report' && <Report data={data} />}
         {view === 'files' && <Files key={filesPath} initialPath={filesPath} onFlash={setFlash} />}
         {view === 'terminal' && <TerminalView projects={data.projects} initialName={termName} onFlash={setFlash} />}
 
@@ -270,25 +282,38 @@ export default function App() {
               ))}
             </section>
 
-            {/* Novo projeto */}
-            <section className="mt-5 rounded-2xl bg-ink-800 p-4 ring-1 ring-white/5">
-              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-200"><Plus className="h-4 w-4 text-claude" /> Novo projeto</div>
-              <div className="flex flex-wrap items-center gap-3">
-                <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="nome-do-projeto" pattern="[A-Za-z0-9._-]{1,64}"
-                  className="w-56 rounded-lg bg-ink-900 px-3 py-2 text-sm text-slate-200 ring-1 ring-white/10 focus:outline-none focus:ring-claude/40" />
-                <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={form.autoStartClaude} onChange={(e) => setForm((f) => ({ ...f, autoStartClaude: e.target.checked }))} className="accent-[#D97757]" /><Cpu className="h-3.5 w-3.5 text-slate-400" /> Iniciar o Claude</label>
-                <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={form.autoRemote} onChange={(e) => setForm((f) => ({ ...f, autoRemote: e.target.checked }))} className="accent-[#D97757]" /><Radio className="h-3.5 w-3.5 text-slate-400" /> Religar o remote</label>
-                <Btn variant="accent" busy={busy === 'create'} onClick={() => run('create', async () => {
-                  const r = await api.createProject(form.name.trim(), form.autoStartClaude, form.autoRemote)
-                  if (r.ok) setForm({ name: '', autoStartClaude: true, autoRemote: true })
-                  return r
-                })}><Power className="h-3.5 w-3.5" /> Criar</Btn>
-              </div>
-              <p className="mt-2 text-xs text-slate-500">Cria a pasta em <code>{data.projectsDir}</code> + <code>git init</code>, grava no <code>panel.json</code> e sobe a sessão tmux do projeto.</p>
-            </section>
           </>
         )}
       </main>
+
+      {/* Modal: novo projeto (todos os serviços ativos por padrão) */}
+      {showNew && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowNew(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-ink-800 p-5 shadow-2xl shadow-black/40 ring-1 ring-white/10" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-semibold text-white"><Plus className="h-4 w-4 text-claude" /> Novo projeto</div>
+              <button onClick={() => setShowNew(false)} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-200"><X className="h-4 w-4" /></button>
+            </div>
+            <label className="mb-1 block text-xs text-slate-400">Nome do projeto</label>
+            <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') createNow() }} autoFocus placeholder="meu-projeto" pattern="[A-Za-z0-9._-]{1,64}"
+              className="w-full rounded-lg bg-ink-900 px-3 py-2 text-sm text-slate-200 ring-1 ring-white/10 focus:outline-none focus:ring-claude/40" />
+            <div className="mt-4 space-y-2">
+              <div className="text-xs text-slate-400">Serviços</div>
+              <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-ink-900 px-3 py-2 text-sm text-slate-200 ring-1 ring-white/5">
+                <input type="checkbox" checked={form.autoStartClaude} onChange={(e) => setForm((f) => ({ ...f, autoStartClaude: e.target.checked }))} className="accent-[#D97757]" /><Cpu className="h-4 w-4 text-claude" /> Iniciar o Claude na sessão
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-ink-900 px-3 py-2 text-sm text-slate-200 ring-1 ring-white/5">
+                <input type="checkbox" checked={form.autoRemote} onChange={(e) => setForm((f) => ({ ...f, autoRemote: e.target.checked }))} className="accent-[#D97757]" /><Radio className="h-4 w-4 text-claude" /> Religar o remote-control
+              </label>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setShowNew(false)}>Cancelar</Btn>
+              <Btn variant="accent" busy={busy === 'create'} onClick={createNow}><Power className="h-3.5 w-3.5" /> Criar projeto</Btn>
+            </div>
+            <p className="mt-3 text-xs text-slate-500">Cria a pasta em <code>{data.projectsDir}</code> + <code>git init</code> e sobe a sessão tmux do projeto.</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

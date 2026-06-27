@@ -148,7 +148,7 @@ async function claudeVersion() {
 
 // sessao tmux do projeto de pe? (match exato com "=")
 async function sessionUp(name) {
-  return (await sh('tmux', ['has-session', '-t', '=' + sessionName(name)])).ok;
+  return (await sh('tmux', ['has-session', '-t', sessionName(name)])).ok;
 }
 // Claude de fato rodando nessa sessao? Le o flag file que o claude-loop.sh mantem
 // (o pane_current_command mostra "bash"/o supervisor e dava falso-negativo de "parado").
@@ -158,25 +158,34 @@ function claudeRunningFlag(name) {
 
 function claudeUsage() {
   const base = path.join(HOME, '.claude', 'projects');
+  // o Claude guarda o historico em ~/.claude/projects/<cwd codificado> (nao-alfanumerico -> "-")
+  const encOf = (p) => p.replace(/[^a-zA-Z0-9]/g, '-');
+  const projByEnc = {}; // <encoded cwd> -> nome do projeto atual
+  for (const name of listProjects()) projByEnc[encOf(path.join(PROJECTS_DIR, name))] = name;
+
   const out = {
     sessions: 0, messages: 0,
     today: { in: 0, out: 0, cacheW: 0, cacheR: 0 },
     total: { in: 0, out: 0, cacheW: 0, cacheR: 0 },
+    byProject: {}, // nome -> {in,out,cacheW,cacheR,messages}
+    dailyArr: [],  // [{date,in,out}] ultimos 30 dias
   };
+  const daily = {};
   const files = [];
-  (function walk(d) {
+  (function walk(d, top) {
     let ents; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
     for (const e of ents) {
       const p = path.join(d, e.name);
-      if (e.isDirectory()) walk(p);
-      else if (e.name.endsWith('.jsonl')) files.push(p);
+      if (e.isDirectory()) walk(p, top || e.name); // top = 1o nivel sob base = cwd codificado
+      else if (e.name.endsWith('.jsonl')) files.push({ path: p, top: top || '' });
     }
-  })(base);
+  })(base, '');
   out.sessions = files.length;
   const today = new Date().toISOString().slice(0, 10);
   for (const f of files) {
     let data;
-    try { if (fs.statSync(f).size > 64 * 1024 * 1024) continue; data = fs.readFileSync(f, 'utf8'); } catch { continue; }
+    try { if (fs.statSync(f.path).size > 64 * 1024 * 1024) continue; data = fs.readFileSync(f.path, 'utf8'); } catch { continue; }
+    const pname = projByEnc[f.top] || null;
     for (const line of data.split('\n')) {
       if (!line) continue;
       let o; try { o = JSON.parse(line); } catch { continue; }
@@ -186,11 +195,19 @@ function claudeUsage() {
       const iTok = usg.input_tokens || 0, oTok = usg.output_tokens || 0;
       const cw = usg.cache_creation_input_tokens || 0, cr = usg.cache_read_input_tokens || 0;
       out.total.in += iTok; out.total.out += oTok; out.total.cacheW += cw; out.total.cacheR += cr;
-      if (String(o.timestamp || '').slice(0, 10) === today) {
-        out.today.in += iTok; out.today.out += oTok; out.today.cacheW += cw; out.today.cacheR += cr;
+      const day = String(o.timestamp || '').slice(0, 10);
+      if (day === today) { out.today.in += iTok; out.today.out += oTok; out.today.cacheW += cw; out.today.cacheR += cr; }
+      if (pname) {
+        const b = out.byProject[pname] || (out.byProject[pname] = { in: 0, out: 0, cacheW: 0, cacheR: 0, messages: 0 });
+        b.in += iTok; b.out += oTok; b.cacheW += cw; b.cacheR += cr; b.messages++;
+      }
+      if (/^\d{4}-\d\d-\d\d$/.test(day)) {
+        const dd = daily[day] || (daily[day] = { in: 0, out: 0 });
+        dd.in += iTok; dd.out += oTok;
       }
     }
   }
+  out.dailyArr = Object.keys(daily).sort().slice(-30).map((d) => ({ date: d, in: daily[d].in, out: daily[d].out }));
   return out;
 }
 // cache curto p/ nao reparsear os jsonl a cada request
@@ -217,7 +234,7 @@ async function restartProject(name) {
   if (!validName(name)) return { ok: false, msg: 'nome invalido' };
   const dir = path.join(PROJECTS_DIR, name);
   if (!fs.existsSync(dir)) return { ok: false, msg: 'pasta inexistente' };
-  await sh('tmux', ['kill-session', '-t', '=' + sessionName(name)]);
+  await sh('tmux', ['kill-session', '-t', sessionName(name)]);
   await sh('bash', [SESSION_SCRIPT, name]);
   const c = projConfig(name);
   return { ok: true, msg: `sessao de "${name}" reiniciada (Claude ${c.autoStartClaude ? 'ON' : 'OFF'}, remote ${c.autoRemote ? 'ON' : 'OFF'})` };
@@ -240,7 +257,7 @@ async function renameProject(oldName, newName) {
   const newDir = path.join(PROJECTS_DIR, newName);
   if (!fs.existsSync(oldDir)) return { ok: false, msg: 'pasta inexistente' };
   if (fs.existsSync(newDir)) return { ok: false, msg: `ja existe um projeto "${newName}"` };
-  await sh('tmux', ['kill-session', '-t', '=' + sessionName(oldName)]); // encerra a sessao antiga
+  await sh('tmux', ['kill-session', '-t', sessionName(oldName)]); // encerra a sessao antiga
   try { fs.renameSync(oldDir, newDir); }
   catch (e) { return { ok: false, msg: 'falha ao renomear: ' + e.message }; }
   const histMoved = migrateClaudeHistory(oldDir, newDir);
@@ -262,9 +279,9 @@ async function sendRemote(name) {
   if (!loginInfo().logged) return { ok: false, msg: 'Claude nao esta logado' };
   const sess = sessionName(name);
   const cmd = remoteCmdFor(name);
-  await sh('tmux', ['send-keys', '-t', '=' + sess, cmd]);
+  await sh('tmux', ['send-keys', '-t', sess, cmd]);
   await new Promise((r) => setTimeout(r, 1000));
-  await sh('tmux', ['send-keys', '-t', '=' + sess, 'Enter']);
+  await sh('tmux', ['send-keys', '-t', sess, 'Enter']);
   return { ok: true, msg: `remote reenviado: ${cmd}` };
 }
 async function setConfig(name, key, value) {
@@ -383,33 +400,53 @@ function fsRename(rel, newRel) {
 }
 
 // ---------- terminal (via tmux capture-pane / send-keys) ----------
-// Console simples para VER a tela da sessao do projeto e ENVIAR teclas — serve, entre outras
-// coisas, para LOGAR o Claude (rodar /login, escolher conta, etc) direto pelo painel.
+// Console simples: VER a tela de uma sessao e ENVIAR teclas. Dois tipos de alvo:
+//  - "shell" (ou vazio): sessao "cr-shell" = um bash em /root (SSH simples no servidor)
+//  - nome de projeto: a sessao claude-<projeto> (p/ ver/logar o Claude)
 // Nao e um PTY completo, mas funciona com tmux sem dependencias nativas.
+const SHELL_SESSION = 'cr-shell';
+async function ensureShell() {
+  if (!(await sh('tmux', ['has-session', '-t', SHELL_SESSION])).ok) {
+    await sh('tmux', ['new-session', '-d', '-s', SHELL_SESSION, '-c', HOME]); // bash em /root
+  }
+  return SHELL_SESSION;
+}
+async function termTargetSession(name) {
+  if (!name || name === 'shell') return ensureShell();   // shell em /root, criado sob demanda
+  return validName(name) ? sessionName(name) : null;     // sessao do projeto
+}
 async function termCapture(name) {
-  if (!validName(name)) return { ok: false, msg: 'projeto invalido' };
-  const sess = sessionName(name);
-  if (!(await sh('tmux', ['has-session', '-t', '=' + sess])).ok) return { ok: false, msg: 'sessao nao esta de pe' };
-  // -p imprime no stdout; -S -200 inclui ~200 linhas de scrollback p/ contexto
-  const r = await sh('tmux', ['capture-pane', '-t', '=' + sess, '-p', '-S', '-200']);
+  const sess = await termTargetSession(name);
+  if (!sess) return { ok: false, msg: 'alvo invalido' };
+  if (!(await sh('tmux', ['has-session', '-t', sess])).ok) return { ok: false, msg: 'sessao nao esta de pe' };
+  const r = await sh('tmux', ['capture-pane', '-t', sess, '-p', '-S', '-200']);
   return { ok: r.ok, content: r.stdout || '', msg: r.ok ? '' : 'falha ao capturar a tela' };
 }
 async function termSend(name, text, key) {
-  if (!validName(name)) return { ok: false, msg: 'projeto invalido' };
-  const sess = sessionName(name);
-  if (!(await sh('tmux', ['has-session', '-t', '=' + sess])).ok) return { ok: false, msg: 'sessao nao esta de pe' };
-  // texto literal primeiro (-l = nao interpreta como nome de tecla), depois a tecla especial
+  const sess = await termTargetSession(name);
+  if (!sess) return { ok: false, msg: 'alvo invalido' };
+  if (!(await sh('tmux', ['has-session', '-t', sess])).ok) return { ok: false, msg: 'sessao nao esta de pe' };
   if (typeof text === 'string' && text.length) {
     if (text.length > 4096) return { ok: false, msg: 'texto muito longo' };
-    await sh('tmux', ['send-keys', '-t', '=' + sess, '-l', text]);
+    await sh('tmux', ['send-keys', '-t', sess, '-l', text]);
   }
   if (typeof key === 'string' && key.length) {
-    // teclas validas que repassamos ao tmux (Enter, setas, controle...). Lista branca.
     const ALLOW = new Set(['Enter', 'Escape', 'Tab', 'Space', 'BSpace', 'Up', 'Down', 'Left', 'Right', 'C-c', 'C-d', 'C-u', 'C-l', 'C-a', 'C-e', 'PageUp', 'PageDown', 'Home', 'End']);
     if (!ALLOW.has(key)) return { ok: false, msg: 'tecla nao permitida' };
-    await sh('tmux', ['send-keys', '-t', '=' + sess, key]);
+    await sh('tmux', ['send-keys', '-t', sess, key]);
   }
   return { ok: true };
+}
+// Sai do Claude da sessao (Ctrl-C duas vezes). Com autoStart ON, o supervisor (claude-loop.sh)
+// reabre automaticamente uma conversa NOVA em ~3s; com autoStart OFF, cai no shell.
+async function termExit(name) {
+  if (!validName(name)) return { ok: false, msg: 'projeto invalido' };
+  const sess = sessionName(name);
+  if (!(await sh('tmux', ['has-session', '-t', sess])).ok) return { ok: false, msg: 'sessao nao esta de pe' };
+  await sh('tmux', ['send-keys', '-t', sess, 'C-c']);
+  await new Promise((r) => setTimeout(r, 400));
+  await sh('tmux', ['send-keys', '-t', sess, 'C-c']);
+  return { ok: true, msg: `Claude encerrado em ${sess} — o supervisor abre uma nova conversa` };
 }
 
 // ---------- http ----------
@@ -482,6 +519,7 @@ const server = http.createServer(async (req, res) => {
         else if (url === '/api/fs/delete') r = fsDelete(body.path);
         else if (url === '/api/fs/rename') r = fsRename(body.path, body.newPath);
         else if (url === '/api/term/send') r = await termSend(body.name, body.text, body.key);
+        else if (url === '/api/term/exit') r = await termExit(body.name);
         else return sendJson(res, 404, { ok: false, msg: 'rota desconhecida' });
         return sendJson(res, 200, r);
       }

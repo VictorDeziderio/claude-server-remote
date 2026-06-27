@@ -39,9 +39,9 @@ while true; do
     ( sleep "$DELAY"
       if is_logged_in; then
         # texto e Enter SEPARADOS (o Claude usa bracketed paste e engole o Enter junto)
-        tmux send-keys -t "=$SESS" "$FULL_AUTOCMD"
+        tmux send-keys -t "$SESS" "$FULL_AUTOCMD"
         sleep 1
-        tmux send-keys -t "=$SESS" Enter
+        tmux send-keys -t "$SESS" Enter
       fi
     ) &
   fi
