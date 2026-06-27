@@ -40,8 +40,8 @@ salvo em `/root/.claude` (volume) e **não pede de novo** nos próximos deploys.
 ---
 
 ## 🧩 tmux — sessão que não fecha
-A sessão `claude` sobrevive a desconexões do IDE/terminal (só reinicia se o container
-reiniciar). Comandos:
+A sessão `claude` sobrevive a desconexões do IDE/terminal **e se auto-recupera** se algo cair.
+Comandos:
 
 | Ação | Atalho/Comando |
 |------|----------------|
@@ -50,6 +50,21 @@ reiniciar). Comandos:
 | Listar sessões | `tmux ls` |
 | Rolar a tela | `Ctrl+b` e depois `[` (sai com `q`) |
 | Nova sessão | `tmux new -s nome` |
+
+### ♻️ Reabertura automática (respawn em 3 camadas)
+O Claude roda dentro de um loop e a sessão tem um watchdog — então ele **volta sozinho**:
+
+| O que cai | Quem reabre | Tempo |
+|-----------|-------------|-------|
+| **Claude** (você deu `exit` ou ele crashou) | loop `while` no tmux reabre o `claude` | ~3s |
+| **Sessão tmux** some (container ainda vivo) | watchdog do `start.sh` recria a sessão | ~10s |
+| **Container / code-server** cai | EasyPanel reinicia → `start.sh` refaz tudo | conforme restart policy |
+
+Ao reabrir, o Claude **restaura sozinho** a conexão de remote-control anterior (o marcador
+evita duplicar). Para forçar de novo: `/remote-control easypanel meu-servidor`.
+
+> 🐚 **Quer cair no shell de propósito?** Dê `exit` e aperte **`Ctrl+C`** na janela de 3s
+> (a mensagem `[claude saiu — reabrindo em 3s | Ctrl-C cancela]`). Sem o Ctrl+C, o Claude reabre.
 
 ---
 
@@ -71,12 +86,17 @@ reiniciar). Comandos:
 | `PROJECT_FOLDER` | `projects` | pasta (dentro de `/root`) onde o Claude inicia — **criada automaticamente se não existir** |
 | `CLAUDE_AUTOCMD` | `/remote-control easypanel` | comando enviado ao Claude no start (`""` desativa) |
 | `CLAUDE_AUTOCMD_DELAY` | `15` | segundos antes de enviar o comando |
+| `GH_TOKEN` | (vazio) | token GitHub (escopo `repo`) → auto-login do `gh` + push do backup |
+| `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` | `claude-devbox` / `devbox@easypanel.local` | identidade dos commits de backup |
+| `BACKUP_ENABLED` | `true` | liga/desliga o backup automático dos projetos |
+| `BACKUP_INTERVAL` | `3600` | intervalo entre backups (segundos) |
 
 ### 🔁 Auto-start (ao reiniciar)
 No start, o container automaticamente: garante a pasta `/root/$PROJECT_FOLDER` (cria se faltar)
-→ cria a sessão tmux `claude` nela → roda o `claude` → após carregar, envia
+→ cria a sessão tmux `claude` nela → roda o `claude` **em loop** (reabre no `exit`/crash) +
+sobe um **watchdog** (recria a sessão se ela cair) → após carregar, envia
 `CLAUDE_AUTOCMD` + `REMOTE_CONTROL_NAME` (ex.: `/remote-control easypanel meu-servidor`).
-É só `tmux attach -t claude` que já está rodando.
+É só `tmux attach -t claude` que já está rodando. (Detalhes do respawn na seção tmux acima.)
 > ⚠️ O comando só dispara se **(1) `/login` feito**, **(2) Claude ativo** e **(3) ainda não
 > foi estabelecido antes**. Sem login/Claude parado → não envia (deixa normal). E roda
 > **uma vez só**: um marcador (`/root/.claude/.remote-control-established`) evita **duplicar**
@@ -109,3 +129,33 @@ Adicionar mais browsers Playwright: `playwright install firefox webkit`.
 
 > 🔒 O IDE fica num domínio público com senha. Use uma senha forte em `IDE_PASSWORD` e
 > considere basic-auth/IP-restriction na aba Segurança.
+
+---
+
+## 🔐 Segurança — IP allowlist
+
+O filtro de IP **não** fica no container: o code-server só enxerga o IP do proxy interno
+do EasyPanel (o IP real do cliente chega no header `X-Forwarded-For`). Por isso a allowlist
+é configurada na **aba Segurança do serviço `claude`** no EasyPanel.
+
+- **Hoje:** `0.0.0.0/0` (aberto a todos — só a senha do IDE protege).
+- **Para restringir:** adicione na aba Segurança os CIDRs permitidos (ex.: seu IP fixo
+  `203.0.113.10/32`). Aí só esses IPs alcançam o domínio.
+
+> Enquanto estiver `0.0.0.0/0`, a senha `IDE_PASSWORD` é a única barreira — mantenha-a forte.
+> O Claude roda com permissão total (`bypassPermissions`), restrita ao diretório `/root`
+> (`additionalDirectories: ["/root"]`).
+
+---
+
+## 🔁 Backup automático dos projetos
+
+A cada `BACKUP_INTERVAL` segundos (default 1h), o container faz **commit + push** de cada
+repositório git dentro de `/root/$PROJECT_FOLDER`. Para funcionar, cada projeto precisa:
+
+1. ser um **repo git** (`git init`) com **remote `origin`** configurado (`git remote add origin <url>`);
+2. ter **autenticação de push** — defina `GH_TOKEN` (escopo `repo`) ou rode `gh auth login` uma vez.
+
+Repos sem `origin` são ignorados (registrados no log). Log: `/root/.claude/logs/backup.log`.
+Backup manual a qualquer momento: `bash /usr/local/bin/backup.sh` (ou `backup.sh /root/projects/meu-projeto`).
+Desligar: `BACKUP_ENABLED=false`.

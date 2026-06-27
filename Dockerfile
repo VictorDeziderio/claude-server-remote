@@ -16,7 +16,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PROJECT_FOLDER=projects \
     REMOTE_CONTROL_NAME=meu-servidor \
     CLAUDE_AUTOCMD="/remote-control easypanel" \
-    CLAUDE_AUTOCMD_DELAY=15
+    CLAUDE_AUTOCMD_DELAY=15 \
+    # GitHub: token (escopo repo) p/ auto-login do gh e push do backup. Defina no Environment.
+    GH_TOKEN= \
+    # Backup automatico dos projetos: liga/desliga + intervalo (segundos)
+    BACKUP_ENABLED=true \
+    BACKUP_INTERVAL=3600
 
 # 1) Toolchain de dev + dependencias do Claude (git, ripgrep, build, python, psql...)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -72,12 +77,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends tmux gosu \
 RUN mkdir -p /etc/claude-code
 COPY managed-settings.json /etc/claude-code/managed-settings.json
 
-# entrypoint: sobe sessao tmux "claude" (Claude Code) + code-server (IDE)
+# entrypoint + backup: sobe sessao tmux "claude" (Claude Code) + code-server (IDE)
 COPY start.sh /usr/local/bin/start.sh
-RUN chmod +x /usr/local/bin/start.sh
+COPY backup.sh /usr/local/bin/backup.sh
+RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/backup.sh
 
 WORKDIR /root
 EXPOSE 8080
+
+# Healthcheck (item 4): code-server expoe /healthz. Marca o container unhealthy se
+# o IDE travar, permitindo restart automatico. Assume IDE_ENABLED=true (default).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+  CMD curl -fsS http://localhost:8080/healthz || exit 1
 
 # IDE em primeiro plano + sessao tmux "claude" persistente.
 # Config/extensoes do code-server ficam em /root (volume) -> persistem no redeploy.

@@ -52,10 +52,33 @@ is_logged_in() {
   return 1
 }
 
-# Sessao tmux "claude" iniciada na pasta de projetos, rodando o Claude Code
-if ! as_user tmux has-session -t claude 2>/dev/null; then
+# GitHub CLI: auto-login via GH_TOKEN (item 7) + git usando gh como credential
+# helper (necessario p/ o push do backup). Vazio -> pula (login manual segue ok).
+if [ -n "${GH_TOKEN:-}" ]; then
+  if printf '%s' "$GH_TOKEN" | as_user gh auth login --with-token >/dev/null 2>&1 \
+     && as_user gh auth setup-git >/dev/null 2>&1; then
+    echo ">> gh: autenticado via GH_TOKEN"
+  else
+    echo ">> gh: falha no login via GH_TOKEN (token valido/escopo repo?)"
+  fi
+fi
+
+# Identidade git global (so define se ainda nao existir) — usada nos commits do backup.
+as_user git config --global user.email >/dev/null 2>&1 || \
+  as_user git config --global user.email "${GIT_AUTHOR_EMAIL:-devbox@easypanel.local}"
+as_user git config --global user.name  >/dev/null 2>&1 || \
+  as_user git config --global user.name  "${GIT_AUTHOR_NAME:-claude-devbox}"
+
+# Garante a sessao tmux "claude" de pe, rodando o Claude em loop.
+#  - O Claude roda dentro de um 'while true': se sair (exit/crash), reabre em 3s
+#    (Ctrl-C na janela de 3s cai no shell). O remote-control anterior e restaurado
+#    sozinho pelo Claude (marcador evita re-disparar o autocmd).
+#  - Idempotente: so cria a sessao se ela ainda nao existir (usada no boot e no watchdog).
+ensure_claude_session() {
+  as_user tmux has-session -t claude 2>/dev/null && return 0
   as_user tmux new-session -d -s claude -c "$PROJ"
-  as_user tmux send-keys -t claude 'claude' Enter
+  as_user tmux send-keys -t claude \
+    'while true; do claude; echo "[claude saiu — reabrindo em 3s | Ctrl-C cancela]"; sleep 3; done' Enter
   # apos o Claude carregar, envia o comando automatico (ex.: /remote-control easypanel meu-servidor).
   # SO dispara se: (1) /login feito  E  (2) Claude ativo  E  (3) ainda nao foi estabelecido antes.
   # O marcador evita DUPLICAR o remote-control (o Claude ja restaura o anterior do volume no start).
@@ -70,6 +93,24 @@ if ! as_user tmux has-session -t claude 2>/dev/null; then
       fi
     ) &
   fi
+}
+
+# cria a sessao agora (no boot)
+ensure_claude_session
+
+# watchdog: se a sessao tmux cair sem o container reiniciar, recria em ~10s.
+# Cobre o caso em que o tmux morre mas o code-server (PID 1) segue vivo.
+( while true; do sleep 10; ensure_claude_session; done ) &
+
+# Backup automatico dos projetos (item 6): a cada BACKUP_INTERVAL segundos roda
+# o backup.sh, que faz commit+push de cada repo git em $PROJ. Log em
+# /root/.claude/logs/backup.log. BACKUP_ENABLED=false desativa.
+if [ "${BACKUP_ENABLED:-true}" = "true" ]; then
+  echo ">> backup: ligado (intervalo ${BACKUP_INTERVAL:-3600}s) | log: $H/.claude/logs/backup.log"
+  ( while true; do
+      sleep "${BACKUP_INTERVAL:-3600}"
+      as_user env PROJECT_FOLDER="$PROJECT_FOLDER" bash /usr/local/bin/backup.sh >/dev/null 2>&1 || true
+    done ) &
 fi
 
 # IDE (VS Code web)
