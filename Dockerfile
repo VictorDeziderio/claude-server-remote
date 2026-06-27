@@ -69,6 +69,15 @@ RUN playwright install --with-deps chromium chrome \
 # 6) code-server (VS Code no navegador)
 RUN curl -fsSL https://code-server.dev/install.sh | sh
 
+# 6b) Caddy — gateway/reverse-proxy de uma porta so (painel em / e IDE em /ide,
+# com login unico). Binario unico, lida com WebSocket nativamente.
+RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+        | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
+        > /etc/apt/sources.list.d/caddy-stable.list \
+    && apt-get update && apt-get install -y --no-install-recommends caddy \
+    && rm -rf /var/lib/apt/lists/*
+
 # 7) tmux + gosu + usuario nao-root — camada tardia p/ nao invalidar o cache pesado acima.
 # O Claude Code se recusa a rodar como root com --dangerously-skip-permissions, entao
 # rodamos como o usuario "ubuntu" (uid 1000), usando /root (o volume) como home dele.
@@ -95,11 +104,11 @@ RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/claude-loop.sh \
         /usr/local/bin/claude-session.sh /usr/local/bin/backup.sh
 
 WORKDIR /root
-EXPOSE 8080 7000
+EXPOSE 8080
 
-# Healthcheck (item 4): code-server expoe /healthz. Marca o container unhealthy se
-# o IDE travar, permitindo restart automatico. Assume IDE_ENABLED=true (default).
-HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+# Healthcheck: o gateway (Caddy, 8080) expoe /healthz sem auth. Marca o container
+# unhealthy se o gateway cair. start-period generoso pro code-server/Caddy subirem.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -fsS http://localhost:8080/healthz || exit 1
 
 # IDE em primeiro plano + sessao tmux "claude" persistente.

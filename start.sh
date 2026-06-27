@@ -107,25 +107,62 @@ if [ "${BACKUP_ENABLED:-true}" = "true" ]; then
     done ) &
 fi
 
-# Painel de controle (porta PANEL_PORT, default 7000): cadastrar pastas de projeto,
-# reiniciar o Claude na pasta ativa e abrir o IDE nela. Auth = IDE_PASSWORD.
-# Exponha um dominio do EasyPanel apontando para a porta do painel. PANEL_ENABLED=false desativa.
-if [ "${PANEL_ENABLED:-true}" = "true" ]; then
-  echo ">> painel on (${PANEL_PORT:-7000}) | projetos: $PROJECTS_DIR | log: $H/.claude/logs/panel.log"
-  ( as_user env IDE_PASSWORD="${IDE_PASSWORD:-}" PANEL_PORT="${PANEL_PORT:-7000}" \
-      PROJECTS_DIR="$PROJECTS_DIR" PROJECT_FOLDER="$PROJECT_FOLDER" \
-      FULL_AUTOCMD="$FULL_AUTOCMD" CLAUDE_AUTOCMD_DELAY="$CLAUDE_AUTOCMD_DELAY" \
-      IDE_PUBLIC_URL="${IDE_PUBLIC_URL:-}" \
-      node /usr/local/bin/panel/server.js >> "$H/.claude/logs/panel.log" 2>&1 ) &
+# ============================================================================
+# Gateway de UMA PORTA SO (Caddy:8080): painel em / e IDE em /ide, login unico.
+#   - painel  -> 127.0.0.1:7000 (interno, sem auth propria; o gateway autentica)
+#   - IDE     -> 127.0.0.1:8081 (interno, --auth none; o gateway autentica)
+#   - Caddy faz basic_auth (usuario "admin", senha = IDE_PASSWORD) em tudo, menos /healthz.
+#   Login no painel libera o /ide (mesma sessao basic-auth do navegador).
+# ============================================================================
+PANEL_PORT="${PANEL_PORT:-7000}"
+IDE_PORT=8081
+
+# respawn simples: roda um comando em loop (reabre se cair), como ubuntu, logando em arquivo
+run_bg() {  # $1=label  $2=logfile  resto=comando
+  local label="$1" log="$2"; shift 2
+  ( while true; do as_user "$@" >> "$log" 2>&1; echo "[$label saiu — reabrindo em 3s]" >> "$log"; sleep 3; done ) &
+}
+
+# IDE: code-server interno, sem auth (protegido pelo gateway), publicado sob /ide
+if [ "${IDE_ENABLED:-true}" = "true" ]; then
+  echo ">> IDE (interno $IDE_PORT, publicado em /ide pelo gateway)"
+  run_bg "ide" "$H/.claude/logs/ide.log" \
+    code-server --bind-addr "127.0.0.1:$IDE_PORT" --auth none "$PROJ"
 fi
 
-# IDE (VS Code web)
-if [ "${IDE_ENABLED:-true}" = "true" ]; then
-  echo ">> IDE on (8080) | projeto: $PROJ | autocmd: ${CLAUDE_AUTOCMD:-<nenhum>}"
-  # code-server le a var PASSWORD; mapeamos IDE_PASSWORD -> PASSWORD
-  exec gosu "$U" env HOME="$H" USER="$U" PASSWORD="${IDE_PASSWORD:-}" \
-    code-server --bind-addr 0.0.0.0:8080 --auth password "$PROJ"
-else
-  echo ">> IDE off. Console + 'tmux attach -t claude'."
-  exec sleep infinity
+# Painel: interno, sem auth propria (PANEL_BIND=127.0.0.1; o gateway autentica)
+if [ "${PANEL_ENABLED:-true}" = "true" ]; then
+  echo ">> painel (interno $PANEL_PORT, publicado em / pelo gateway) | projetos: $PROJECTS_DIR"
+  run_bg "painel" "$H/.claude/logs/panel.log" \
+    env PANEL_BIND=127.0.0.1 PANEL_PORT="$PANEL_PORT" IDE_PASSWORD="" \
+      PROJECTS_DIR="$PROJECTS_DIR" PROJECT_FOLDER="$PROJECT_FOLDER" \
+      FULL_AUTOCMD="$FULL_AUTOCMD" CLAUDE_AUTOCMD_DELAY="$CLAUDE_AUTOCMD_DELAY" IDE_PUBLIC_URL="" \
+      node /usr/local/bin/panel/server.js
 fi
+
+# Gateway (Caddy) na 8080 — PID principal. Gera o Caddyfile com a senha hasheada.
+CADDYFILE="$H/.claude/Caddyfile"
+PASS_HASH="$(caddy hash-password --plaintext "${IDE_PASSWORD:-changeme}" 2>/dev/null || true)"
+cat > "$CADDYFILE" <<CADDY
+{
+	auto_https off
+	admin off
+}
+:8080 {
+	route {
+		@health path /healthz
+		respond @health "ok" 200
+		basic_auth {
+			admin ${PASS_HASH}
+		}
+		redir /ide /ide/
+		handle_path /ide/* {
+			reverse_proxy 127.0.0.1:${IDE_PORT}
+		}
+		reverse_proxy 127.0.0.1:${PANEL_PORT}
+	}
+}
+CADDY
+chown "$U:$U" "$CADDYFILE" 2>/dev/null || true
+echo ">> gateway on (8080) | painel: / | IDE: /ide | login: usuario 'admin' + IDE_PASSWORD"
+exec caddy run --config "$CADDYFILE" --adapter caddyfile

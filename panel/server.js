@@ -176,4 +176,5 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '0.0.0.0', () => console.log(`[painel] ouvindo em 0.0.0.0:${PORT} | projetos: ${PROJECTS_DIR}`));
+const BIND = process.env.PANEL_BIND || '0.0.0.0';
+server.listen(PORT, BIND, () => console.log(`[painel] ouvindo em ${BIND}:${PORT} | projetos: ${PROJECTS_DIR}`));

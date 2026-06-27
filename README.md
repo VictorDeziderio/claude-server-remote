@@ -4,16 +4,19 @@ Ubuntu 24.04 com **code-server (VS Code no navegador)** + **Claude Code CLI** ro
 **tmux** + **Playwright** + toolchain de dev completo. Persistente: seus projetos e o login
 do Claude **não somem** no redeploy.
 
-- **IDE:** https://tools-claude.exemplo.easypanel.host (senha = variável `IDE_PASSWORD`)
+Acesso por **uma porta só** (gateway Caddy), com **login único** (usuário `admin` + `IDE_PASSWORD`):
+- **Painel:** https://tools-claude.exemplo.easypanel.host/ (raiz)
+- **IDE:** https://tools-claude.exemplo.easypanel.host/ide
 - **Projeto/serviço EasyPanel:** `tools` / `claude`
 
 ---
 
 ## 🚀 Como usar (passo a passo)
 
-### 1. Abrir o IDE
-Abra **https://tools-claude.exemplo.easypanel.host** → digite a senha (`IDE_PASSWORD` do Environment).
-Abre o VS Code no navegador, já no diretório `/root`.
+### 1. Abrir o painel / o IDE
+Abra **https://tools-claude.exemplo.easypanel.host** → no login digite usuário **`admin`** e a
+senha (`IDE_PASSWORD`). A raiz mostra o **painel**; o **IDE** fica em **`/ide`**. Um login só
+libera os dois.
 
 ### 2. Abrir um terminal
 No VS Code: menu **Terminal → New Terminal** (atalho `` Ctrl+` ``).
@@ -181,15 +184,20 @@ Um painel web leve (Node puro) pra gerenciar os projetos sem mexer no terminal:
 **Modelo:** um Claude por vez, apontando para a pasta ativa (não roda vários em paralelo).
 **Auth:** mesma senha do IDE (`IDE_PASSWORD`). Log: `/root/.claude/logs/panel.log`.
 
-### Acesso — uma porta só (via proxy do code-server)
-O code-server tem um **proxy embutido**, então o painel é acessível **na mesma porta/domínio do IDE**
-e sob a **mesma senha** — sem segundo domínio nem expor a porta 7000:
+### Acesso — uma porta só (gateway Caddy) + login único
+Um **gateway (Caddy)** na porta **8080** publica tudo sob o mesmo domínio, com **um login só**:
 
-- **IDE:** `https://<seu-domínio>/`
-- **Painel:** `https://<seu-domínio>/proxy/7000/`
+| O quê | URL | Interno |
+|-------|-----|---------|
+| **Painel** | `https://<domínio>/` | Node em `127.0.0.1:7000` |
+| **IDE** | `https://<domínio>/ide` | code-server em `127.0.0.1:8081` |
 
-Deixe `IDE_PUBLIC_URL` **vazio** nesse modo — o botão "Abrir IDE" usa a raiz do domínio (o próprio IDE).
-Desligar o painel: `PANEL_ENABLED=false`.
+- **Login único:** o gateway faz `basic_auth` — usuário **`admin`**, senha = **`IDE_PASSWORD`**.
+  Logou ao abrir o painel → o `/ide` já fica liberado (mesma sessão do navegador).
+- O painel e o code-server rodam **sem auth própria** (só o gateway autentica) e escutam só
+  em `127.0.0.1` (não expostos direto). No EasyPanel, **um domínio → porta 8080**.
+- Desligar painel: `PANEL_ENABLED=false`. Desligar IDE: `IDE_ENABLED=false`.
 
-> **(Opcional) domínio próprio:** se preferir o painel num domínio separado, exponha a porta `7000`
-> num domínio do EasyPanel e defina `IDE_PUBLIC_URL` com a URL pública do IDE pro botão "Abrir IDE".
+> ⚠️ O IDE sob subpath (`/ide`) usa `--abs-proxy-base-path=/ide` no code-server. É um caminho
+> suportado, porém mais sensível que servir na raiz — se algum asset/preview do IDE falhar,
+> me avise que ajusto a regra do gateway.
