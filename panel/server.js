@@ -122,20 +122,30 @@ function setProjConfig(name, patch) {
 // ---------- status / consumo do Claude ----------
 // Login + conta: le oauthAccount.emailAddress de ~/.claude.json (ou API key via env).
 function loginInfo() {
-  if (process.env.ANTHROPIC_API_KEY) return { logged: true, account: 'API key (env)' };
-  let account = '';
-  let raw = '';
+  if (process.env.ANTHROPIC_API_KEY) return { logged: true, account: 'API key (env)', org: '', method: 'apikey' };
+  let account = '', org = '', raw = '';
   try { raw = fs.readFileSync(path.join(HOME, '.claude.json'), 'utf8'); } catch { /**/ }
   if (raw) {
     try {
       const oa = JSON.parse(raw).oauthAccount;
-      if (oa) account = oa.emailAddress || oa.email || oa.organizationName || '';
+      if (oa) { account = oa.emailAddress || oa.email || ''; org = oa.organizationName || ''; }
     } catch { /**/ }
   }
   let logged = !!account;
   try { if (fs.statSync(path.join(HOME, '.claude', '.credentials.json')).size > 0) logged = true; } catch { /**/ }
   if (!logged && raw && /"oauthAccount"|"accessToken"|"apiKey"|"primaryApiKey"/.test(raw)) logged = true;
-  return { logged, account };
+  return { logged, account, org, method: logged ? 'oauth' : '' };
+}
+// desloga o Claude: remove o token OAuth (.credentials.json) e o cache de conta (oauthAccount)
+function claudeLogout() {
+  let did = false;
+  try { fs.rmSync(path.join(HOME, '.claude', '.credentials.json'), { force: true }); did = true; } catch { /**/ }
+  try {
+    const p = path.join(HOME, '.claude.json');
+    const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (j && j.oauthAccount) { delete j.oauthAccount; fs.writeFileSync(p, JSON.stringify(j, null, 2)); did = true; }
+  } catch { /**/ }
+  return { ok: true, msg: did ? 'deslogado do Claude (credenciais removidas)' : 'nenhuma credencial encontrada' };
 }
 
 // versao do Claude e estavel em runtime -> resolve uma vez e cacheia (evita spawn por request)
@@ -156,32 +166,26 @@ function claudeRunningFlag(name) {
   try { return fs.existsSync(path.join(RUN_DIR, sessionName(name) + '.running')); } catch { return false; }
 }
 
-function claudeUsage() {
+// percorre os .jsonl uma vez e agrega tokens POR DIA e por (dia, projeto). Base p/ qualquer
+// recorte de periodo no relatorio. O Claude guarda o historico em ~/.claude/projects/<cwd
+// codificado> (nao-alfanumerico -> "-").
+function rawByDay() {
   const base = path.join(HOME, '.claude', 'projects');
-  // o Claude guarda o historico em ~/.claude/projects/<cwd codificado> (nao-alfanumerico -> "-")
   const encOf = (p) => p.replace(/[^a-zA-Z0-9]/g, '-');
-  const projByEnc = {}; // <encoded cwd> -> nome do projeto atual
+  const projByEnc = {};
   for (const name of listProjects()) projByEnc[encOf(path.join(PROJECTS_DIR, name))] = name;
 
-  const out = {
-    sessions: 0, messages: 0,
-    today: { in: 0, out: 0, cacheW: 0, cacheR: 0 },
-    total: { in: 0, out: 0, cacheW: 0, cacheR: 0 },
-    byProject: {}, // nome -> {in,out,cacheW,cacheR,messages}
-    dailyArr: [],  // [{date,in,out}] ultimos 30 dias
-  };
-  const daily = {};
+  const perDay = {}; // 'YYYY-MM-DD' -> {in,out,cacheW,cacheR,messages, byProject:{name:{...}}}
+  let messages = 0;
   const files = [];
   (function walk(d, top) {
     let ents; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
     for (const e of ents) {
       const p = path.join(d, e.name);
-      if (e.isDirectory()) walk(p, top || e.name); // top = 1o nivel sob base = cwd codificado
+      if (e.isDirectory()) walk(p, top || e.name);
       else if (e.name.endsWith('.jsonl')) files.push({ path: p, top: top || '' });
     }
   })(base, '');
-  out.sessions = files.length;
-  const today = new Date().toISOString().slice(0, 10);
   for (const f of files) {
     let data;
     try { if (fs.statSync(f.path).size > 64 * 1024 * 1024) continue; data = fs.readFileSync(f.path, 'utf8'); } catch { continue; }
@@ -191,32 +195,57 @@ function claudeUsage() {
       let o; try { o = JSON.parse(line); } catch { continue; }
       const usg = o && o.message && o.message.usage;
       if (!usg) continue;
-      out.messages++;
+      const day = String(o.timestamp || '').slice(0, 10);
+      if (!/^\d{4}-\d\d-\d\d$/.test(day)) continue;
+      messages++;
       const iTok = usg.input_tokens || 0, oTok = usg.output_tokens || 0;
       const cw = usg.cache_creation_input_tokens || 0, cr = usg.cache_read_input_tokens || 0;
-      out.total.in += iTok; out.total.out += oTok; out.total.cacheW += cw; out.total.cacheR += cr;
-      const day = String(o.timestamp || '').slice(0, 10);
-      if (day === today) { out.today.in += iTok; out.today.out += oTok; out.today.cacheW += cw; out.today.cacheR += cr; }
+      const D = perDay[day] || (perDay[day] = { in: 0, out: 0, cacheW: 0, cacheR: 0, messages: 0, byProject: {} });
+      D.in += iTok; D.out += oTok; D.cacheW += cw; D.cacheR += cr; D.messages++;
       if (pname) {
-        const b = out.byProject[pname] || (out.byProject[pname] = { in: 0, out: 0, cacheW: 0, cacheR: 0, messages: 0 });
+        const b = D.byProject[pname] || (D.byProject[pname] = { in: 0, out: 0, cacheW: 0, cacheR: 0, messages: 0 });
         b.in += iTok; b.out += oTok; b.cacheW += cw; b.cacheR += cr; b.messages++;
-      }
-      if (/^\d{4}-\d\d-\d\d$/.test(day)) {
-        const dd = daily[day] || (daily[day] = { in: 0, out: 0 });
-        dd.in += iTok; dd.out += oTok;
       }
     }
   }
-  out.dailyArr = Object.keys(daily).sort().slice(-30).map((d) => ({ date: d, in: daily[d].in, out: daily[d].out }));
+  return { perDay, sessions: files.length, messages };
+}
+let rawCache = { t: 0, v: null };
+function rawCached() {
+  const now = Date.now();
+  if (rawCache.v && now - rawCache.t < 10000) return rawCache.v;
+  rawCache = { t: now, v: rawByDay() };
+  return rawCache.v;
+}
+// agrega o periodo [from, to] (inclusivo, 'YYYY-MM-DD'; vazio = sem limite)
+function aggregateRange(from, to) {
+  const raw = rawCached();
+  const out = {
+    from: from || '', to: to || '', sessions: raw.sessions, messages: 0,
+    total: { in: 0, out: 0, cacheW: 0, cacheR: 0 },
+    byProject: {}, dailyArr: [],
+  };
+  for (const day of Object.keys(raw.perDay).sort()) {
+    if (from && day < from) continue;
+    if (to && day > to) continue;
+    const D = raw.perDay[day];
+    out.total.in += D.in; out.total.out += D.out; out.total.cacheW += D.cacheW; out.total.cacheR += D.cacheR;
+    out.messages += D.messages;
+    out.dailyArr.push({ date: day, in: D.in, out: D.out });
+    for (const [name, b] of Object.entries(D.byProject)) {
+      const t = out.byProject[name] || (out.byProject[name] = { in: 0, out: 0, cacheW: 0, cacheR: 0, messages: 0 });
+      t.in += b.in; t.out += b.out; t.cacheW += b.cacheW; t.cacheR += b.cacheR; t.messages += b.messages;
+    }
+  }
   return out;
 }
-// cache curto p/ nao reparsear os jsonl a cada request
-let usageCache = { t: 0, v: null };
+// usage do dashboard: total (tudo) + hoje + ultimos 30 dias
 function usageCached() {
-  const now = Date.now();
-  if (usageCache.v && now - usageCache.t < 10000) return usageCache.v;
-  usageCache = { t: now, v: claudeUsage() };
-  return usageCache.v;
+  const all = aggregateRange('', '');
+  const today = new Date().toISOString().slice(0, 10);
+  all.today = aggregateRange(today, today).total;
+  all.dailyArr = all.dailyArr.slice(-30);
+  return all;
 }
 
 // ---------- acoes (por projeto / sessao) ----------
@@ -431,8 +460,9 @@ async function termSend(name, text, key) {
     await sh('tmux', ['send-keys', '-t', sess, '-l', text]);
   }
   if (typeof key === 'string' && key.length) {
-    const ALLOW = new Set(['Enter', 'Escape', 'Tab', 'Space', 'BSpace', 'Up', 'Down', 'Left', 'Right', 'C-c', 'C-d', 'C-u', 'C-l', 'C-a', 'C-e', 'PageUp', 'PageDown', 'Home', 'End']);
-    if (!ALLOW.has(key)) return { ok: false, msg: 'tecla nao permitida' };
+    const ALLOW = new Set(['Enter', 'Escape', 'Tab', 'Space', 'BSpace', 'Up', 'Down', 'Left', 'Right', 'PageUp', 'PageDown', 'Home', 'End', 'IC', 'DC']);
+    // aceita tambem qualquer Ctrl+<letra> (C-a..C-z) p/ o terminal interativo
+    if (!ALLOW.has(key) && !/^C-[a-z]$/.test(key)) return { ok: false, msg: 'tecla nao permitida' };
     await sh('tmux', ['send-keys', '-t', sess, key]);
   }
   return { ok: true };
@@ -506,6 +536,10 @@ const server = http.createServer(async (req, res) => {
         const q = new URL(req.url, 'http://x').searchParams;
         return sendJson(res, 200, await termCapture(q.get('name') || ''));
       }
+      if (req.method === 'GET' && url === '/api/report') {
+        const q = new URL(req.url, 'http://x').searchParams;
+        return sendJson(res, 200, { ok: true, usage: aggregateRange(q.get('from') || '', q.get('to') || '') });
+      }
       if (req.method === 'POST') {
         const body = await readJson(req);
         let r;
@@ -520,6 +554,7 @@ const server = http.createServer(async (req, res) => {
         else if (url === '/api/fs/rename') r = fsRename(body.path, body.newPath);
         else if (url === '/api/term/send') r = await termSend(body.name, body.text, body.key);
         else if (url === '/api/term/exit') r = await termExit(body.name);
+        else if (url === '/api/claude/logout') r = claudeLogout();
         else return sendJson(res, 404, { ok: false, msg: 'rota desconhecida' });
         return sendJson(res, 200, r);
       }

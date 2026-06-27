@@ -1,17 +1,23 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Loader2, ChevronUp, ChevronDown, Send, ExternalLink, LogIn, Power } from 'lucide-react'
+import { ExternalLink, Power } from 'lucide-react'
 import * as api from '../api.js'
 
 // extrai URLs https da tela (ex.: link de login OAuth que o Claude imprime)
 const findUrls = (txt) => [...new Set((txt.match(/https?:\/\/[^\s'"()\]]+/g) || []))].slice(0, 3)
 
-// Console simples da sessao tmux do projeto: mostra a tela (polling) e envia teclas.
-// Serve para LOGAR o Claude (rodar /login, escolher conta com ↑ ↓ Enter) pelo painel.
+// teclas especiais do teclado -> nomes do tmux send-keys
+const KEYMAP = {
+  Enter: 'Enter', Backspace: 'BSpace', Tab: 'Tab', Escape: 'Escape',
+  ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+  Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown', Delete: 'DC',
+}
+
+// Terminal interativo: clica na tela e digita direto (como um SSH). Cada tecla vai pro tmux
+// via send-keys; a saida e lida com capture-pane (polling). Sem campo de input.
 export default function Terminal({ projects = [], initialName = '', onFlash }) {
   const [sel, setSel] = useState(initialName || 'shell') // 'shell' = bash em /root
   const [screen, setScreen] = useState('')
-  const [input, setInput] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [focused, setFocused] = useState(false)
   const preRef = useRef(null)
 
   const capture = useCallback(async (name) => {
@@ -21,27 +27,32 @@ export default function Terminal({ projects = [], initialName = '', onFlash }) {
 
   useEffect(() => {
     capture(sel)
-    const t = setInterval(() => capture(sel), 1500)
+    const t = setInterval(() => capture(sel), 800)
     return () => clearInterval(t)
   }, [sel, capture])
 
   useEffect(() => { if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight }, [screen])
 
-  const send = async (text, key) => {
-    if (!sel) return
-    setBusy(true)
-    const r = await api.termSend(sel, text || '', key || '')
-    setBusy(false)
-    if (r && r.ok === false) onFlash?.(r)
-    setTimeout(() => capture(sel), 200)
+  const send = useCallback(async (text, key) => {
+    await api.termSend(sel, text || '', key || '')
+    setTimeout(() => capture(sel), 120) // feedback rapido alem do polling
+  }, [sel, capture])
+
+  const onKeyDown = (e) => {
+    if (e.metaKey) return // deixa Cmd+C/V/R do navegador passarem
+    const k = e.key
+    if (e.ctrlKey && k.length === 1 && /[a-z]/i.test(k)) { e.preventDefault(); return send('', 'C-' + k.toLowerCase()) }
+    if (KEYMAP[k]) { e.preventDefault(); return send('', KEYMAP[k]) }
+    if (k.length === 1 && !e.ctrlKey && !e.altKey) { e.preventDefault(); return send(k, '') }
   }
-  const submit = async () => { await send(input, 'Enter'); setInput('') }
+  const onPaste = (e) => {
+    e.preventDefault()
+    const txt = e.clipboardData?.getData('text') || ''
+    if (txt) send(txt, '')
+  }
   const exitClaude = async () => {
-    if (!sel) return
-    if (!window.confirm(`Sair do Claude atual em "claude-${sel}"? Se o auto-start estiver ON, uma nova conversa é aberta em seguida.`)) return
-    setBusy(true)
+    if (!window.confirm(`Sair do Claude atual em "claude-${sel}"?`)) return
     const r = await api.termExit(sel)
-    setBusy(false)
     onFlash?.(r)
     setTimeout(() => capture(sel), 700)
   }
@@ -61,75 +72,44 @@ export default function Terminal({ projects = [], initialName = '', onFlash }) {
             <option value="shell">Shell (/root)</option>
             {projects.map((p) => <option key={p.name} value={p.name}>claude-{p.name}</option>)}
           </select>
-          <KeyBtn onClick={() => send('claude', 'Enter')}><LogIn className="h-3.5 w-3.5" /> claude</KeyBtn>
-          <KeyBtn onClick={() => send('/login', 'Enter')}><LogIn className="h-3.5 w-3.5" /> /login</KeyBtn>
+          <span className={`inline-flex items-center gap-1.5 text-xs ${focused ? 'text-emerald-300' : 'text-slate-500'}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${focused ? 'bg-emerald-400 shadow-[0_0_6px_2px_rgba(52,211,153,.5)]' : 'bg-slate-600'}`} />
+            {focused ? 'digitando' : 'clique na tela p/ digitar'}
+          </span>
         </div>
-        <div className="flex items-center gap-1">
-          <KeyBtn onClick={() => send('', 'Up')}><ChevronUp className="h-3.5 w-3.5" /></KeyBtn>
-          <KeyBtn onClick={() => send('', 'Down')}><ChevronDown className="h-3.5 w-3.5" /></KeyBtn>
-          <KeyBtn onClick={() => send('', 'Enter')}>Enter</KeyBtn>
-          <KeyBtn onClick={() => send('', 'Escape')}>Esc</KeyBtn>
-          <KeyBtn onClick={() => send('', 'C-c')}>Ctrl+C</KeyBtn>
-          {sel !== 'shell' && (
-            <button onClick={exitClaude} disabled={busy} title="encerra a conversa atual do Claude"
-              className="inline-flex items-center gap-1 rounded-md bg-rose-500/15 px-2 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-500/25 transition hover:bg-rose-500/25 disabled:opacity-50">
-              <Power className="h-3.5 w-3.5" /> Sair do Claude
-            </button>
-          )}
-        </div>
+        {sel !== 'shell' && (
+          <button onClick={exitClaude} title="encerra a conversa atual do Claude"
+            className="inline-flex items-center gap-1 rounded-md bg-rose-500/15 px-2 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-500/25 transition hover:bg-rose-500/25">
+            <Power className="h-3.5 w-3.5" /> Sair do Claude
+          </button>
+        )}
       </div>
 
-      {/* Login do Claude: link detectado na tela -> abrir -> colar o código no input abaixo */}
+      {/* Login do Claude: link detectado na tela -> abrir, autorizar e o código é digitado direto */}
       {urls.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 border-b border-white/5 bg-claude/5 px-4 py-2.5">
           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-claude"><ExternalLink className="h-3.5 w-3.5" /> link na tela:</span>
           {urls.map((u) => (
             <a key={u} href={u} target="_blank" rel="noreferrer"
-              className="max-w-full truncate rounded-md bg-ink-900 px-2 py-1 text-xs text-sky-300 underline-offset-2 ring-1 ring-white/10 hover:underline">
-              {u}
-            </a>
+              className="max-w-full truncate rounded-md bg-ink-900 px-2 py-1 text-xs text-sky-300 underline-offset-2 ring-1 ring-white/10 hover:underline">{u}</a>
           ))}
-          <span className="text-[11px] text-slate-500">→ abra, autorize e cole o código no campo abaixo</span>
         </div>
       )}
 
       <pre
         ref={preRef}
-        className="m-0 max-h-[55vh] min-h-[40vh] overflow-auto whitespace-pre-wrap bg-black/60 p-4 font-mono text-[12.5px] leading-relaxed text-slate-200"
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+        onPaste={onPaste}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        className={`m-0 max-h-[62vh] min-h-[46vh] cursor-text overflow-auto whitespace-pre-wrap bg-black/70 p-4 font-mono text-[12.5px] leading-relaxed text-slate-200 outline-none transition ${focused ? 'ring-2 ring-claude/40' : ''}`}
       >
         {screen || '…'}
       </pre>
-
-      <div className="flex items-center gap-2 border-t border-white/5 p-3">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
-          placeholder="digite e Enter — ex.: claude, /login, ls…"
-          className="flex-1 rounded-lg bg-ink-900 px-3 py-2 font-mono text-sm text-slate-200 ring-1 ring-white/10 focus:outline-none focus:ring-claude/40"
-        />
-        <button
-          onClick={submit}
-          disabled={busy || !sel}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-claude/90 px-3 py-2 text-sm font-medium text-white transition hover:bg-claude disabled:opacity-50"
-        >
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Enviar
-        </button>
-      </div>
-      <p className="px-4 pb-3 text-xs text-slate-500">
-        Console da sessão tmux (atualiza a cada 1,5s). Para logar o Claude: digite <code className="text-slate-400">/login</code> e siga as opções com ↑ ↓ Enter.
+      <p className="px-4 py-2 text-xs text-slate-500">
+        Terminal real — clique na tela e digite direto (Enter, setas, Ctrl+C, colar funcionam). Para logar o Claude: digite <code className="text-slate-400">claude</code> ou <code className="text-slate-400">/login</code>.
       </p>
     </div>
-  )
-}
-
-function KeyBtn({ onClick, children }) {
-  return (
-    <button
-      onClick={onClick}
-      className="inline-flex items-center gap-1 rounded-md bg-ink-700/60 px-2 py-1 text-xs text-slate-300 ring-1 ring-white/5 transition hover:bg-ink-500 hover:text-white"
-    >
-      {children}
-    </button>
   )
 }

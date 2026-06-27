@@ -9,6 +9,7 @@ import Login from './components/Login.jsx'
 import Files from './components/Files.jsx'
 import TerminalView from './components/Terminal.jsx'
 import Report from './components/Report.jsx'
+import Account from './components/Account.jsx'
 import * as api from './api.js'
 
 const fmtInt = (n) => String(n ?? 0).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
@@ -145,7 +146,7 @@ export default function App() {
 
   const login = data.login || { logged: false, account: '' }
   const u = data.usage || { today: {}, total: {} }
-  const titles = { dashboard: 'Dashboard', report: 'Relatório', files: 'Arquivos', terminal: 'Terminal' }
+  const titles = { dashboard: 'Dashboard', report: 'Relatório', files: 'Arquivos', terminal: 'Terminal', account: 'Conta' }
 
   const openFiles = (p) => { setFilesPath(p); setView('files') }
   const openTerm = (name) => { setTermName(name); setView('terminal') }
@@ -163,6 +164,7 @@ export default function App() {
           <NavItem icon={BarChart3} label="Relatório" active={view === 'report'} onClick={() => setView('report')} />
           <NavItem icon={FolderTree} label="Arquivos" active={view === 'files'} onClick={() => openFiles('')} />
           <NavItem icon={SquareTerminal} label="Terminal" active={view === 'terminal'} onClick={() => setView('terminal')} />
+          <NavItem icon={UserRound} label="Conta" active={view === 'account'} onClick={() => setView('account')} />
         </nav>
         <div className="mt-auto space-y-2 pt-4">
           <div className="rounded-xl bg-ink-800 p-3 ring-1 ring-white/5">
@@ -176,10 +178,10 @@ export default function App() {
       {/* Conteúdo */}
       <main className="min-w-0 flex-1 px-4 py-6 sm:px-8">
         {/* Nav mobile */}
-        <div className="mb-4 grid grid-cols-4 gap-2 sm:hidden">
-          {[['dashboard', LayoutDashboard], ['report', BarChart3], ['files', FolderTree], ['terminal', SquareTerminal]].map(([v, Ic]) => (
+        <div className="mb-4 flex gap-2 overflow-x-auto sm:hidden">
+          {[['dashboard', LayoutDashboard], ['report', BarChart3], ['files', FolderTree], ['terminal', SquareTerminal], ['account', UserRound]].map(([v, Ic]) => (
             <button key={v} onClick={() => (v === 'files' ? openFiles('') : setView(v))}
-              className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-medium ${view === v ? 'bg-claude/15 text-claude ring-1 ring-claude/25' : 'bg-ink-800 text-slate-400'}`}>
+              className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium ${view === v ? 'bg-claude/15 text-claude ring-1 ring-claude/25' : 'bg-ink-800 text-slate-400'}`}>
               <Ic className="h-4 w-4" /> {titles[v]}
             </button>
           ))}
@@ -200,6 +202,7 @@ export default function App() {
         )}
 
         {view === 'report' && <Report data={data} />}
+        {view === 'account' && <Account data={data} onFlash={setFlash} refresh={refresh} />}
         {view === 'files' && <Files key={filesPath} initialPath={filesPath} onFlash={setFlash} />}
         {view === 'terminal' && <TerminalView projects={data.projects} initialName={termName} onFlash={setFlash} />}
 

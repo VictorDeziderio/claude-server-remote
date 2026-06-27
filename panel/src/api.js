@@ -35,3 +35,9 @@ export const fsRename = (p, newPath) => post('/api/fs/rename', { path: p, newPat
 export const termCapture = (name) => get('/api/term/capture?name=' + encodeURIComponent(name || ''))
 export const termSend = (name, text, key) => post('/api/term/send', { name, text, key })
 export const termExit = (name) => post('/api/term/exit', { name })
+
+// --- relatório por período ---
+export const report = (from, to) => get('/api/report?from=' + encodeURIComponent(from || '') + '&to=' + encodeURIComponent(to || ''))
+
+// --- conta do Claude ---
+export const claudeLogout = () => post('/api/claude/logout', {})
