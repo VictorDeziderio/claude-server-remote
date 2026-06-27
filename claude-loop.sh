@@ -55,16 +55,20 @@ trap cleanup EXIT INT TERM
 
 while true; do
   # agenda os envios para depois que o Claude carregar (em paralelo ao `claude`).
+  # ORDEM IMPORTA: a primeira linha vai PRIMEIRO (Claude ainda em modo local, aceita o comando);
+  # o remote-control vai POR ULTIMO — depois dele o Claude entra em modo "controle remoto" e o
+  # input local nao surte efeito. Assim o cliente conecta e ja ve o Claude com a primeira linha.
   ( sleep "$DELAY"
     if is_logged_in; then
-      # 1) remote-control (texto e Enter separados — o Claude usa bracketed paste e engole o Enter junto)
-      if [ -n "$FULL_AUTOCMD" ]; then
-        tmux send-keys -t "$SESS" "$FULL_AUTOCMD"; sleep 1; tmux send-keys -t "$SESS" Enter
-      fi
-      # 2) primeira linha do projeto (prompt/comando inicial p/ o cliente ja começar pronto)
+      # 1) primeira linha do projeto (prompt/comando inicial — Claude limpo)
       IL="$(read_initline)"
       if [ -n "$IL" ]; then
-        sleep 2; tmux send-keys -t "$SESS" "$IL"; sleep 1; tmux send-keys -t "$SESS" Enter
+        tmux send-keys -t "$SESS" "$IL"; sleep 1; tmux send-keys -t "$SESS" Enter
+        sleep 4   # da tempo do Claude processar a primeira linha antes de ativar o remote
+      fi
+      # 2) remote-control por ULTIMO (texto e Enter separados por causa do bracketed paste)
+      if [ -n "$FULL_AUTOCMD" ]; then
+        tmux send-keys -t "$SESS" "$FULL_AUTOCMD"; sleep 1; tmux send-keys -t "$SESS" Enter
       fi
     fi
   ) &
