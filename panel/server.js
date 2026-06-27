@@ -110,7 +110,11 @@ function projConfig(name) {
   const d = c.defaults || {};
   const p = (c.projects && c.projects[name]) || {};
   const pick = (k) => (k in p ? !!p[k] : (k in d ? !!d[k] : true));
-  return { autoStartClaude: pick('autoStartClaude'), autoRemote: pick('autoRemote') };
+  return {
+    autoStartClaude: pick('autoStartClaude'),
+    autoRemote: pick('autoRemote'),
+    initLine: typeof p.initLine === 'string' ? p.initLine : '', // "primeira linha" enviada ao Claude quando ele fica pronto
+  };
 }
 function setProjConfig(name, patch) {
   const c = loadConfig();
@@ -263,10 +267,10 @@ async function restartProject(name) {
   if (!validName(name)) return { ok: false, msg: 'nome invalido' };
   const dir = path.join(PROJECTS_DIR, name);
   if (!fs.existsSync(dir)) return { ok: false, msg: 'pasta inexistente' };
-  await sh('tmux', ['kill-session', '-t', sessionName(name)]);
-  await sh('bash', [SESSION_SCRIPT, name]);
+  await sh('tmux', ['kill-session', '-t', sessionName(name)]); // fecha o Claude atual (mesmo travado no remote)
+  await sh('bash', [SESSION_SCRIPT, name]);                    // reabre o Claude + religa o remote
   const c = projConfig(name);
-  return { ok: true, msg: `sessao de "${name}" reiniciada (Claude ${c.autoStartClaude ? 'ON' : 'OFF'}, remote ${c.autoRemote ? 'ON' : 'OFF'})` };
+  return { ok: true, msg: `"${name}": Claude reiniciado${c.autoRemote ? ' e remote religado' : ''}${c.initLine ? ' (+ primeira linha)' : ''}` };
 }
 // Claude guarda o historico em ~/.claude/projects/<cwd codificado> (nao-alfanumerico -> "-").
 function migrateClaudeHistory(oldDir, newDir) {
@@ -333,6 +337,14 @@ async function setConfig(name, key, value) {
   // autoStartClaude: aplicado na proxima (re)criacao da sessao
   return { ok: true, msg: `"${name}": auto-start do Claude = ${val ? 'ON' : 'OFF'} — reinicie a sessao p/ aplicar` };
 }
+// "primeira linha": texto enviado ao Claude assim que ele fica pronto (apos o remote-control).
+// Aplicado pelo claude-loop.sh em todo (re)inicio do Claude. Vale na proxima vez que o Claude subir.
+async function setInitLine(name, text) {
+  if (!validName(name)) return { ok: false, msg: 'nome invalido' };
+  const t = String(text == null ? '' : text).replace(/[\r\n]+/g, ' ').slice(0, 1000); // 1 linha
+  if (!setProjConfig(name, { initLine: t })) return { ok: false, msg: 'falha ao salvar panel.json' };
+  return { ok: true, msg: t ? `"${name}": primeira linha salva (vale no proximo inicio do Claude)` : `"${name}": primeira linha removida` };
+}
 
 async function buildState() {
   const projects = [];
@@ -346,6 +358,7 @@ async function buildState() {
       claudeRunning: up && claudeRunningFlag(name),
       autoStartClaude: c.autoStartClaude,
       autoRemote: c.autoRemote,
+      initLine: c.initLine,
       remoteCmd: remoteCmdFor(name),
     });
   }
@@ -546,6 +559,7 @@ const server = http.createServer(async (req, res) => {
         if (url === '/api/create') r = await createProject(body.name, !!body.autoStartClaude, !!body.autoRemote);
         else if (url === '/api/rename') r = await renameProject(body.name, body.newName);
         else if (url === '/api/config') r = await setConfig(body.name, body.key, body.value);
+        else if (url === '/api/initline') r = await setInitLine(body.name, body.text);
         else if (url === '/api/restart') r = await restartProject(body.name);
         else if (url === '/api/remote') r = await sendRemote(body.name);
         else if (url === '/api/fs/save') r = fsSave(body.path, body.content);

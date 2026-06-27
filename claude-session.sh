@@ -58,7 +58,7 @@ tmux has-session -t "$sess" 2>/dev/null && exit 0
 tmux new-session -d -s "$sess" -c "$proj"
 if [ "$START_CLAUDE" = "true" ]; then
   # supervisor: roda o Claude em loop + religa o remote-control (se AUTO_REMOTE e logado)
-  tmux send-keys -t "$sess" "bash /usr/local/bin/claude-loop.sh '$sess' '$FULL_AUTOCMD' '$DELAY'" Enter
+  tmux send-keys -t "$sess" "bash /usr/local/bin/claude-loop.sh '$sess' '$FULL_AUTOCMD' '$DELAY' '$name'" Enter
 else
   # auto-start do Claude DESLIGADO no painel: deixa so o shell na pasta
   tmux send-keys -t "$sess" "clear; echo '[dev-box] projeto \"$name\": auto-start do Claude DESLIGADO (panel.json). Rode  claude  quando quiser.'" Enter

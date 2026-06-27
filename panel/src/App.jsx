@@ -82,6 +82,7 @@ export default function App() {
   const [busy, setBusy] = useState('')
   const [drafts, setDrafts] = useState({})
   const [editing, setEditing] = useState({})
+  const [initDrafts, setInitDrafts] = useState({}) // "primeira linha" por projeto
   const [form, setForm] = useState({ name: '', autoStartClaude: true, autoRemote: true })
   const [view, setView] = useState('dashboard')   // dashboard | report | files | terminal
   const [filesPath, setFilesPath] = useState('')
@@ -97,6 +98,11 @@ export default function App() {
       setDrafts((prev) => {
         const next = { ...prev }
         for (const p of d.projects || []) if (next[p.name] === undefined) next[p.name] = p.name
+        return next
+      })
+      setInitDrafts((prev) => {
+        const next = { ...prev }
+        for (const p of d.projects || []) if (next[p.name] === undefined) next[p.name] = p.initLine || ''
         return next
       })
     } catch (e) {
@@ -259,10 +265,27 @@ export default function App() {
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2">
-                      <Btn variant="accent" busy={busy === `restart:${p.name}`} onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))}><RefreshCw className="h-3.5 w-3.5" /> Reiniciar</Btn>
-                      <Btn busy={busy === `remote:${p.name}`} onClick={() => run(`remote:${p.name}`, () => api.reconnectRemote(p.name))}><Radio className="h-3.5 w-3.5" /> Religar remote</Btn>
+                      <Btn variant="accent" busy={busy === `restart:${p.name}`} onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title="fecha o Claude (mesmo travado no remote), reabre e religa o remote"><RefreshCw className="h-3.5 w-3.5" /> Reiniciar Claude</Btn>
+                      <Btn busy={busy === `remote:${p.name}`} onClick={() => run(`remote:${p.name}`, () => api.reconnectRemote(p.name))} title="re-emite o /remote-control sem reiniciar (preserva a conversa)"><Radio className="h-3.5 w-3.5" /> Religar remote</Btn>
                       <Btn onClick={() => openTerm(p.name)}><SquareTerminal className="h-3.5 w-3.5" /> Terminal</Btn>
                       <Btn onClick={() => openFiles('projects/' + p.name)}><FolderOpen className="h-3.5 w-3.5" /> Arquivos</Btn>
+                    </div>
+                  </div>
+
+                  {/* Primeira linha — enviada ao Claude quando ele fica pronto */}
+                  <div className="mt-3 border-t border-white/5 pt-3">
+                    <label className="text-xs text-slate-400">Primeira linha <span className="text-slate-600">— enviada ao Claude assim que ele fica pronto (todo início)</span></label>
+                    <div className="mt-1 flex items-center gap-2">
+                      <input
+                        value={initDrafts[p.name] ?? p.initLine ?? ''}
+                        onChange={(e) => setInitDrafts((d) => ({ ...d, [p.name]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') run(`init:${p.name}`, () => api.setInitLine(p.name, initDrafts[p.name] ?? '')) }}
+                        placeholder="ex.: Você é o assistente da Empresa X. Cumprimente o cliente e ofereça ajuda."
+                        className="flex-1 rounded-lg bg-ink-900 px-2.5 py-1.5 text-sm text-slate-200 ring-1 ring-white/10 focus:outline-none focus:ring-claude/40"
+                      />
+                      <Btn variant="ghost" busy={busy === `init:${p.name}`} onClick={() => run(`init:${p.name}`, () => api.setInitLine(p.name, initDrafts[p.name] ?? ''))}>
+                        <Save className="h-3.5 w-3.5" /> Salvar
+                      </Btn>
                     </div>
                   </div>
 

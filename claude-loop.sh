@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
 # Supervisor do Claude para UMA sessao tmux (modelo multi-tmux: 1 sessao por projeto).
-# Roda o Claude em loop: se ele sair (exit/crash), reabre em 3s. A CADA (re)inicio,
-# RELIGA o remote-control apos o delay (se logado) — porque `claude` sobe uma conversa
-# nova e NAO reconecta o remote-control sozinho. Para cair no shell: Ctrl-C na janela de 3s.
+# Roda o Claude em loop: se ele sair (exit/crash), reabre em 3s. A CADA (re)inicio, apos o
+# Claude carregar, envia (se logado):
+#   1) o remote-control (se autoRemote)  2) a "primeira linha" do projeto (panel.json -> initLine)
+# `claude` sobe conversa nova e NAO reconecta sozinho, por isso reenviamos a cada inicio.
+# Para cair no shell: Ctrl-C na janela de 3s.
 #
-# Mantem um FLAG FILE por sessao (~/.claude/run/<sessao>.running) enquanto o Claude esta
-# de fato rodando. O painel le esse flag em vez de adivinhar pelo pane_current_command
-# (que mostra "bash"/o supervisor e dava falso-negativo de "parado").
+# Mantem um FLAG FILE por sessao (~/.claude/run/<sessao>.running) enquanto o Claude roda
+# (o painel le esse flag em vez de adivinhar pelo pane_current_command, que da falso-negativo).
 #
 # Args:  $1 = nome da sessao tmux (ex.: claude-pilot)
 #        $2 = comando do remote-control (ex.: "/remote-control pilot"; vazio desativa)
-#        $3 = segundos de espera antes de enviar o remote-control (Claude carregar)
+#        $3 = segundos de espera antes de enviar (Claude carregar)
+#        $4 = nome do projeto (p/ ler a "primeira linha" no panel.json)
 set -uo pipefail
-SESS="${1:?uso: claude-loop.sh <sessao> [remote_cmd] [delay]}"
+SESS="${1:?uso: claude-loop.sh <sessao> [remote_cmd] [delay] [projeto]}"
 FULL_AUTOCMD="${2:-}"
 DELAY="${3:-15}"
+PROJ_NAME="${4:-}"
 
 H="${HOME:-/root}"
 RUN_DIR="$H/.claude/run"
@@ -29,22 +32,37 @@ is_logged_in() {
   return 1
 }
 
+# le a "primeira linha" do projeto no panel.json (vazio se nao definida). Usa node (sempre presente).
+read_initline() {
+  [ -n "$PROJ_NAME" ] || return 0
+  node -e '
+    const fs = require("fs");
+    const [,, file, proj] = process.argv;
+    let c = {}; try { c = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
+    const o = (c.projects && c.projects[proj]) || {};
+    process.stdout.write(typeof o.initLine === "string" ? o.initLine : "");
+  ' "$H/.claude/panel.json" "$PROJ_NAME" 2>/dev/null
+}
+
 # garante que o flag suma se o supervisor for encerrado (kill-session, etc.)
 cleanup() { rm -f "$RUN_FLAG"; }
 trap cleanup EXIT INT TERM
 
 while true; do
-  # agenda o envio do remote-control para depois que o Claude carregar (em paralelo ao `claude`).
-  if [ -n "$FULL_AUTOCMD" ]; then
-    ( sleep "$DELAY"
-      if is_logged_in; then
-        # texto e Enter SEPARADOS (o Claude usa bracketed paste e engole o Enter junto)
-        tmux send-keys -t "$SESS" "$FULL_AUTOCMD"
-        sleep 1
-        tmux send-keys -t "$SESS" Enter
+  # agenda os envios para depois que o Claude carregar (em paralelo ao `claude`).
+  ( sleep "$DELAY"
+    if is_logged_in; then
+      # 1) remote-control (texto e Enter separados — o Claude usa bracketed paste e engole o Enter junto)
+      if [ -n "$FULL_AUTOCMD" ]; then
+        tmux send-keys -t "$SESS" "$FULL_AUTOCMD"; sleep 1; tmux send-keys -t "$SESS" Enter
       fi
-    ) &
-  fi
+      # 2) primeira linha do projeto (prompt/comando inicial p/ o cliente ja começar pronto)
+      IL="$(read_initline)"
+      if [ -n "$IL" ]; then
+        sleep 2; tmux send-keys -t "$SESS" "$IL"; sleep 1; tmux send-keys -t "$SESS" Enter
+      fi
+    fi
+  ) &
 
   : > "$RUN_FLAG"     # marca: Claude rodando
   claude
