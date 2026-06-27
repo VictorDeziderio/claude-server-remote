@@ -54,28 +54,26 @@ cleanup() { rm -f "$RUN_FLAG"; }
 trap cleanup EXIT INT TERM
 
 while true; do
-  # agenda os envios para depois que o Claude carregar (em paralelo ao `claude`).
-  # ORDEM IMPORTA: a primeira linha vai PRIMEIRO (Claude ainda em modo local, aceita o comando);
-  # o remote-control vai POR ULTIMO — depois dele o Claude entra em modo "controle remoto" e o
-  # input local nao surte efeito. Assim o cliente conecta e ja ve o Claude com a primeira linha.
-  ( sleep "$DELAY"
-    if is_logged_in; then
-      # 1) primeira linha do projeto (prompt/comando inicial — Claude limpo)
-      IL="$(read_initline)"
-      if [ -n "$IL" ]; then
-        tmux send-keys -t "$SESS" "$IL"; sleep 1; tmux send-keys -t "$SESS" Enter
-        sleep 4   # da tempo do Claude processar a primeira linha antes de ativar o remote
-      fi
-      # 2) remote-control por ULTIMO (texto e Enter separados por causa do bracketed paste)
-      if [ -n "$FULL_AUTOCMD" ]; then
-        tmux send-keys -t "$SESS" "$FULL_AUTOCMD"; sleep 1; tmux send-keys -t "$SESS" Enter
-      fi
-    fi
-  ) &
+  # PRIMEIRA LINHA: passada como PROMPT INICIAL do `claude` (forma documentada `claude "query"`,
+  # que mantem a sessao interativa). Executa de forma 100% confiavel, sem send-keys fragil
+  # (o send-keys falhava com a TUI do Claude por causa do bracketed paste).
+  IL="$(read_initline)"
 
-  : > "$RUN_FLAG"     # marca: Claude rodando
-  claude
-  rm -f "$RUN_FLAG"   # marca: Claude parado (caiu no shell ou crashou)
+  # REMOTE-CONTROL: vai por send-keys DEPOIS que o Claude carregar (em paralelo ao `claude`).
+  # C-m (Enter real) e mais confiavel que "Enter" com a TUI do Claude.
+  if [ -n "$FULL_AUTOCMD" ]; then
+    ( sleep "$DELAY"
+      is_logged_in && tmux send-keys -t "$SESS" "$FULL_AUTOCMD" C-m
+    ) &
+  fi
+
+  : > "$RUN_FLAG"               # marca: Claude rodando
+  if [ -n "$IL" ]; then
+    claude "$IL"                # inicia interativo JA executando a primeira linha
+  else
+    claude
+  fi
+  rm -f "$RUN_FLAG"             # marca: Claude parado (caiu no shell ou crashou)
 
   echo "[claude saiu — reabrindo em 3s | Ctrl-C cancela]"
   sleep 3
