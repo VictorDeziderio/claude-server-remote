@@ -131,12 +131,27 @@ Adicionar mais browsers: `playwright install firefox webkit`.
 ---
 
 ## 🔁 Deploy / atualizações
-- Só o **1º build** é lento (baixa tudo). Os próximos reusam o **cache do Docker** → rápidos.
-- No dia a dia você **não precisa redeployar** — o container fica vivo e o trabalho está no
-  volume. Redeploy só para **atualizar a imagem** (ex.: novas ferramentas no Dockerfile).
 - Como instalar no EasyPanel: **Create Service → App** `claude` · Source Git (este repo,
   ramo `main`, build path `/claude`, Dockerfile) · **Armazenamento → Volume** `claude-data`
   → `/root` · **Domínios** → porta `8080` · Deploy.
+- No dia a dia você **não precisa redeployar** — o container fica vivo e o trabalho está no
+  volume. Redeploy só para **atualizar a imagem** (scripts/ferramentas).
+
+### ⚡ Deploy rápido (imagem base no GHCR)
+O toolchain pesado (Node, Playwright+browsers, code-server, Caddy) mora numa **imagem base**
+(`claude/Dockerfile.base`) publicada no **GHCR** por um GitHub Action. O `Dockerfile` do dev-box
+só parte dela e copia os scripts → **deploy do dia a dia leva segundos** (não rebuilda o pesado).
+
+**Setup (uma vez):**
+1. **Push** este repo. O Action `build-claude-devbox-base` builda e publica
+   `ghcr.io/meu-servidor/claude-devbox-base:latest` (acompanhe em **Actions** no GitHub).
+2. Torne a imagem **pública**: GitHub → seu perfil → **Packages** → `claude-devbox-base` →
+   **Package settings** → **Change visibility** → *Public* (senão o EasyPanel não consegue baixar).
+3. No EasyPanel, **Implantar** o serviço `claude` — agora o build só faz `pull` da base + copia
+   scripts. Rápido.
+
+**Atualizar o toolchain** (ex.: nova versão de Node/Playwright): edite `claude/Dockerfile.base`
+e dê push — o Action republica a base sozinho; depois é só Implantar.
 
 > 🔒 O IDE fica num domínio público com senha. Use uma senha forte em `IDE_PASSWORD` e
 > considere basic-auth/IP-restriction na aba Segurança.
