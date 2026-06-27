@@ -314,6 +314,104 @@ async function buildState() {
   };
 }
 
+// ---------- file manager (sandbox em /root) ----------
+// IDE simples: ver / editar / criar / excluir arquivos. Tudo CONFINADO a FS_BASE (=/root):
+// resolveSafe rejeita qualquer caminho que escape da raiz (path traversal).
+const FS_BASE = HOME;
+function resolveSafe(rel) {
+  const full = path.resolve(FS_BASE, String(rel == null ? '' : rel).replace(/^[/\\]+/, ''));
+  if (full !== FS_BASE && !full.startsWith(FS_BASE + path.sep)) return null;
+  return full;
+}
+const relOf = (full) => path.relative(FS_BASE, full); // caminho relativo a /root (p/ exibir)
+
+function fsList(rel) {
+  const full = resolveSafe(rel);
+  if (!full) return { ok: false, msg: 'caminho invalido' };
+  try {
+    const entries = fs.readdirSync(full, { withFileTypes: true })
+      .map((d) => {
+        let size = 0; try { if (d.isFile()) size = fs.statSync(path.join(full, d.name)).size; } catch { /**/ }
+        return { name: d.name, type: d.isDirectory() ? 'dir' : 'file', size };
+      })
+      .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1));
+    return { ok: true, path: relOf(full), entries };
+  } catch (e) { return { ok: false, msg: e.message }; }
+}
+function fsRead(rel) {
+  const full = resolveSafe(rel);
+  if (!full) return { ok: false, msg: 'caminho invalido' };
+  try {
+    const st = fs.statSync(full);
+    if (!st.isFile()) return { ok: false, msg: 'nao e um arquivo' };
+    if (st.size > 2 * 1024 * 1024) return { ok: false, msg: 'arquivo muito grande (>2MB)' };
+    const buf = fs.readFileSync(full);
+    if (buf.includes(0)) return { ok: false, msg: 'arquivo binario (nao editavel aqui)' };
+    return { ok: true, path: relOf(full), content: buf.toString('utf8'), size: st.size };
+  } catch (e) { return { ok: false, msg: e.message }; }
+}
+function fsSave(rel, content) {
+  const full = resolveSafe(rel);
+  if (!full) return { ok: false, msg: 'caminho invalido' };
+  if (typeof content !== 'string') return { ok: false, msg: 'conteudo invalido' };
+  if (content.length > 5 * 1024 * 1024) return { ok: false, msg: 'conteudo muito grande (>5MB)' };
+  try { fs.writeFileSync(full, content); return { ok: true, msg: `salvo: ${relOf(full)}` }; }
+  catch (e) { return { ok: false, msg: e.message }; }
+}
+function fsCreate(rel, kind) {
+  const full = resolveSafe(rel);
+  if (!full || full === FS_BASE) return { ok: false, msg: 'caminho invalido' };
+  if (fs.existsSync(full)) return { ok: false, msg: 'ja existe' };
+  try {
+    if (kind === 'dir') fs.mkdirSync(full, { recursive: true });
+    else { fs.mkdirSync(path.dirname(full), { recursive: true }); fs.writeFileSync(full, ''); }
+    return { ok: true, msg: `${kind === 'dir' ? 'pasta' : 'arquivo'} criado: ${relOf(full)}` };
+  } catch (e) { return { ok: false, msg: e.message }; }
+}
+function fsDelete(rel) {
+  const full = resolveSafe(rel);
+  if (!full || full === FS_BASE) return { ok: false, msg: 'caminho invalido' };
+  try { fs.rmSync(full, { recursive: true, force: true }); return { ok: true, msg: `excluido: ${relOf(full)}` }; }
+  catch (e) { return { ok: false, msg: e.message }; }
+}
+function fsRename(rel, newRel) {
+  const a = resolveSafe(rel), b = resolveSafe(newRel);
+  if (!a || !b || a === FS_BASE) return { ok: false, msg: 'caminho invalido' };
+  if (fs.existsSync(b)) return { ok: false, msg: 'o destino ja existe' };
+  try { fs.mkdirSync(path.dirname(b), { recursive: true }); fs.renameSync(a, b); return { ok: true, msg: `renomeado: ${relOf(b)}` }; }
+  catch (e) { return { ok: false, msg: e.message }; }
+}
+
+// ---------- terminal (via tmux capture-pane / send-keys) ----------
+// Console simples para VER a tela da sessao do projeto e ENVIAR teclas — serve, entre outras
+// coisas, para LOGAR o Claude (rodar /login, escolher conta, etc) direto pelo painel.
+// Nao e um PTY completo, mas funciona com tmux sem dependencias nativas.
+async function termCapture(name) {
+  if (!validName(name)) return { ok: false, msg: 'projeto invalido' };
+  const sess = sessionName(name);
+  if (!(await sh('tmux', ['has-session', '-t', '=' + sess])).ok) return { ok: false, msg: 'sessao nao esta de pe' };
+  // -p imprime no stdout; -S -200 inclui ~200 linhas de scrollback p/ contexto
+  const r = await sh('tmux', ['capture-pane', '-t', '=' + sess, '-p', '-S', '-200']);
+  return { ok: r.ok, content: r.stdout || '', msg: r.ok ? '' : 'falha ao capturar a tela' };
+}
+async function termSend(name, text, key) {
+  if (!validName(name)) return { ok: false, msg: 'projeto invalido' };
+  const sess = sessionName(name);
+  if (!(await sh('tmux', ['has-session', '-t', '=' + sess])).ok) return { ok: false, msg: 'sessao nao esta de pe' };
+  // texto literal primeiro (-l = nao interpreta como nome de tecla), depois a tecla especial
+  if (typeof text === 'string' && text.length) {
+    if (text.length > 4096) return { ok: false, msg: 'texto muito longo' };
+    await sh('tmux', ['send-keys', '-t', '=' + sess, '-l', text]);
+  }
+  if (typeof key === 'string' && key.length) {
+    // teclas validas que repassamos ao tmux (Enter, setas, controle...). Lista branca.
+    const ALLOW = new Set(['Enter', 'Escape', 'Tab', 'Space', 'BSpace', 'Up', 'Down', 'Left', 'Right', 'C-c', 'C-d', 'C-u', 'C-l', 'C-a', 'C-e', 'PageUp', 'PageDown', 'Home', 'End']);
+    if (!ALLOW.has(key)) return { ok: false, msg: 'tecla nao permitida' };
+    await sh('tmux', ['send-keys', '-t', '=' + sess, key]);
+  }
+  return { ok: true };
+}
+
 // ---------- http ----------
 function sendJson(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -359,6 +457,18 @@ const server = http.createServer(async (req, res) => {
     if (url.startsWith('/api/')) {
       if (!isAuthed(req)) return sendJson(res, 401, { ok: false, msg: 'nao autenticado' });
       if (req.method === 'GET' && url === '/api/state') return sendJson(res, 200, await buildState());
+      if (req.method === 'GET' && url === '/api/fs/list') {
+        const q = new URL(req.url, 'http://x').searchParams;
+        return sendJson(res, 200, fsList(q.get('path') || ''));
+      }
+      if (req.method === 'GET' && url === '/api/fs/read') {
+        const q = new URL(req.url, 'http://x').searchParams;
+        return sendJson(res, 200, fsRead(q.get('path') || ''));
+      }
+      if (req.method === 'GET' && url === '/api/term/capture') {
+        const q = new URL(req.url, 'http://x').searchParams;
+        return sendJson(res, 200, await termCapture(q.get('name') || ''));
+      }
       if (req.method === 'POST') {
         const body = await readJson(req);
         let r;
@@ -367,6 +477,11 @@ const server = http.createServer(async (req, res) => {
         else if (url === '/api/config') r = await setConfig(body.name, body.key, body.value);
         else if (url === '/api/restart') r = await restartProject(body.name);
         else if (url === '/api/remote') r = await sendRemote(body.name);
+        else if (url === '/api/fs/save') r = fsSave(body.path, body.content);
+        else if (url === '/api/fs/create') r = fsCreate(body.path, body.kind);
+        else if (url === '/api/fs/delete') r = fsDelete(body.path);
+        else if (url === '/api/fs/rename') r = fsRename(body.path, body.newPath);
+        else if (url === '/api/term/send') r = await termSend(body.name, body.text, body.key);
         else return sendJson(res, 404, { ok: false, msg: 'rota desconhecida' });
         return sendJson(res, 200, r);
       }

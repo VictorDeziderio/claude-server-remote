@@ -5,6 +5,7 @@ const toJson = (r) => r.json()
 export const getState = () =>
   fetch('/api/state', { cache: 'no-store' }).then((r) => (r.status === 401 ? { __unauth: true } : r.json()))
 
+const get = (path) => fetch(path, { cache: 'no-store' }).then(toJson)
 const post = (path, body) =>
   fetch(path, {
     method: 'POST',
@@ -21,3 +22,15 @@ export const renameProject = (name, newName) => post('/api/rename', { name, newN
 export const setConfig = (name, key, value) => post('/api/config', { name, key, value })
 export const restartProject = (name) => post('/api/restart', { name })
 export const reconnectRemote = (name) => post('/api/remote', { name })
+
+// --- file manager (sandbox em /root) ---
+export const fsList = (p) => get('/api/fs/list?path=' + encodeURIComponent(p || ''))
+export const fsRead = (p) => get('/api/fs/read?path=' + encodeURIComponent(p || ''))
+export const fsSave = (p, content) => post('/api/fs/save', { path: p, content })
+export const fsCreate = (p, kind) => post('/api/fs/create', { path: p, kind })
+export const fsDelete = (p) => post('/api/fs/delete', { path: p })
+export const fsRename = (p, newPath) => post('/api/fs/rename', { path: p, newPath })
+
+// --- terminal (tmux capture/send) ---
+export const termCapture = (name) => get('/api/term/capture?name=' + encodeURIComponent(name || ''))
+export const termSend = (name, text, key) => post('/api/term/send', { name, text, key })
