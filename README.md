@@ -4,9 +4,9 @@ Ubuntu 24.04 com **code-server (VS Code no navegador)** + **Claude Code CLI** ro
 **tmux** + **Playwright** + toolchain de dev completo. Persistente: seus projetos e o login
 do Claude **não somem** no redeploy.
 
-Acesso por **uma porta só** (gateway Caddy), com **login único** (usuário `admin` + `IDE_PASSWORD`):
+Acesso por **uma porta só** (gateway Caddy), com **login único** (usuário `PANEL_USER` + senha `PANEL_PASSWORD`):
 - **Painel:** https://tools-claude.exemplo.easypanel.host/ (raiz)
-- **IDE:** https://tools-claude.exemplo.easypanel.host/ide
+- **IDE:** https://tools-claude.exemplo.easypanel.host/ide (botão "Abrir IDE" no painel)
 - **Projeto/serviço EasyPanel:** `tools` / `claude`
 
 ---
@@ -14,9 +14,9 @@ Acesso por **uma porta só** (gateway Caddy), com **login único** (usuário `ad
 ## 🚀 Como usar (passo a passo)
 
 ### 1. Abrir o painel / o IDE
-Abra **https://tools-claude.exemplo.easypanel.host** → no login digite usuário **`admin`** e a
-senha (`IDE_PASSWORD`). A raiz mostra o **painel**; o **IDE** fica em **`/ide`**. Um login só
-libera os dois.
+Abra **https://tools-claude.exemplo.easypanel.host** → no login use **`PANEL_USER`** (default `admin`)
+e a senha **`PANEL_PASSWORD`**. A raiz mostra o **painel**; clique em **"Abrir IDE"** (ou vá em
+**`/ide`**). Um login só libera os dois.
 
 ### 2. Abrir um terminal
 No VS Code: menu **Terminal → New Terminal** (atalho `` Ctrl+` ``).
@@ -95,9 +95,11 @@ após o delay, se logado). Para forçar manualmente: `/remote-control meu-servid
 | `BACKUP_ENABLED` | `true` | liga/desliga o backup automático dos projetos |
 | `BACKUP_INTERVAL` | `3600` | intervalo entre backups (segundos) |
 | `PANEL_ENABLED` | `true` | liga/desliga o painel de controle |
-| `PANEL_PORT` | `7000` | porta interna do painel (exponha um domínio pra ela) |
+| `GATEWAY_PORT` | `8080` | porta pública do gateway (aponte o domínio pra ela) |
+| `PANEL_USER` | `admin` | usuário do login (cobre painel e IDE) |
+| `PANEL_PASSWORD` | (= `IDE_PASSWORD`) | senha do login do gateway |
 | `PROJECTS_DIR` | `/root/projects` | diretório que contém as pastas de projeto |
-| `IDE_PUBLIC_URL` | (vazio) | URL pública do IDE, pro botão "Abrir IDE" do painel |
+| `IDE_PUBLIC_URL` | (vazio) | só se o IDE estiver num domínio próprio |
 
 ### 🔁 Auto-start (ao reiniciar)
 No start, o container automaticamente: garante a pasta `/root/$PROJECT_FOLDER` (cria se faltar)
@@ -192,10 +194,11 @@ Um **gateway (Caddy)** na porta **8080** publica tudo sob o mesmo domínio, com 
 | **Painel** | `https://<domínio>/` | Node em `127.0.0.1:7000` |
 | **IDE** | `https://<domínio>/ide` | code-server em `127.0.0.1:8081` |
 
-- **Login único:** o gateway faz `basic_auth` — usuário **`admin`**, senha = **`IDE_PASSWORD`**.
-  Logou ao abrir o painel → o `/ide` já fica liberado (mesma sessão do navegador).
+- **Login único (no env):** o gateway faz `basic_auth` — usuário **`PANEL_USER`** (default `admin`),
+  senha **`PANEL_PASSWORD`** (se vazia, cai pra `IDE_PASSWORD`). Logou ao abrir o painel → o `/ide`
+  já fica liberado (mesma sessão do navegador). O botão **"Abrir IDE"** do painel leva pra `/ide`.
 - O painel e o code-server rodam **sem auth própria** (só o gateway autentica) e escutam só
-  em `127.0.0.1` (não expostos direto). No EasyPanel, **um domínio → porta 8080**.
+  em `127.0.0.1` (não expostos direto). No EasyPanel, **um domínio → `GATEWAY_PORT`** (default 8080).
 - Desligar painel: `PANEL_ENABLED=false`. Desligar IDE: `IDE_ENABLED=false`.
 
 > ⚠️ O IDE sob subpath (`/ide`) usa `--abs-proxy-base-path=/ide` no code-server. É um caminho

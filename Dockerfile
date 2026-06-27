@@ -22,9 +22,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # Backup automatico dos projetos: liga/desliga + intervalo (segundos)
     BACKUP_ENABLED=true \
     BACKUP_INTERVAL=3600 \
-    # Painel de controle: liga/desliga + porta + dir dos projetos + URL publica do IDE
+    # Gateway/painel: porta publica + login (usuario/senha) + dir dos projetos
     PANEL_ENABLED=true \
-    PANEL_PORT=7000 \
+    GATEWAY_PORT=8080 \
+    PANEL_USER=admin \
+    PANEL_PASSWORD= \
     PROJECTS_DIR=/root/projects \
     IDE_PUBLIC_URL=
 
@@ -104,12 +106,12 @@ RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/claude-loop.sh \
         /usr/local/bin/claude-session.sh /usr/local/bin/backup.sh
 
 WORKDIR /root
-EXPOSE 8080
+EXPOSE 8080 7000
 
-# Healthcheck: o gateway (Caddy, 8080) expoe /healthz sem auth. Marca o container
-# unhealthy se o gateway cair. start-period generoso pro code-server/Caddy subirem.
+# Healthcheck: bate no code-server interno (8081/healthz, sem auth) — independe da
+# GATEWAY_PORT. start-period generoso pro code-server/Caddy subirem.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD curl -fsS http://localhost:8080/healthz || exit 1
+  CMD curl -fsS http://localhost:8081/healthz || exit 1
 
 # IDE em primeiro plano + sessao tmux "claude" persistente.
 # Config/extensoes do code-server ficam em /root (volume) -> persistem no redeploy.

@@ -18,6 +18,8 @@ const PASSWORD = process.env.IDE_PASSWORD || '';
 const PROJECTS_DIR = process.env.PROJECTS_DIR || path.join(HOME, 'projects');
 const ACTIVE_FILE = path.join(HOME, '.claude', 'active-project');
 const IDE_PUBLIC_URL = (process.env.IDE_PUBLIC_URL || '').replace(/\/+$/, '');
+// Caminho do IDE no gateway (mesmo domínio). Vazio IDE_PUBLIC_URL -> usa este path.
+const IDE_PATH = (process.env.IDE_PATH || '/ide').replace(/\/+$/, '');
 const SESSION_SCRIPT = '/usr/local/bin/claude-session.sh';
 
 fs.mkdirSync(PROJECTS_DIR, { recursive: true });
@@ -87,9 +89,10 @@ function page(flash) {
   const rows = projs.length ? projs.map((name) => {
     const dir = path.join(PROJECTS_DIR, name);
     const isActive = dir === active;
-    // IDE na raiz do dominio: sob /proxy/7000/ do code-server, href="/" cai no IDE.
-    // IDE_PUBLIC_URL (opcional) sobrepoe, caso o painel seja acessado por dominio proprio.
-    const ideHref = `${IDE_PUBLIC_URL}/?folder=${encodeURIComponent(dir)}`;
+    // Botao abre o IDE em /ide (mesmo dominio/login do painel, via gateway).
+    // IDE_PUBLIC_URL (opcional) sobrepoe, caso o IDE esteja num dominio proprio.
+    const ideBase = IDE_PUBLIC_URL || IDE_PATH;
+    const ideHref = `${ideBase}/?folder=${encodeURIComponent(dir)}`;
     return `<tr class="${isActive ? 'on' : ''}">
       <td>${isActive ? '🟢' : '⚪'} <b>${esc(name)}</b>${isActive ? ' <span class="tag">ativo</span>' : ''}<br><span class="muted">${esc(dir)}</span></td>
       <td class="acts">

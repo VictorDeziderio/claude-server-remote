@@ -108,14 +108,17 @@ if [ "${BACKUP_ENABLED:-true}" = "true" ]; then
 fi
 
 # ============================================================================
-# Gateway de UMA PORTA SO (Caddy:8080): painel em / e IDE em /ide, login unico.
-#   - painel  -> 127.0.0.1:7000 (interno, sem auth propria; o gateway autentica)
-#   - IDE     -> 127.0.0.1:8081 (interno, --auth none; o gateway autentica)
-#   - Caddy faz basic_auth (usuario "admin", senha = IDE_PASSWORD) em tudo, menos /healthz.
-#   Login no painel libera o /ide (mesma sessao basic-auth do navegador).
+# Gateway de UMA PORTA SO (Caddy): painel em / e IDE em /ide, login unico.
+#   Login vem do Environment: PANEL_USER + PANEL_PASSWORD (default: admin / IDE_PASSWORD).
+#   - painel -> 127.0.0.1:7001 (interno; o gateway autentica)
+#   - IDE    -> 127.0.0.1:8081 (interno, --auth none; o gateway autentica)
+#   Logar no painel libera o /ide (mesma sessao do navegador). Porta publica: GATEWAY_PORT.
 # ============================================================================
-PANEL_PORT="${PANEL_PORT:-7000}"
-IDE_PORT=8081
+GATEWAY_PORT="${GATEWAY_PORT:-8080}"   # porta publica (aponte o dominio do EasyPanel p/ ela)
+PANEL_PORT=7001                         # painel interno
+IDE_PORT=8081                           # IDE interno
+PANEL_USER="${PANEL_USER:-admin}"
+PANEL_PASSWORD="${PANEL_PASSWORD:-${IDE_PASSWORD:-changeme}}"
 
 # respawn simples: roda um comando em loop (reabre se cair), como ubuntu, logando em arquivo
 run_bg() {  # $1=label  $2=logfile  resto=comando
@@ -130,30 +133,30 @@ if [ "${IDE_ENABLED:-true}" = "true" ]; then
     code-server --bind-addr "127.0.0.1:$IDE_PORT" --auth none "$PROJ"
 fi
 
-# Painel: interno, sem auth propria (PANEL_BIND=127.0.0.1; o gateway autentica)
+# Painel: interno, sem auth propria (o gateway autentica). Botao "Abrir IDE" -> /ide
 if [ "${PANEL_ENABLED:-true}" = "true" ]; then
   echo ">> painel (interno $PANEL_PORT, publicado em / pelo gateway) | projetos: $PROJECTS_DIR"
   run_bg "painel" "$H/.claude/logs/panel.log" \
-    env PANEL_BIND=127.0.0.1 PANEL_PORT="$PANEL_PORT" IDE_PASSWORD="" \
+    env PANEL_BIND=127.0.0.1 PANEL_PORT="$PANEL_PORT" IDE_PASSWORD="" IDE_PATH=/ide \
       PROJECTS_DIR="$PROJECTS_DIR" PROJECT_FOLDER="$PROJECT_FOLDER" \
       FULL_AUTOCMD="$FULL_AUTOCMD" CLAUDE_AUTOCMD_DELAY="$CLAUDE_AUTOCMD_DELAY" IDE_PUBLIC_URL="" \
       node /usr/local/bin/panel/server.js
 fi
 
-# Gateway (Caddy) na 8080 — PID principal. Gera o Caddyfile com a senha hasheada.
+# Gateway (Caddy) — PID principal. Gera o Caddyfile com a senha hasheada.
 CADDYFILE="$H/.claude/Caddyfile"
-PASS_HASH="$(caddy hash-password --plaintext "${IDE_PASSWORD:-changeme}" 2>/dev/null || true)"
+PASS_HASH="$(caddy hash-password --plaintext "$PANEL_PASSWORD" 2>/dev/null || true)"
 cat > "$CADDYFILE" <<CADDY
 {
 	auto_https off
 	admin off
 }
-:8080 {
+:${GATEWAY_PORT} {
 	route {
 		@health path /healthz
 		respond @health "ok" 200
 		basic_auth {
-			admin ${PASS_HASH}
+			${PANEL_USER} ${PASS_HASH}
 		}
 		redir /ide /ide/
 		handle_path /ide/* {
@@ -164,5 +167,5 @@ cat > "$CADDYFILE" <<CADDY
 }
 CADDY
 chown "$U:$U" "$CADDYFILE" 2>/dev/null || true
-echo ">> gateway on (8080) | painel: / | IDE: /ide | login: usuario 'admin' + IDE_PASSWORD"
+echo ">> gateway on (${GATEWAY_PORT}) | painel: / | IDE: /ide | login: '${PANEL_USER}' (PANEL_PASSWORD)"
 exec caddy run --config "$CADDYFILE" --adapter caddyfile
