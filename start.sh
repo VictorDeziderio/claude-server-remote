@@ -69,30 +69,19 @@ as_user git config --global user.email >/dev/null 2>&1 || \
 as_user git config --global user.name  >/dev/null 2>&1 || \
   as_user git config --global user.name  "${GIT_AUTHOR_NAME:-claude-devbox}"
 
-# Garante a sessao tmux "claude" de pe, rodando o Claude em loop.
-#  - O Claude roda dentro de um 'while true': se sair (exit/crash), reabre em 3s
-#    (Ctrl-C na janela de 3s cai no shell). O remote-control anterior e restaurado
-#    sozinho pelo Claude (marcador evita re-disparar o autocmd).
+# Garante a sessao tmux "claude" de pe, rodando o supervisor (claude-loop.sh).
+#  - O supervisor roda o Claude em loop: se sair (exit/crash), reabre em 3s
+#    (Ctrl-C na janela de 3s cai no shell).
+#  - A CADA (re)inicio do Claude o supervisor RELIGA o remote-control (apos o delay,
+#    se logado) — `claude` sobe conversa nova e NAO reconecta sozinho. Assim o
+#    remote-control volta no boot, no respawn e quando o watchdog recria a sessao.
 #  - Idempotente: so cria a sessao se ela ainda nao existir (usada no boot e no watchdog).
 ensure_claude_session() {
   as_user tmux has-session -t claude 2>/dev/null && return 0
   as_user tmux new-session -d -s claude -c "$PROJ"
+  # passa o comando (com REMOTE_CONTROL_NAME) e o delay como args do supervisor
   as_user tmux send-keys -t claude \
-    'while true; do claude; echo "[claude saiu — reabrindo em 3s | Ctrl-C cancela]"; sleep 3; done' Enter
-  # apos o Claude carregar, envia o comando automatico (ex.: /remote-control easypanel meu-servidor).
-  # SO dispara se: (1) /login feito  E  (2) Claude ativo  E  (3) ainda nao foi estabelecido antes.
-  # O marcador evita DUPLICAR o remote-control (o Claude ja restaura o anterior do volume no start).
-  # Para forcar de novo: apague /root/.claude/.remote-control-established (ou rode /remote-control manual).
-  RC_MARKER="$H/.claude/.remote-control-established"
-  if [ -n "$FULL_AUTOCMD" ] && [ ! -f "$RC_MARKER" ]; then
-    ( sleep "$CLAUDE_AUTOCMD_DELAY"
-      cur=$(as_user tmux display-message -p -t claude '#{pane_current_command}' 2>/dev/null || true)
-      if is_logged_in && { [ "$cur" = node ] || [ "$cur" = claude ]; }; then
-        as_user tmux send-keys -t claude "$FULL_AUTOCMD" Enter
-        touch "$RC_MARKER" && chown "$U:$U" "$RC_MARKER" 2>/dev/null || true
-      fi
-    ) &
-  fi
+    "bash /usr/local/bin/claude-loop.sh '$FULL_AUTOCMD' '$CLAUDE_AUTOCMD_DELAY'" Enter
 }
 
 # cria a sessao agora (no boot)

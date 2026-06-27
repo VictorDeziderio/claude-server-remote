@@ -60,8 +60,9 @@ O Claude roda dentro de um loop e a sessão tem um watchdog — então ele **vol
 | **Sessão tmux** some (container ainda vivo) | watchdog do `start.sh` recria a sessão | ~10s |
 | **Container / code-server** cai | EasyPanel reinicia → `start.sh` refaz tudo | conforme restart policy |
 
-Ao reabrir, o Claude **restaura sozinho** a conexão de remote-control anterior (o marcador
-evita duplicar). Para forçar de novo: `/remote-control easypanel meu-servidor`.
+Ao (re)abrir o Claude — no boot, no respawn ou quando o watchdog recria a sessão — o
+supervisor (`claude-loop.sh`) **religa o remote-control sozinho** (envia o `CLAUDE_AUTOCMD`
+após o delay, se logado). Para forçar manualmente: `/remote-control easypanel meu-servidor`.
 
 > 🐚 **Quer cair no shell de propósito?** Dê `exit` e aperte **`Ctrl+C`** na janela de 3s
 > (a mensagem `[claude saiu — reabrindo em 3s | Ctrl-C cancela]`). Sem o Ctrl+C, o Claude reabre.
@@ -97,11 +98,11 @@ No start, o container automaticamente: garante a pasta `/root/$PROJECT_FOLDER` (
 sobe um **watchdog** (recria a sessão se ela cair) → após carregar, envia
 `CLAUDE_AUTOCMD` + `REMOTE_CONTROL_NAME` (ex.: `/remote-control easypanel meu-servidor`).
 É só `tmux attach -t claude` que já está rodando. (Detalhes do respawn na seção tmux acima.)
-> ⚠️ O comando só dispara se **(1) `/login` feito**, **(2) Claude ativo** e **(3) ainda não
-> foi estabelecido antes**. Sem login/Claude parado → não envia (deixa normal). E roda
-> **uma vez só**: um marcador (`/root/.claude/.remote-control-established`) evita **duplicar**
-> o remote-control nos próximos starts (o Claude já restaura o anterior sozinho).
-> Para forçar de novo: apague esse marcador ou rode `/remote-control ...` manualmente.
+> ⚠️ O comando só dispara se **(1) `/login` feito** e **(2) Claude ativo**. Sem login/Claude
+> parado → não envia (deixa normal). O supervisor (`claude-loop.sh`) reenvia o
+> `CLAUDE_AUTOCMD` **a cada (re)início do Claude** — no boot, no respawn por `exit` e quando
+> o watchdog recria a sessão — porque o `claude` sobe conversa nova e não reconecta o
+> remote-control sozinho. Forçar manualmente: `/remote-control easypanel meu-servidor`.
 > ⚠️ Na **1ª vez** o Claude pede login — faça uma vez (persiste em `/root/.claude`); nos
 > próximos restarts o auto-comando funciona direto.
 

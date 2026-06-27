@@ -77,10 +77,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends tmux gosu \
 RUN mkdir -p /etc/claude-code
 COPY managed-settings.json /etc/claude-code/managed-settings.json
 
-# entrypoint + backup: sobe sessao tmux "claude" (Claude Code) + code-server (IDE)
+# entrypoint + supervisor + backup: sobe sessao tmux "claude" (Claude Code) + code-server (IDE)
 COPY start.sh /usr/local/bin/start.sh
+COPY claude-loop.sh /usr/local/bin/claude-loop.sh
 COPY backup.sh /usr/local/bin/backup.sh
-RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/backup.sh
+RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/claude-loop.sh /usr/local/bin/backup.sh
 
 WORKDIR /root
 EXPOSE 8080
