@@ -20,13 +20,16 @@ ENV IDE_ENABLED=true \
     # Backup automatico dos projetos: liga/desliga + intervalo (segundos)
     BACKUP_ENABLED=true \
     BACKUP_INTERVAL=3600 \
-    # Gateway/painel: porta publica + login (usuario/senha) + dir dos projetos
+    # Gateway/painel: porta publica + dir dos projetos
     PANEL_ENABLED=true \
     GATEWAY_PORT=8080 \
-    PANEL_USER=admin \
-    PANEL_PASSWORD= \
     PROJECTS_DIR=/root/projects \
-    IDE_PUBLIC_URL=
+    IDE_PUBLIC_URL= \
+    # AUTH: painel via LOGIN+PASSWORD (basic_auth do gateway); /ide via TOKEN (code-server).
+    # Defina PANEL_PASSWORD e IDE_TOKEN no Environment do EasyPanel. Vazio -> cai no IDE_PASSWORD.
+    PANEL_LOGIN=admin \
+    PANEL_PASSWORD= \
+    IDE_TOKEN=
 
 # Politica GLOBAL do Claude Code (managed settings) — permissao para TUDO em todo o
 # container, para qualquer usuario/projeto. Fica em /etc (nao e ocultado pelo volume /root)
@@ -40,6 +43,8 @@ COPY claude-loop.sh /usr/local/bin/claude-loop.sh
 COPY claude-session.sh /usr/local/bin/claude-session.sh
 COPY backup.sh /usr/local/bin/backup.sh
 COPY panel /usr/local/bin/panel
+# Semente do panel.json (config dos projetos) — copiada p/ o volume na 1a subida (start.sh)
+COPY panel.json /usr/local/share/claude/panel.json
 RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/claude-loop.sh \
         /usr/local/bin/claude-session.sh /usr/local/bin/backup.sh
 

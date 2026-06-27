@@ -77,6 +77,14 @@ mkdir -p "$PROJECTS_DIR"
 [ -s "$ACTIVE_FILE" ] || echo "$PROJ" > "$ACTIVE_FILE"
 chown -R "$U:$U" "$ACTIVE_FILE" "$PROJECTS_DIR" 2>/dev/null || true
 
+# panel.json: config dos projetos (autoStartClaude/autoRemote por projeto). A copia VIVA
+# fica no volume; semeada da imagem (/usr/local/share/claude/panel.json) so na 1a vez.
+PANEL_CONFIG="${PANEL_CONFIG:-$H/.claude/panel.json}"
+if [ ! -f "$PANEL_CONFIG" ] && [ -f /usr/local/share/claude/panel.json ]; then
+  cp /usr/local/share/claude/panel.json "$PANEL_CONFIG"
+fi
+chown "$U:$U" "$PANEL_CONFIG" 2>/dev/null || true
+
 # Garante a sessao tmux "claude" de pe na PASTA ATIVA, rodando o supervisor.
 #  - claude-session.sh le a pasta ativa (active-project) e sobe o supervisor nela.
 #  - O supervisor (claude-loop.sh) roda o Claude em loop: se sair (exit/crash),
@@ -117,8 +125,11 @@ fi
 GATEWAY_PORT="${GATEWAY_PORT:-8080}"   # porta publica (aponte o dominio do EasyPanel p/ ela)
 PANEL_PORT=7001                         # painel interno
 IDE_PORT=8081                           # IDE interno
-PANEL_USER="${PANEL_USER:-admin}"
+# Login do PAINEL (basic_auth do gateway). PANEL_LOGIN/PANEL_PASSWORD; fallback ao legado.
+PANEL_LOGIN="${PANEL_LOGIN:-${PANEL_USER:-admin}}"
 PANEL_PASSWORD="${PANEL_PASSWORD:-${IDE_PASSWORD:-changeme}}"
+# Token do /IDE (senha NATIVA do code-server). IDE_TOKEN; fallback ao IDE_PASSWORD legado.
+IDE_TOKEN="${IDE_TOKEN:-${IDE_PASSWORD:-changeme}}"
 
 # respawn simples: roda um comando em loop (reabre se cair), como ubuntu, logando em arquivo
 run_bg() {  # $1=label  $2=logfile  resto=comando
@@ -126,11 +137,12 @@ run_bg() {  # $1=label  $2=logfile  resto=comando
   ( while true; do as_user "$@" >> "$log" 2>&1; echo "[$label saiu — reabrindo em 3s]" >> "$log"; sleep 3; done ) &
 }
 
-# IDE: code-server interno, sem auth (protegido pelo gateway), publicado sob /ide
+# IDE: code-server interno protegido pela sua propria senha = IDE_TOKEN (--auth password).
+# O gateway publica /ide SEM basic_auth -> o /ide e acessivel so com o TOKEN (compartilhavel).
 if [ "${IDE_ENABLED:-true}" = "true" ]; then
-  echo ">> IDE (interno $IDE_PORT, publicado em /ide pelo gateway)"
+  echo ">> IDE (interno $IDE_PORT, publicado em /ide | acesso pelo IDE_TOKEN)"
   run_bg "ide" "$H/.claude/logs/ide.log" \
-    code-server --bind-addr "127.0.0.1:$IDE_PORT" --auth none "$PROJ"
+    env PASSWORD="$IDE_TOKEN" code-server --bind-addr "127.0.0.1:$IDE_PORT" --auth password "$PROJ"
 fi
 
 # Painel: interno, sem auth propria (o gateway autentica). Botao "Abrir IDE" -> /ide
@@ -155,17 +167,23 @@ cat > "$CADDYFILE" <<CADDY
 	route {
 		@health path /healthz
 		respond @health "ok" 200
-		basic_auth {
-			${PANEL_USER} ${PASS_HASH}
-		}
+
+		# IDE: protegido pelo proprio code-server (--auth password = IDE_TOKEN).
+		# Vem ANTES do basic_auth e o handle_path encerra a requisicao -> /ide NAO
+		# passa pelo login do painel (acesso so com o TOKEN).
 		redir /ide /ide/
 		handle_path /ide/* {
 			reverse_proxy 127.0.0.1:${IDE_PORT}
+		}
+
+		# Painel: protegido por LOGIN + PASSWORD (basic_auth do gateway)
+		basic_auth {
+			${PANEL_LOGIN} ${PASS_HASH}
 		}
 		reverse_proxy 127.0.0.1:${PANEL_PORT}
 	}
 }
 CADDY
 chown "$U:$U" "$CADDYFILE" 2>/dev/null || true
-echo ">> gateway on (${GATEWAY_PORT}) | painel: / | IDE: /ide | login: '${PANEL_USER}' (PANEL_PASSWORD)"
+echo ">> gateway on (${GATEWAY_PORT}) | painel: / (login '${PANEL_LOGIN}' + PANEL_PASSWORD) | IDE: /ide (IDE_TOKEN)"
 exec caddy run --config "$CADDYFILE" --adapter caddyfile
