@@ -69,19 +69,24 @@ as_user git config --global user.email >/dev/null 2>&1 || \
 as_user git config --global user.name  >/dev/null 2>&1 || \
   as_user git config --global user.name  "${GIT_AUTHOR_NAME:-claude-devbox}"
 
-# Garante a sessao tmux "claude" de pe, rodando o supervisor (claude-loop.sh).
-#  - O supervisor roda o Claude em loop: se sair (exit/crash), reabre em 3s
-#    (Ctrl-C na janela de 3s cai no shell).
-#  - A CADA (re)inicio do Claude o supervisor RELIGA o remote-control (apos o delay,
-#    se logado) — `claude` sobe conversa nova e NAO reconecta sozinho. Assim o
-#    remote-control volta no boot, no respawn e quando o watchdog recria a sessao.
-#  - Idempotente: so cria a sessao se ela ainda nao existir (usada no boot e no watchdog).
+# pasta ativa (onde o Claude roda) — fonte da verdade compartilhada com o painel.
+# No boot, se ainda nao definida, inicia com o default $PROJ.
+PROJECTS_DIR="${PROJECTS_DIR:-$H/projects}"
+ACTIVE_FILE="$H/.claude/active-project"
+mkdir -p "$PROJECTS_DIR"
+[ -s "$ACTIVE_FILE" ] || echo "$PROJ" > "$ACTIVE_FILE"
+chown -R "$U:$U" "$ACTIVE_FILE" "$PROJECTS_DIR" 2>/dev/null || true
+
+# Garante a sessao tmux "claude" de pe na PASTA ATIVA, rodando o supervisor.
+#  - claude-session.sh le a pasta ativa (active-project) e sobe o supervisor nela.
+#  - O supervisor (claude-loop.sh) roda o Claude em loop: se sair (exit/crash),
+#    reabre em 3s (Ctrl-C na janela de 3s cai no shell). A CADA (re)inicio RELIGA o
+#    remote-control (apos o delay, se logado) — `claude` sobe conversa nova e NAO
+#    reconecta sozinho. Cobre boot, respawn e recriacao pelo watchdog.
+#  - Idempotente: claude-session.sh nao mexe se a sessao ja existir.
 ensure_claude_session() {
-  as_user tmux has-session -t claude 2>/dev/null && return 0
-  as_user tmux new-session -d -s claude -c "$PROJ"
-  # passa o comando (com REMOTE_CONTROL_NAME) e o delay como args do supervisor
-  as_user tmux send-keys -t claude \
-    "bash /usr/local/bin/claude-loop.sh '$FULL_AUTOCMD' '$CLAUDE_AUTOCMD_DELAY'" Enter
+  as_user env FULL_AUTOCMD="$FULL_AUTOCMD" CLAUDE_AUTOCMD_DELAY="$CLAUDE_AUTOCMD_DELAY" \
+    PROJECT_FOLDER="$PROJECT_FOLDER" bash /usr/local/bin/claude-session.sh
 }
 
 # cria a sessao agora (no boot)
@@ -100,6 +105,18 @@ if [ "${BACKUP_ENABLED:-true}" = "true" ]; then
       sleep "${BACKUP_INTERVAL:-3600}"
       as_user env PROJECT_FOLDER="$PROJECT_FOLDER" bash /usr/local/bin/backup.sh >/dev/null 2>&1 || true
     done ) &
+fi
+
+# Painel de controle (porta PANEL_PORT, default 7000): cadastrar pastas de projeto,
+# reiniciar o Claude na pasta ativa e abrir o IDE nela. Auth = IDE_PASSWORD.
+# Exponha um dominio do EasyPanel apontando para a porta do painel. PANEL_ENABLED=false desativa.
+if [ "${PANEL_ENABLED:-true}" = "true" ]; then
+  echo ">> painel on (${PANEL_PORT:-7000}) | projetos: $PROJECTS_DIR | log: $H/.claude/logs/panel.log"
+  ( as_user env IDE_PASSWORD="${IDE_PASSWORD:-}" PANEL_PORT="${PANEL_PORT:-7000}" \
+      PROJECTS_DIR="$PROJECTS_DIR" PROJECT_FOLDER="$PROJECT_FOLDER" \
+      FULL_AUTOCMD="$FULL_AUTOCMD" CLAUDE_AUTOCMD_DELAY="$CLAUDE_AUTOCMD_DELAY" \
+      IDE_PUBLIC_URL="${IDE_PUBLIC_URL:-}" \
+      node /usr/local/bin/panel/server.js >> "$H/.claude/logs/panel.log" 2>&1 ) &
 fi
 
 # IDE (VS Code web)

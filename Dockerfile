@@ -21,7 +21,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     GH_TOKEN= \
     # Backup automatico dos projetos: liga/desliga + intervalo (segundos)
     BACKUP_ENABLED=true \
-    BACKUP_INTERVAL=3600
+    BACKUP_INTERVAL=3600 \
+    # Painel de controle: liga/desliga + porta + dir dos projetos + URL publica do IDE
+    PANEL_ENABLED=true \
+    PANEL_PORT=7000 \
+    PROJECTS_DIR=/root/projects \
+    IDE_PUBLIC_URL=
 
 # 1) Toolchain de dev + dependencias do Claude (git, ripgrep, build, python, psql...)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -77,14 +82,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends tmux gosu \
 RUN mkdir -p /etc/claude-code
 COPY managed-settings.json /etc/claude-code/managed-settings.json
 
-# entrypoint + supervisor + backup: sobe sessao tmux "claude" (Claude Code) + code-server (IDE)
+# entrypoint + supervisor + sessao + backup + painel
 COPY start.sh /usr/local/bin/start.sh
 COPY claude-loop.sh /usr/local/bin/claude-loop.sh
+COPY claude-session.sh /usr/local/bin/claude-session.sh
 COPY backup.sh /usr/local/bin/backup.sh
-RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/claude-loop.sh /usr/local/bin/backup.sh
+COPY panel /usr/local/bin/panel
+RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/claude-loop.sh \
+        /usr/local/bin/claude-session.sh /usr/local/bin/backup.sh
 
 WORKDIR /root
-EXPOSE 8080
+EXPOSE 8080 7000
 
 # Healthcheck (item 4): code-server expoe /healthz. Marca o container unhealthy se
 # o IDE travar, permitindo restart automatico. Assume IDE_ENABLED=true (default).

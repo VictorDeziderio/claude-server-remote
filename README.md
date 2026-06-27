@@ -91,6 +91,10 @@ após o delay, se logado). Para forçar manualmente: `/remote-control meu-servid
 | `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` | `claude-devbox` / `devbox@easypanel.local` | identidade dos commits de backup |
 | `BACKUP_ENABLED` | `true` | liga/desliga o backup automático dos projetos |
 | `BACKUP_INTERVAL` | `3600` | intervalo entre backups (segundos) |
+| `PANEL_ENABLED` | `true` | liga/desliga o painel de controle |
+| `PANEL_PORT` | `7000` | porta interna do painel (exponha um domínio pra ela) |
+| `PROJECTS_DIR` | `/root/projects` | diretório que contém as pastas de projeto |
+| `IDE_PUBLIC_URL` | (vazio) | URL pública do IDE, pro botão "Abrir IDE" do painel |
 
 ### 🔁 Auto-start (ao reiniciar)
 No start, o container automaticamente: garante a pasta `/root/$PROJECT_FOLDER` (cria se faltar)
@@ -160,3 +164,24 @@ repositório git dentro de `/root/$PROJECT_FOLDER`. Para funcionar, cada projeto
 Repos sem `origin` são ignorados (registrados no log). Log: `/root/.claude/logs/backup.log`.
 Backup manual a qualquer momento: `bash /usr/local/bin/backup.sh` (ou `backup.sh /root/projects/meu-projeto`).
 Desligar: `BACKUP_ENABLED=false`.
+
+---
+
+## 🧩 Painel de controle
+
+Um painel web leve (Node puro) pra gerenciar os projetos sem mexer no terminal:
+
+- **Listar/criar pastas** de projeto em `PROJECTS_DIR` (`/root/projects`) — criar faz `mkdir` + `git init`.
+- **🔄 Reiniciar aqui** — define a pasta como **ativa** e recria a sessão do Claude nela (~3s),
+  sem derrubar IDE nem container. A pasta ativa fica em `/root/.claude/active-project` e é
+  respeitada pelo boot e pelo watchdog.
+- **🖥️ Abrir IDE** — abre o code-server já na pasta do projeto (precisa de `IDE_PUBLIC_URL`).
+
+**Modelo:** um Claude por vez, apontando para a pasta ativa (não roda vários em paralelo).
+**Auth:** mesma senha do IDE (`IDE_PASSWORD`). Log: `/root/.claude/logs/panel.log`.
+
+### Expor o painel no EasyPanel
+O painel escuta na porta **`PANEL_PORT`** (`7000`). No serviço `claude` → **Domínios**, adicione
+um domínio novo (ex.: `painel-claude...`) apontando para a porta `7000`. Defina também
+`IDE_PUBLIC_URL` (ex.: `https://tools-claude.exemplo.easypanel.host`) pro botão "Abrir IDE" funcionar.
+Desligar: `PANEL_ENABLED=false`.
