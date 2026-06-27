@@ -23,9 +23,15 @@ while true; do
   # roda em paralelo ao `claude` abaixo; envia as teclas para o proprio pane.
   if [ -n "$FULL_AUTOCMD" ]; then
     ( sleep "$DELAY"
-      cur=$(tmux display-message -p -t claude '#{pane_current_command}' 2>/dev/null || true)
-      if is_logged_in && { [ "$cur" = node ] || [ "$cur" = claude ]; }; then
-        tmux send-keys -t claude "$FULL_AUTOCMD" Enter
+      # NAO checa pane_current_command: com o supervisor o pane aparece como
+      # "bash" (nao "node"), o que dava falso-negativo e pulava o envio.
+      if is_logged_in; then
+        # texto e Enter SEPARADOS, com um respiro entre eles: enviar "<txt> Enter"
+        # junto falha porque o Claude usa bracketed paste e engole o Enter,
+        # deixando o comando apenas digitado (sem executar).
+        tmux send-keys -t claude "$FULL_AUTOCMD"
+        sleep 1
+        tmux send-keys -t claude Enter
       fi
     ) &
   fi
