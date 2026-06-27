@@ -164,6 +164,14 @@ async function claudeVersion() {
 async function sessionUp(name) {
   return (await sh('tmux', ['has-session', '-t', sessionName(name)])).ok;
 }
+// link de controle remoto ativo (claude.ai/code/session_...) lido da tela da sessao.
+// Fechar a aba no PC NAO encerra o remote no servidor -> este link segue valido p/ reconectar.
+async function remoteUrlOf(name) {
+  const r = await sh('tmux', ['capture-pane', '-t', sessionName(name), '-p', '-S', '-300']);
+  if (!r.ok) return '';
+  const m = (r.stdout || '').match(/https:\/\/claude\.ai\/code\/[^\s'"()\]]+/g);
+  return m ? m[m.length - 1] : '';
+}
 // Claude de fato rodando nessa sessao? Le o flag file que o claude-loop.sh mantem
 // (o pane_current_command mostra "bash"/o supervisor e dava falso-negativo de "parado").
 function claudeRunningFlag(name) {
@@ -363,6 +371,7 @@ async function buildState() {
       autoRemote: c.autoRemote,
       initLine: c.initLine,
       remoteCmd: remoteCmdFor(name),
+      remoteUrl: up ? await remoteUrlOf(name) : '', // link p/ abrir/reconectar o controle remoto
     });
   }
   return {

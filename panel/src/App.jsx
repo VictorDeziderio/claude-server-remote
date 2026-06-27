@@ -265,6 +265,12 @@ export default function App() {
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2">
+                      {p.remoteUrl && (
+                        <a href={p.remoteUrl} target="_blank" rel="noreferrer" title="abre/reconecta o controle remoto — o link continua válido mesmo se você fechou a aba no PC"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500/90 px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-sky-500">
+                          <Radio className="h-3.5 w-3.5" /> Abrir remote
+                        </a>
+                      )}
                       <Btn variant="accent" busy={busy === `restart:${p.name}`} onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title="mata a sessão tmux (fecha remote + Claude) → reabre o Claude → religa o remote → envia a primeira linha"><RefreshCw className="h-3.5 w-3.5" /> Reiniciar Claude</Btn>
                       <Btn busy={busy === `remote:${p.name}`} onClick={() => run(`remote:${p.name}`, () => api.reconnectRemote(p.name))} title="re-emite o /remote-control sem reiniciar (preserva a conversa)"><Radio className="h-3.5 w-3.5" /> Religar remote</Btn>
                       <Btn onClick={() => openTerm(p.name)}><SquareTerminal className="h-3.5 w-3.5" /> Terminal</Btn>
