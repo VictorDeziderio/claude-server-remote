@@ -1,0 +1,5 @@
+# Nao enviar artefatos locais pro contexto de build (o Dockerfile builda o painel)
+panel/node_modules
+panel/dist
+**/.DS_Store
+.git

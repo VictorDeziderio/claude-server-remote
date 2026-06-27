@@ -2,15 +2,13 @@
 # Entrypoint do dev-box claude (prepara como root, depois roda como usuario nao-root):
 #  - settings.json com bypassPermissions (permite tudo)
 #  - sessao tmux "claude" persistente, iniciada DENTRO de $PROJECT_FOLDER, rodando o Claude
-#  - apos o Claude carregar, envia automaticamente o comando $CLAUDE_AUTOCMD
+#  - religa o remote-control conforme a config por projeto (panel.json -> autoRemote)
 #  - sobe o code-server (IDE) se IDE_ENABLED=true
 #
 # Variaveis (campo Environment do EasyPanel):
 #   IDE_ENABLED          true|false  -> habilita/desabilita o IDE web (default: true)
-#   IDE_PASSWORD         <senha>     -> senha do IDE (code-server)
 #   PROJECT_FOLDER       projects    -> pasta (dentro de /root) onde o Claude inicia
-#   REMOTE_CONTROL_NAME  meu-servidor      -> nome anexado ao CLAUDE_AUTOCMD (ex.: /remote-control meu-servidor)
-#   CLAUDE_AUTOCMD       /remote-control -> comando enviado ao Claude no start ("" desativa)
+#   REMOTE_CONTROL_NAME  meu-servidor      -> nome anexado ao comando (ex.: /remote-control meu-servidor)
 #   CLAUDE_AUTOCMD_DELAY 15          -> segundos de espera antes de enviar o comando
 set -euo pipefail
 
@@ -19,12 +17,12 @@ H=/root                                  # home do usuario ubuntu = volume persi
 PROJECT_FOLDER="${PROJECT_FOLDER:-projects}"
 PROJ="$H/$PROJECT_FOLDER"
 REMOTE_CONTROL_NAME="${REMOTE_CONTROL_NAME:-}"
-CLAUDE_AUTOCMD="${CLAUDE_AUTOCMD:-/remote-control}"
 CLAUDE_AUTOCMD_DELAY="${CLAUDE_AUTOCMD_DELAY:-15}"
-# comando final = autocmd + nome do remote-control (se definido)
-#   ex.: CLAUDE_AUTOCMD="/remote-control" + REMOTE_CONTROL_NAME=meu-servidor
-#        -> "/remote-control meu-servidor"
-FULL_AUTOCMD="${CLAUDE_AUTOCMD}${REMOTE_CONTROL_NAME:+ ${REMOTE_CONTROL_NAME}}"
+# comando do remote-control = FIXO "/remote-control" + nome (se definido).
+# Quem decide se DISPARA e a flag autoRemote por projeto no panel.json (lida pelo
+# claude-session.sh) -> nao ha mais variavel CLAUDE_AUTOCMD.
+#   ex.: REMOTE_CONTROL_NAME=meu-servidor -> "/remote-control meu-servidor"
+FULL_AUTOCMD="/remote-control${REMOTE_CONTROL_NAME:+ ${REMOTE_CONTROL_NAME}}"
 
 # settings do Claude: permite tudo (so cria se nao existir)
 mkdir -p "$H/.claude" "$PROJ"
@@ -116,20 +114,19 @@ if [ "${BACKUP_ENABLED:-true}" = "true" ]; then
 fi
 
 # ============================================================================
-# Gateway de UMA PORTA SO (Caddy): painel em / e IDE em /ide, login unico.
-#   Login vem do Environment: PANEL_USER + PANEL_PASSWORD (default: admin / IDE_PASSWORD).
-#   - painel -> 127.0.0.1:7001 (interno; o gateway autentica)
-#   - IDE    -> 127.0.0.1:8081 (interno, --auth none; o gateway autentica)
-#   Logar no painel libera o /ide (mesma sessao do navegador). Porta publica: GATEWAY_PORT.
+# Gateway de UMA PORTA SO (Caddy): painel em / (LOGIN+SENHA) e IDE em /ide (TOKEN).
+#   - painel -> 127.0.0.1:7001 (interno; o gateway faz basic_auth PANEL_LOGIN+PANEL_PASSWORD)
+#   - IDE    -> 127.0.0.1:8081 (interno, --auth password = IDE_TOKEN; FORA do basic_auth)
+#   O /ide e acessivel so com o IDE_TOKEN (link compartilhavel). Porta publica: GATEWAY_PORT.
 # ============================================================================
 GATEWAY_PORT="${GATEWAY_PORT:-8080}"   # porta publica (aponte o dominio do EasyPanel p/ ela)
 PANEL_PORT=7001                         # painel interno
 IDE_PORT=8081                           # IDE interno
-# Login do PAINEL (basic_auth do gateway). PANEL_LOGIN/PANEL_PASSWORD; fallback ao legado.
-PANEL_LOGIN="${PANEL_LOGIN:-${PANEL_USER:-admin}}"
-PANEL_PASSWORD="${PANEL_PASSWORD:-${IDE_PASSWORD:-changeme}}"
-# Token do /IDE (senha NATIVA do code-server). IDE_TOKEN; fallback ao IDE_PASSWORD legado.
-IDE_TOKEN="${IDE_TOKEN:-${IDE_PASSWORD:-changeme}}"
+# Login do PAINEL (basic_auth do gateway).
+PANEL_LOGIN="${PANEL_LOGIN:-admin}"
+PANEL_PASSWORD="${PANEL_PASSWORD:-changeme}"
+# Token do /IDE (senha NATIVA do code-server).
+IDE_TOKEN="${IDE_TOKEN:-changeme}"
 
 # respawn simples: roda um comando em loop (reabre se cair), como ubuntu, logando em arquivo
 run_bg() {  # $1=label  $2=logfile  resto=comando
@@ -145,13 +142,13 @@ if [ "${IDE_ENABLED:-true}" = "true" ]; then
     env PASSWORD="$IDE_TOKEN" code-server --bind-addr "127.0.0.1:$IDE_PORT" --auth password "$PROJ"
 fi
 
-# Painel: interno, sem auth propria (o gateway autentica). Botao "Abrir IDE" -> /ide
+# Painel "Claude Remote": SPA React buildada (dist/) + API JSON, servida pelo server.js.
+# Sem auth propria — o gateway autentica. Acoes e status leem o panel.json / a sessao tmux.
 if [ "${PANEL_ENABLED:-true}" = "true" ]; then
-  echo ">> painel (interno $PANEL_PORT, publicado em / pelo gateway) | projetos: $PROJECTS_DIR"
+  echo ">> painel Claude Remote (interno $PANEL_PORT, publicado em / pelo gateway) | projetos: $PROJECTS_DIR"
   run_bg "painel" "$H/.claude/logs/panel.log" \
-    env PANEL_BIND=127.0.0.1 PANEL_PORT="$PANEL_PORT" IDE_PASSWORD="" IDE_PATH=/ide \
-      PROJECTS_DIR="$PROJECTS_DIR" PROJECT_FOLDER="$PROJECT_FOLDER" \
-      FULL_AUTOCMD="$FULL_AUTOCMD" CLAUDE_AUTOCMD_DELAY="$CLAUDE_AUTOCMD_DELAY" IDE_PUBLIC_URL="" \
+    env PANEL_BIND=127.0.0.1 PANEL_PORT="$PANEL_PORT" IDE_PATH=/ide \
+      PROJECTS_DIR="$PROJECTS_DIR" FULL_AUTOCMD="$FULL_AUTOCMD" \
       node /usr/local/bin/panel/server.js
 fi
 

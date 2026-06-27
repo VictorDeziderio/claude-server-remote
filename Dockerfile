@@ -78,11 +78,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends tmux gosu \
 # ============================================================================
 # Variaveis de runtime (sobrescreva no Environment do EasyPanel)
 ENV IDE_ENABLED=true \
-    IDE_PASSWORD=senha-antiga-removida \
-    # auto-start do Claude: pasta de trabalho + nome do remote-control + comando + delay
+    # auto-start do Claude: pasta de trabalho + nome do remote-control + delay.
+    # O comando do remote e FIXO "/remote-control"; ligar/desligar e por projeto (panel.json).
     PROJECT_FOLDER=projects \
     REMOTE_CONTROL_NAME=meu-servidor \
-    CLAUDE_AUTOCMD="/remote-control" \
     CLAUDE_AUTOCMD_DELAY=15 \
     # GitHub: token (escopo repo) p/ auto-login do gh e push do backup. Defina no Environment.
     GH_TOKEN= \
@@ -93,12 +92,11 @@ ENV IDE_ENABLED=true \
     PANEL_ENABLED=true \
     GATEWAY_PORT=8080 \
     PROJECTS_DIR=/root/projects \
-    IDE_PUBLIC_URL= \
-    # AUTH: painel via LOGIN+PASSWORD (basic_auth do gateway); /ide via TOKEN (code-server).
-    # Defina PANEL_PASSWORD e IDE_TOKEN no Environment do EasyPanel. Vazio -> cai no IDE_PASSWORD.
+    # AUTH: painel via PANEL_LOGIN+PANEL_PASSWORD (basic_auth do gateway); /ide via IDE_TOKEN
+    # (senha nativa do code-server). TROQUE no Environment do EasyPanel.
     PANEL_LOGIN=admin \
-    PANEL_PASSWORD= \
-    IDE_TOKEN=
+    PANEL_PASSWORD=senha-antiga-removida \
+    IDE_TOKEN=senha-antiga-removida
 
 # Politica GLOBAL do Claude Code (managed settings) — permissao para TUDO em todo o
 # container, para qualquer usuario/projeto. Fica em /etc (nao e ocultado pelo volume /root)
@@ -112,6 +110,12 @@ COPY claude-loop.sh /usr/local/bin/claude-loop.sh
 COPY claude-session.sh /usr/local/bin/claude-session.sh
 COPY backup.sh /usr/local/bin/backup.sh
 COPY panel /usr/local/bin/panel
+# Build do painel "Claude Remote" (Vite/React) -> dist/. node_modules e removido depois:
+# em runtime o server.js usa SO modulos nativos do Node (http/fs/path/child_process).
+RUN cd /usr/local/bin/panel \
+    && npm ci \
+    && npm run build \
+    && rm -rf node_modules
 # Semente do panel.json (config dos projetos) — copiada p/ o volume na 1a subida (start.sh)
 COPY panel.json /usr/local/share/claude/panel.json
 RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/claude-loop.sh \
