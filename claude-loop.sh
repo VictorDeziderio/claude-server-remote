@@ -5,7 +5,7 @@
 # remote-control sozinho. Assim o remote-control volta no boot, no respawn e quando o
 # watchdog recria a sessao. Para cair no shell de proposito: Ctrl-C na janela de 3s.
 #
-# Args:  $1 = comando a enviar (ex.: "/remote-control easypanel meu-servidor"; vazio desativa)
+# Args:  $1 = comando a enviar (ex.: "/remote-control meu-servidor"; vazio desativa)
 #        $2 = segundos de espera antes de enviar (Claude carregar)
 FULL_AUTOCMD="${1:-}"
 DELAY="${2:-15}"

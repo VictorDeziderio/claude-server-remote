@@ -15,7 +15,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # auto-start do Claude: pasta de trabalho + nome do remote-control + comando + delay
     PROJECT_FOLDER=projects \
     REMOTE_CONTROL_NAME=meu-servidor \
-    CLAUDE_AUTOCMD="/remote-control easypanel" \
+    CLAUDE_AUTOCMD="/remote-control" \
     CLAUDE_AUTOCMD_DELAY=15 \
     # GitHub: token (escopo repo) p/ auto-login do gh e push do backup. Defina no Environment.
     GH_TOKEN= \

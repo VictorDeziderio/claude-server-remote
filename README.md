@@ -62,7 +62,7 @@ O Claude roda dentro de um loop e a sessão tem um watchdog — então ele **vol
 
 Ao (re)abrir o Claude — no boot, no respawn ou quando o watchdog recria a sessão — o
 supervisor (`claude-loop.sh`) **religa o remote-control sozinho** (envia o `CLAUDE_AUTOCMD`
-após o delay, se logado). Para forçar manualmente: `/remote-control easypanel meu-servidor`.
+após o delay, se logado). Para forçar manualmente: `/remote-control meu-servidor`.
 
 > 🐚 **Quer cair no shell de propósito?** Dê `exit` e aperte **`Ctrl+C`** na janela de 3s
 > (a mensagem `[claude saiu — reabrindo em 3s | Ctrl-C cancela]`). Sem o Ctrl+C, o Claude reabre.
@@ -83,9 +83,9 @@ após o delay, se logado). Para forçar manualmente: `/remote-control easypanel 
 |----------|---------|-------|
 | `IDE_ENABLED` | `true` | liga/desliga o IDE web |
 | `IDE_PASSWORD` | (gerada) | senha de acesso ao IDE |
-| `REMOTE_CONTROL_NAME` | `meu-servidor` | nome anexado ao comando (ex.: `/remote-control easypanel meu-servidor`) |
+| `REMOTE_CONTROL_NAME` | `meu-servidor` | nome do remote-control, anexado ao comando (ex.: `/remote-control meu-servidor`) |
 | `PROJECT_FOLDER` | `projects` | pasta (dentro de `/root`) onde o Claude inicia — **criada automaticamente se não existir** |
-| `CLAUDE_AUTOCMD` | `/remote-control easypanel` | comando enviado ao Claude no start (`""` desativa) |
+| `CLAUDE_AUTOCMD` | `/remote-control` | comando base no start; o nome vem de `REMOTE_CONTROL_NAME` (`""` desativa) |
 | `CLAUDE_AUTOCMD_DELAY` | `15` | segundos antes de enviar o comando |
 | `GH_TOKEN` | (vazio) | token GitHub (escopo `repo`) → auto-login do `gh` + push do backup |
 | `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` | `claude-devbox` / `devbox@easypanel.local` | identidade dos commits de backup |
@@ -96,13 +96,13 @@ após o delay, se logado). Para forçar manualmente: `/remote-control easypanel 
 No start, o container automaticamente: garante a pasta `/root/$PROJECT_FOLDER` (cria se faltar)
 → cria a sessão tmux `claude` nela → roda o `claude` **em loop** (reabre no `exit`/crash) +
 sobe um **watchdog** (recria a sessão se ela cair) → após carregar, envia
-`CLAUDE_AUTOCMD` + `REMOTE_CONTROL_NAME` (ex.: `/remote-control easypanel meu-servidor`).
+`CLAUDE_AUTOCMD` + `REMOTE_CONTROL_NAME` (ex.: `/remote-control meu-servidor`).
 É só `tmux attach -t claude` que já está rodando. (Detalhes do respawn na seção tmux acima.)
 > ⚠️ O comando só dispara se **(1) `/login` feito** e **(2) Claude ativo**. Sem login/Claude
 > parado → não envia (deixa normal). O supervisor (`claude-loop.sh`) reenvia o
 > `CLAUDE_AUTOCMD` **a cada (re)início do Claude** — no boot, no respawn por `exit` e quando
 > o watchdog recria a sessão — porque o `claude` sobe conversa nova e não reconecta o
-> remote-control sozinho. Forçar manualmente: `/remote-control easypanel meu-servidor`.
+> remote-control sozinho. Forçar manualmente: `/remote-control meu-servidor`.
 > ⚠️ Na **1ª vez** o Claude pede login — faça uma vez (persiste em `/root/.claude`); nos
 > próximos restarts o auto-comando funciona direto.
 

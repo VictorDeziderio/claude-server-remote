@@ -9,8 +9,8 @@
 #   IDE_ENABLED          true|false  -> habilita/desabilita o IDE web (default: true)
 #   IDE_PASSWORD         <senha>     -> senha do IDE (code-server)
 #   PROJECT_FOLDER       projects    -> pasta (dentro de /root) onde o Claude inicia
-#   REMOTE_CONTROL_NAME  meu-servidor      -> nome anexado ao CLAUDE_AUTOCMD (ex.: .../easypanel meu-servidor)
-#   CLAUDE_AUTOCMD       /remote-control easypanel -> comando enviado ao Claude no start ("" desativa)
+#   REMOTE_CONTROL_NAME  meu-servidor      -> nome anexado ao CLAUDE_AUTOCMD (ex.: /remote-control meu-servidor)
+#   CLAUDE_AUTOCMD       /remote-control -> comando enviado ao Claude no start ("" desativa)
 #   CLAUDE_AUTOCMD_DELAY 15          -> segundos de espera antes de enviar o comando
 set -euo pipefail
 
@@ -19,11 +19,11 @@ H=/root                                  # home do usuario ubuntu = volume persi
 PROJECT_FOLDER="${PROJECT_FOLDER:-projects}"
 PROJ="$H/$PROJECT_FOLDER"
 REMOTE_CONTROL_NAME="${REMOTE_CONTROL_NAME:-}"
-CLAUDE_AUTOCMD="${CLAUDE_AUTOCMD:-/remote-control easypanel}"
+CLAUDE_AUTOCMD="${CLAUDE_AUTOCMD:-/remote-control}"
 CLAUDE_AUTOCMD_DELAY="${CLAUDE_AUTOCMD_DELAY:-15}"
 # comando final = autocmd + nome do remote-control (se definido)
-#   ex.: CLAUDE_AUTOCMD="/remote-control easypanel" + REMOTE_CONTROL_NAME=meu-servidor
-#        -> "/remote-control easypanel meu-servidor"
+#   ex.: CLAUDE_AUTOCMD="/remote-control" + REMOTE_CONTROL_NAME=meu-servidor
+#        -> "/remote-control meu-servidor"
 FULL_AUTOCMD="${CLAUDE_AUTOCMD}${REMOTE_CONTROL_NAME:+ ${REMOTE_CONTROL_NAME}}"
 
 # settings do Claude: permite tudo (so cria se nao existir)
