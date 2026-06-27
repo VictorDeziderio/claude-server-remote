@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { ExternalLink, Power } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import * as api from '../api.js'
 
 // extrai URLs https da tela (ex.: link de login OAuth que o Claude imprime)
@@ -50,13 +50,6 @@ export default function Terminal({ projects = [], initialName = '', onFlash }) {
     const txt = e.clipboardData?.getData('text') || ''
     if (txt) send(txt, '')
   }
-  const exitClaude = async () => {
-    if (!window.confirm(`Sair do Claude atual em "claude-${sel}"?`)) return
-    const r = await api.termExit(sel)
-    onFlash?.(r)
-    setTimeout(() => capture(sel), 700)
-  }
-
   const urls = findUrls(screen)
 
   return (
@@ -77,12 +70,6 @@ export default function Terminal({ projects = [], initialName = '', onFlash }) {
             {focused ? 'digitando' : 'clique na tela p/ digitar'}
           </span>
         </div>
-        {sel !== 'shell' && (
-          <button onClick={exitClaude} title="encerra a conversa atual do Claude"
-            className="inline-flex items-center gap-1 rounded-md bg-rose-500/15 px-2 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-500/25 transition hover:bg-rose-500/25">
-            <Power className="h-3.5 w-3.5" /> Sair do Claude
-          </button>
-        )}
       </div>
 
       {/* Login do Claude: link detectado na tela -> abrir, autorizar e o código é digitado direto */}

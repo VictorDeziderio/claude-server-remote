@@ -265,7 +265,7 @@ export default function App() {
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2">
-                      <Btn variant="accent" busy={busy === `restart:${p.name}`} onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title="fecha o Claude (mesmo travado no remote), reabre e religa o remote"><RefreshCw className="h-3.5 w-3.5" /> Reiniciar Claude</Btn>
+                      <Btn variant="accent" busy={busy === `restart:${p.name}`} onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title="mata a sessão tmux (fecha remote + Claude) → reabre o Claude → religa o remote → envia a primeira linha"><RefreshCw className="h-3.5 w-3.5" /> Reiniciar Claude</Btn>
                       <Btn busy={busy === `remote:${p.name}`} onClick={() => run(`remote:${p.name}`, () => api.reconnectRemote(p.name))} title="re-emite o /remote-control sem reiniciar (preserva a conversa)"><Radio className="h-3.5 w-3.5" /> Religar remote</Btn>
                       <Btn onClick={() => openTerm(p.name)}><SquareTerminal className="h-3.5 w-3.5" /> Terminal</Btn>
                       <Btn onClick={() => openFiles('projects/' + p.name)}><FolderOpen className="h-3.5 w-3.5" /> Arquivos</Btn>

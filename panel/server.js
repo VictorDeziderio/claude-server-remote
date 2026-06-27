@@ -267,10 +267,13 @@ async function restartProject(name) {
   if (!validName(name)) return { ok: false, msg: 'nome invalido' };
   const dir = path.join(PROJECTS_DIR, name);
   if (!fs.existsSync(dir)) return { ok: false, msg: 'pasta inexistente' };
-  await sh('tmux', ['kill-session', '-t', sessionName(name)]); // fecha o Claude atual (mesmo travado no remote)
-  await sh('bash', [SESSION_SCRIPT, name]);                    // reabre o Claude + religa o remote
+  const sess = sessionName(name);
+  // Mata a SESSAO INTEIRA (fecha remote + Claude + tmux) e recria do zero. O claude-session.sh
+  // reabre o tmux + o Claude (supervisor), que re-emite o remote-control e envia a primeira linha.
+  await sh('tmux', ['kill-session', '-t', sess]);
+  await sh('bash', [SESSION_SCRIPT, name]);
   const c = projConfig(name);
-  return { ok: true, msg: `"${name}": Claude reiniciado${c.autoRemote ? ' e remote religado' : ''}${c.initLine ? ' (+ primeira linha)' : ''}` };
+  return { ok: true, msg: `"${name}": sessao reiniciada — Claude reaberto${c.autoRemote ? ', remote religado' : ''}${c.initLine ? ' e primeira linha enviada' : ''}` };
 }
 // Claude guarda o historico em ~/.claude/projects/<cwd codificado> (nao-alfanumerico -> "-").
 function migrateClaudeHistory(oldDir, newDir) {
