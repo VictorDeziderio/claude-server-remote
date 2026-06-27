@@ -46,6 +46,25 @@ chown -R "$U:$U" "$H" 2>/dev/null || true
 # helper: roda como ubuntu, com HOME no volume
 as_user() { gosu "$U" env HOME="$H" USER="$U" "$@"; }
 
+# Wrapper "claude": o Claude Code RECUSA rodar como root (o managed-settings usa
+# bypassPermissions, equivalente a --dangerously-skip-permissions, bloqueado para root).
+# Este wrapper em /usr/local/bin (precede /usr/bin no PATH): se "claude" for chamado como
+# root (ex.: Console do EasyPanel), re-executa como o usuario "ubuntu"; senao chama o real.
+REAL_CLAUDE=/usr/bin/claude
+[ -x "$REAL_CLAUDE" ] || REAL_CLAUDE="$(command -v claude 2>/dev/null | grep -vx /usr/local/bin/claude | head -1)"
+if [ -n "$REAL_CLAUDE" ] && [ -x "$REAL_CLAUDE" ]; then
+  cat > /usr/local/bin/claude <<WRAP
+#!/usr/bin/env bash
+# auto-gerado pelo start.sh — roda o Claude como o usuario nao-root "ubuntu" quando invocado como root
+if [ "\$(id -u)" = "0" ]; then
+  exec gosu "$U" env HOME="$H" USER="$U" "$REAL_CLAUDE" "\$@"
+fi
+exec "$REAL_CLAUDE" "\$@"
+WRAP
+  chmod +x /usr/local/bin/claude
+  echo ">> wrapper 'claude' instalado (root -> ubuntu) | real: $REAL_CLAUDE"
+fi
+
 # GitHub CLI: auto-login via GH_TOKEN (item 7) + git usando gh como credential
 # helper (necessario p/ o push do backup). Vazio -> pula (login manual segue ok).
 if [ -n "${GH_TOKEN:-}" ]; then
