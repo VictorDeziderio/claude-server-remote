@@ -181,8 +181,15 @@ Um painel web leve (Node puro) pra gerenciar os projetos sem mexer no terminal:
 **Modelo:** um Claude por vez, apontando para a pasta ativa (não roda vários em paralelo).
 **Auth:** mesma senha do IDE (`IDE_PASSWORD`). Log: `/root/.claude/logs/panel.log`.
 
-### Expor o painel no EasyPanel
-O painel escuta na porta **`PANEL_PORT`** (`7000`). No serviço `claude` → **Domínios**, adicione
-um domínio novo (ex.: `painel-claude...`) apontando para a porta `7000`. Defina também
-`IDE_PUBLIC_URL` (ex.: `https://tools-claude.exemplo.easypanel.host`) pro botão "Abrir IDE" funcionar.
-Desligar: `PANEL_ENABLED=false`.
+### Acesso — uma porta só (via proxy do code-server)
+O code-server tem um **proxy embutido**, então o painel é acessível **na mesma porta/domínio do IDE**
+e sob a **mesma senha** — sem segundo domínio nem expor a porta 7000:
+
+- **IDE:** `https://<seu-domínio>/`
+- **Painel:** `https://<seu-domínio>/proxy/7000/`
+
+Deixe `IDE_PUBLIC_URL` **vazio** nesse modo — o botão "Abrir IDE" usa a raiz do domínio (o próprio IDE).
+Desligar o painel: `PANEL_ENABLED=false`.
+
+> **(Opcional) domínio próprio:** se preferir o painel num domínio separado, exponha a porta `7000`
+> num domínio do EasyPanel e defina `IDE_PUBLIC_URL` com a URL pública do IDE pro botão "Abrir IDE".

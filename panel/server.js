@@ -87,17 +87,18 @@ function page(flash) {
   const rows = projs.length ? projs.map((name) => {
     const dir = path.join(PROJECTS_DIR, name);
     const isActive = dir === active;
-    const ideBtn = IDE_PUBLIC_URL
-      ? `<a class="btn ide" href="${esc(IDE_PUBLIC_URL)}/?folder=${encodeURIComponent(dir)}" target="_blank">🖥️ Abrir IDE</a>`
-      : `<span class="muted">IDE_PUBLIC_URL nao definido</span>`;
+    // IDE na raiz do dominio: sob /proxy/7000/ do code-server, href="/" cai no IDE.
+    // IDE_PUBLIC_URL (opcional) sobrepoe, caso o painel seja acessado por dominio proprio.
+    const ideHref = `${IDE_PUBLIC_URL}/?folder=${encodeURIComponent(dir)}`;
     return `<tr class="${isActive ? 'on' : ''}">
       <td>${isActive ? '🟢' : '⚪'} <b>${esc(name)}</b>${isActive ? ' <span class="tag">ativo</span>' : ''}<br><span class="muted">${esc(dir)}</span></td>
       <td class="acts">
-        <form method="POST" action="/restart" style="display:inline">
+        <form method="POST" style="display:inline">
+          <input type="hidden" name="action" value="restart">
           <input type="hidden" name="name" value="${esc(name)}">
           <button class="btn">🔄 Reiniciar aqui</button>
         </form>
-        ${ideBtn}
+        <a class="btn ide" href="${esc(ideHref)}" target="_blank">🖥️ Abrir IDE</a>
       </td></tr>`;
   }).join('') : `<tr><td colspan="2" class="muted">Nenhum projeto ainda. Crie um abaixo.</td></tr>`;
 
@@ -130,7 +131,8 @@ function page(flash) {
   <p class="sub">Projetos em <code>${esc(PROJECTS_DIR)}</code> · o Claude roda na pasta marcada como ativo.</p>
   ${flash ? `<div class="flash ${flash.ok ? '' : 'err'}">${flash.ok ? '✅' : '⚠️'} ${esc(flash.msg)}</div>` : ''}
   <table><tbody>${rows}</tbody></table>
-  <form class="create" method="POST" action="/create">
+  <form class="create" method="POST">
+    <input type="hidden" name="action" value="create">
     <b>➕ Novo projeto</b><br><br>
     <input type="text" name="name" placeholder="nome-do-projeto" pattern="[A-Za-z0-9._-]{1,64}" required>
     <button class="btn">Criar</button>
@@ -157,18 +159,18 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Painel Claude"' });
     return res.end('Autenticacao necessaria');
   }
-  const url = new URL(req.url, 'http://localhost');
+  // Rotas independentes de path (funciona em "/" e sob "/proxy/7000/" do code-server):
+  // GET -> renderiza; POST -> processa pelo campo "action" (create | restart).
   try {
-    if (req.method === 'GET' && url.pathname === '/') return send(res, 200, page(null));
-    if (req.method === 'POST' && url.pathname === '/create') {
-      const r = await createProject((await readBody(req)).name);
+    if (req.method === 'POST') {
+      const body = await readBody(req);
+      let r = null;
+      if (body.action === 'create') r = await createProject(body.name);
+      else if (body.action === 'restart') r = await restartOn(body.name);
+      else r = { ok: false, msg: 'acao desconhecida' };
       return send(res, 200, page(r));
     }
-    if (req.method === 'POST' && url.pathname === '/restart') {
-      const r = await restartOn((await readBody(req)).name);
-      return send(res, 200, page(r));
-    }
-    res.writeHead(404); res.end('not found');
+    return send(res, 200, page(null));
   } catch (e) {
     res.writeHead(500); res.end('erro: ' + e.message);
   }
