@@ -17,6 +17,9 @@
 #       CLAUDE_AUTOCMD_DELAY (default 15), REMOTE_CONTROL_NAME (override opcional do nome do remote)
 set -uo pipefail
 
+# garante node no PATH (read_flag usa node) — pode ser chamado em contexto com PATH minimo
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin${PATH:+:$PATH}"
+
 H="${HOME:-/root}"
 PROJECTS_DIR="${PROJECTS_DIR:-$H/projects}"
 CFG="${PANEL_CONFIG:-$H/.claude/panel.json}"

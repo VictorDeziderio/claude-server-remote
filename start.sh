@@ -65,6 +65,12 @@ WRAP
   echo ">> wrapper 'claude' instalado (root -> ubuntu) | real: $REAL_CLAUDE"
 fi
 
+# O NodeSource instala o node em /usr/bin, mas alguns hooks (ex.: SessionStart) e ferramentas
+# esperam /usr/local/bin/node. Symlink evita o erro "/usr/local/bin/node: not found".
+if [ ! -e /usr/local/bin/node ] && [ -x /usr/bin/node ]; then
+  ln -sf /usr/bin/node /usr/local/bin/node
+fi
+
 # GitHub CLI: auto-login via GH_TOKEN (item 7) + git usando gh como credential
 # helper (necessario p/ o push do backup). Vazio -> pula (login manual segue ok).
 if [ -n "${GH_TOKEN:-}" ]; then

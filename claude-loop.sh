@@ -19,6 +19,11 @@ FULL_AUTOCMD="${2:-}"
 DELAY="${3:-15}"
 PROJ_NAME="${4:-}"
 
+# Garante node/claude no PATH mesmo quando iniciado como COMANDO DIRETO da sessao tmux
+# (nesse caso o PATH herdado pode ser minimo e nao conter o node -> read_initline falhava).
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin${PATH:+:$PATH}"
+NODE_BIN="$(command -v node 2>/dev/null || echo /usr/bin/node)"
+
 H="${HOME:-/root}"
 RUN_DIR="$H/.claude/run"
 RUN_FLAG="$RUN_DIR/$SESS.running"
@@ -35,7 +40,7 @@ is_logged_in() {
 # le a "primeira linha" do projeto no panel.json (vazio se nao definida). Usa node (sempre presente).
 read_initline() {
   [ -n "$PROJ_NAME" ] || return 0
-  node -e '
+  "$NODE_BIN" -e '
     const fs = require("fs");
     const [,, file, proj] = process.argv;
     let c = {}; try { c = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
