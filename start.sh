@@ -3,10 +3,8 @@
 #  - settings.json com bypassPermissions (permite tudo)
 #  - UMA sessao tmux por projeto (claude-<nome>), cada uma rodando o Claude (modelo multi-tmux)
 #  - religa o remote-control conforme a config por projeto (panel.json -> autoRemote)
-#  - sobe o code-server (IDE) se IDE_ENABLED=true
 #
 # Variaveis (campo Environment do EasyPanel):
-#   IDE_ENABLED          true|false  -> habilita/desabilita o IDE web (default: true)
 #   PROJECT_FOLDER       projects    -> nome do projeto default (se o container subir sem nenhum)
 #   REMOTE_CONTROL_NAME  (vazio)     -> remote usa o NOME DO PROJETO; defina p/ forcar um nome fixo
 #   CLAUDE_AUTOCMD_DELAY 15          -> segundos de espera antes de enviar o comando
@@ -39,6 +37,11 @@ fi
 # anteriores no boot, senao o painel mostraria "rodando" antes de o Claude realmente subir.
 mkdir -p "$H/.claude/run"
 rm -f "$H/.claude/run/"*.running 2>/dev/null || true
+
+# logs do painel/backup. SEM esta pasta, o redirect ">> .../logs/x.log" dos run_bg falha e
+# (com set -e herdado no subshell) mata o processo ANTES de subir -> painel/backup nao iniciam.
+# Em volume NOVO a pasta nao existe, entao precisa ser criada explicitamente no boot.
+mkdir -p "$H/.claude/logs"
 
 # ownership do volume p/ o usuario nao-root
 chown -R "$U:$U" "$H" 2>/dev/null || true
@@ -146,32 +149,23 @@ if [ "${BACKUP_ENABLED:-true}" = "true" ]; then
 fi
 
 # ============================================================================
-# Gateway de UMA PORTA SO (Caddy): painel em / (LOGIN+SENHA) e IDE em /ide (TOKEN).
+# Gateway de UMA PORTA SO (Caddy): painel em / (LOGIN+SENHA).
 #   - painel -> 127.0.0.1:7001 (interno; tem PAGINA DE LOGIN propria, cookie de sessao)
-#   - IDE    -> 127.0.0.1:8081 (interno, --auth password = IDE_TOKEN)
-#   O /ide e acessivel so com o IDE_TOKEN (link compartilhavel). Porta publica: GATEWAY_PORT.
+#   Porta publica: GATEWAY_PORT.
 # ============================================================================
 GATEWAY_PORT="${GATEWAY_PORT:-8080}"   # porta publica (aponte o dominio do EasyPanel p/ ela)
 PANEL_PORT=7001                         # painel interno
-IDE_PORT=8081                           # IDE interno
 # Login do PAINEL (pagina de login propria do server.js).
 PANEL_LOGIN="${PANEL_LOGIN:-admin}"
 PANEL_PASSWORD="${PANEL_PASSWORD:-changeme}"
-# Token do /IDE (senha NATIVA do code-server).
-IDE_TOKEN="${IDE_TOKEN:-changeme}"
 
-# Aviso de seguranca: credenciais fracas/default/iguais. Nao bloqueia (uso pessoal),
+# Aviso de seguranca: senha fraca/default. Nao bloqueia (uso pessoal),
 # so alerta no log para o dono trocar no Environment do EasyPanel.
 DEFAULT_CRED='senha-antiga-removida'
 warn_cred() { echo ">> [SEGURANCA] $*"; }
 case "$PANEL_PASSWORD" in
   ''|changeme|"$DEFAULT_CRED") warn_cred "PANEL_PASSWORD esta no DEFAULT/vazio — troque por uma senha forte." ;;
 esac
-case "$IDE_TOKEN" in
-  ''|changeme|"$DEFAULT_CRED") warn_cred "IDE_TOKEN esta no DEFAULT/vazio — troque por um token forte." ;;
-esac
-[ -n "$PANEL_PASSWORD" ] && [ "$PANEL_PASSWORD" = "$IDE_TOKEN" ] && \
-  warn_cred "PANEL_PASSWORD == IDE_TOKEN — use credenciais DIFERENTES para painel e IDE."
 
 # respawn simples: roda um comando em loop (reabre se cair), como ubuntu, logando em arquivo
 run_bg() {  # $1=label  $2=logfile  resto=comando
@@ -179,20 +173,12 @@ run_bg() {  # $1=label  $2=logfile  resto=comando
   ( while true; do as_user "$@" >> "$log" 2>&1; echo "[$label saiu — reabrindo em 3s]" >> "$log"; sleep 3; done ) &
 }
 
-# IDE: code-server interno protegido pela sua propria senha = IDE_TOKEN (--auth password).
-# O gateway publica /ide SEM basic_auth -> o /ide e acessivel so com o TOKEN (compartilhavel).
-if [ "${IDE_ENABLED:-true}" = "true" ]; then
-  echo ">> IDE (interno $IDE_PORT, publicado em /ide | acesso pelo IDE_TOKEN)"
-  run_bg "ide" "$H/.claude/logs/ide.log" \
-    env PASSWORD="$IDE_TOKEN" code-server --bind-addr "127.0.0.1:$IDE_PORT" --auth password "$PROJ"
-fi
-
 # Painel "Claude Remote": SPA React buildada (dist/) + API JSON, servida pelo server.js.
 # Sem auth propria — o gateway autentica. Acoes e status leem o panel.json / a sessao tmux.
 if [ "${PANEL_ENABLED:-true}" = "true" ]; then
   echo ">> painel Claude Remote (interno $PANEL_PORT, publicado em / pelo gateway) | projetos: $PROJECTS_DIR"
   run_bg "painel" "$H/.claude/logs/panel.log" \
-    env PANEL_BIND=127.0.0.1 PANEL_PORT="$PANEL_PORT" IDE_PATH=/ide \
+    env PANEL_BIND=127.0.0.1 PANEL_PORT="$PANEL_PORT" \
       PROJECTS_DIR="$PROJECTS_DIR" PANEL_CONFIG="$PANEL_CONFIG" \
       REMOTE_CONTROL_NAME="$REMOTE_CONTROL_NAME" CLAUDE_AUTOCMD_DELAY="$CLAUDE_AUTOCMD_DELAY" \
       PANEL_LOGIN="$PANEL_LOGIN" PANEL_PASSWORD="$PANEL_PASSWORD" \
@@ -200,7 +186,7 @@ if [ "${PANEL_ENABLED:-true}" = "true" ]; then
 fi
 
 # Gateway (Caddy) — PID principal. So faz proxy: o painel tem PAGINA DE LOGIN propria
-# (cookie de sessao) e o /ide tem o token nativo do code-server. Sem basic_auth aqui.
+# (cookie de sessao). Sem basic_auth aqui.
 CADDYFILE="$H/.claude/Caddyfile"
 cat > "$CADDYFILE" <<CADDY
 {
@@ -212,17 +198,11 @@ cat > "$CADDYFILE" <<CADDY
 		@health path /healthz
 		respond @health "ok" 200
 
-		# IDE: protegido pelo proprio code-server (--auth password = IDE_TOKEN).
-		redir /ide /ide/
-		handle_path /ide/* {
-			reverse_proxy 127.0.0.1:${IDE_PORT}
-		}
-
 		# Painel "Claude Remote": pagina de login propria (PANEL_LOGIN + PANEL_PASSWORD).
 		reverse_proxy 127.0.0.1:${PANEL_PORT}
 	}
 }
 CADDY
 chown "$U:$U" "$CADDYFILE" 2>/dev/null || true
-echo ">> gateway on (${GATEWAY_PORT}) | painel: / (login proprio '${PANEL_LOGIN}') | IDE: /ide (IDE_TOKEN)"
+echo ">> gateway on (${GATEWAY_PORT}) | painel: / (login proprio '${PANEL_LOGIN}')"
 exec caddy run --config "$CADDYFILE" --adapter caddyfile

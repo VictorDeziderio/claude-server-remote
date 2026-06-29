@@ -2,8 +2,8 @@
 # Nao depende de imagem base externa (GHCR) -> builda sem credencial nenhuma. Mais lento no
 # deploy (rebuilda o toolchain), porem sempre funciona.
 #
-# Monte um Volume do EasyPanel em /root para o trabalho + login do Claude (~/.claude) +
-# extensoes do IDE nao sumirem no redeploy.
+# Monte um Volume do EasyPanel em /root para o trabalho + login do Claude (~/.claude)
+# nao sumirem no redeploy.
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -51,10 +51,7 @@ RUN npm install -g @anthropic-ai/claude-code playwright pnpm yarn bun \
 RUN playwright install --with-deps chromium chrome \
     && rm -rf /var/lib/apt/lists/*
 
-# 6) code-server (VS Code no navegador)
-RUN curl -fsSL https://code-server.dev/install.sh | sh
-
-# 6b) Caddy — gateway/reverse-proxy de uma porta so (painel em / e IDE em /ide).
+# 6) Caddy — gateway/reverse-proxy de uma porta so (painel em /).
 # Binario unico, lida com WebSocket nativamente.
 RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
         | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
@@ -77,7 +74,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends tmux gosu \
 # Runtime: ENV + scripts (o que muda no dia a dia)
 # ============================================================================
 # Variaveis de runtime (sobrescreva no Environment do EasyPanel)
-ENV IDE_ENABLED=true \
+ENV \
     # Multi-tmux: cada projeto tem sua sessao "claude-<nome>" e seu remote-control.
     # PROJECT_FOLDER = nome do projeto default (criado se o container subir sem nenhum).
     # REMOTE_CONTROL_NAME vazio -> o remote usa o NOME DO PROJETO (ex.: /remote-control pilot).
@@ -94,11 +91,10 @@ ENV IDE_ENABLED=true \
     PANEL_ENABLED=true \
     GATEWAY_PORT=8080 \
     PROJECTS_DIR=/root/projects \
-    # AUTH: painel via PANEL_LOGIN+PANEL_PASSWORD (basic_auth do gateway); /ide via IDE_TOKEN
-    # (senha nativa do code-server). TROQUE no Environment do EasyPanel.
+    # AUTH: painel via PANEL_LOGIN+PANEL_PASSWORD (pagina de login propria do painel).
+    # TROQUE no Environment do EasyPanel.
     PANEL_LOGIN=admin \
-    PANEL_PASSWORD=senha-antiga-removida \
-    IDE_TOKEN=senha-antiga-removida
+    PANEL_PASSWORD=senha-antiga-removida
 
 # Politica GLOBAL do Claude Code (managed settings) — permissao para TUDO em todo o
 # container, para qualquer usuario/projeto. Fica em /etc (nao e ocultado pelo volume /root)
@@ -127,12 +123,11 @@ WORKDIR /root
 EXPOSE 8080
 
 # Healthcheck: bate no GATEWAY (Caddy responde /healthz com "ok", sem auth e sempre
-# de pe — independe do IDE estar ligado). start-period generoso pro Caddy/painel subirem.
+# de pe). start-period generoso pro Caddy/painel subirem.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -fsS "http://localhost:${GATEWAY_PORT:-8080}/healthz" || exit 1
 
-# Gateway (Caddy) em primeiro plano + sessao tmux "claude" persistente.
-# Config/extensoes do code-server ficam em /root (volume) -> persistem no redeploy.
-# Acesse a sessao do Claude: `tmux attach -t claude` (no terminal do IDE ou Console).
+# Gateway (Caddy) em primeiro plano + sessoes tmux por projeto persistentes.
+# Acesse a sessao do Claude pelo Console do EasyPanel: `tmux attach -t claude-<projeto>`.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/usr/local/bin/start.sh"]

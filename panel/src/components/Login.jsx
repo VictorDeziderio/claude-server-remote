@@ -84,9 +84,6 @@ export default function Login({ onSuccess }) {
           Entrar
         </button>
 
-        <p className="mt-5 text-center text-[11px] text-slate-600">
-          IDE em <code>/ide</code> tem acesso próprio (token).
-        </p>
       </form>
     </div>
   )

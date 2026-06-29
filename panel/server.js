@@ -22,7 +22,6 @@ const BIND = process.env.PANEL_BIND || '127.0.0.1';
 const PROJECTS_DIR = process.env.PROJECTS_DIR || path.join(HOME, 'projects');
 const CONFIG_FILE = process.env.PANEL_CONFIG || path.join(HOME, '.claude', 'panel.json');
 const RUN_DIR = path.join(HOME, '.claude', 'run');            // flags "<sessao>.running"
-const IDE_PATH = (process.env.IDE_PATH || '/ide').replace(/\/+$/, '');
 const SESSION_SCRIPT = '/usr/local/bin/claude-session.sh';
 // nome do remote-control: por padrao = nome do projeto; REMOTE_CONTROL_NAME (se setado) forca um fixo.
 const REMOTE_CONTROL_NAME = process.env.REMOTE_CONTROL_NAME || '';
@@ -376,7 +375,6 @@ async function buildState() {
   }
   return {
     projectsDir: PROJECTS_DIR,
-    idePath: IDE_PATH,
     login: loginInfo(),
     version: await claudeVersion(),
     remoteNameForced: REMOTE_CONTROL_NAME,

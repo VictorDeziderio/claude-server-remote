@@ -1,18 +1,15 @@
-# Claude Remote — Dev-box (painel + IDE web + Claude Code + Playwright) no EasyPanel
+# Claude Remote — Dev-box (painel + Claude Code + Playwright) no EasyPanel
 
 Ubuntu 24.04 com um **painel "Claude Remote"** (React) para gerenciar projetos +
-**code-server (VS Code no navegador)** + **Claude Code CLI** rodando em **tmux** +
-**Playwright** + toolchain de dev completo. Persistente: seus projetos e o login do Claude
-**não somem** no redeploy.
+**Claude Code CLI** rodando em **tmux** + **Playwright** + toolchain de dev completo.
+Persistente: seus projetos e o login do Claude **não somem** no redeploy.
 
-Acesso por **uma porta só** (gateway Caddy = `GATEWAY_PORT`, default **8080**), com
-**credenciais separadas**:
+Acesso por **uma porta só** (gateway Caddy = `GATEWAY_PORT`, default **8080**):
 - **Painel:** `https://<domínio>/` — **página de login** (`PANEL_LOGIN` + `PANEL_PASSWORD`)
-- **IDE:** `https://<domínio>/ide` — **token** (`IDE_TOKEN`, login nativo do code-server; link compartilhável)
-- **Projeto/serviço EasyPanel:** `tools` / `claude` · ex.: `https://tools-claude.exemplo.easypanel.host`
+- **Projeto/serviço EasyPanel:** `meu-projeto` / `claude` · ex.: `https://claude.exemplo.easypanel.host`
 
 > 🔌 **Porta de acesso:** aponte o domínio do serviço no EasyPanel para a **`GATEWAY_PORT` (8080)**.
-> Internamente o painel roda em `127.0.0.1:7001` e o code-server em `:8081` (não expostos).
+> Internamente o painel roda em `127.0.0.1:7001` (não exposto).
 
 ---
 
@@ -23,19 +20,14 @@ Abra `https://<domínio>/` → aparece a **tela de login do Claude Remote**. Ent
 **`PANEL_LOGIN`** (default `admin`) e a senha **`PANEL_PASSWORD`**. O painel mostra status,
 consumo de tokens e seus projetos.
 
-### 2. Abrir o IDE
-No card do projeto, **"IDE"** (ou vá em `https://<domínio>/ide`). O IDE pede o **`IDE_TOKEN`**
-(barreira própria do code-server) — independente do login do painel, então o link do IDE é
-compartilhável sem dar acesso ao painel.
-
-### 3. Terminal e sessão do Claude (tmux)
-No VS Code: **Terminal → New Terminal** (`` Ctrl+` ``). Depois:
+### 2. Terminal e sessão do Claude (tmux)
+Abra o **Console** do serviço `claude` no EasyPanel e entre na sessão do projeto:
 ```bash
-tmux attach -t claude
+tmux attach -t claude-<projeto>
 ```
-O Claude Code já está rodando nessa sessão. (Alternativa: botão **Console** do serviço no EasyPanel.)
+O Claude Code já está rodando nessa sessão.
 
-### 4. Primeiro login do Claude
+### 3. Primeiro login do Claude
 Na 1ª vez o Claude estará na tela de **login** (API key ou conta). Depois fica salvo em
 `/root/.claude` (volume) e **não pede de novo** nos próximos deploys.
 
@@ -57,7 +49,7 @@ Recursos:
 - **Consumo de tokens:** hoje vs total (entrada/saída/cache), lido de `~/.claude/projects/**/*.jsonl`.
 - **Projetos** (cards): criar (`mkdir` + `git init` + grava config), **renomear** (renomeia a pasta
   **+ migra o histórico do Claude** + recria a sessão se for o ativo), **reiniciar sessão**,
-  **religar remote**, **abrir IDE**.
+  **religar remote**.
 - **Config por projeto** (chips): **🤖 Claude ON/OFF** (`autoStartClaude`) e **📡 Remote ON/OFF** (`autoRemote`).
 
 ### Config por projeto (`panel.json`)
@@ -71,11 +63,11 @@ de `claude/panel.json` (imagem) na 1ª subida. O painel grava nela; o `claude-se
 ---
 
 ## 🧩 tmux — sessão que não fecha
-A sessão `claude` sobrevive a desconexões do IDE/terminal **e se auto-recupera**.
+A sessão `claude` sobrevive a desconexões do terminal **e se auto-recupera**.
 
 | Ação | Atalho/Comando |
 |------|----------------|
-| Entrar na sessão | `tmux attach -t claude` |
+| Entrar na sessão | `tmux attach -t claude-<projeto>` |
 | **Sair sem fechar** | `Ctrl+b` e depois `d` |
 | Listar sessões | `tmux ls` |
 | Rolar a tela | `Ctrl+b` e depois `[` (sai com `q`) |
@@ -86,7 +78,7 @@ A sessão `claude` sobrevive a desconexões do IDE/terminal **e se auto-recupera
 |-----------|-------------|-------|
 | **Claude** (você deu `exit` ou crashou) | loop `while` no tmux reabre o `claude` | ~3s |
 | **Sessão tmux** some (container vivo) | watchdog do `start.sh` recria a sessão | ~10s |
-| **Container / code-server** cai | EasyPanel reinicia → `start.sh` refaz tudo | conforme restart policy |
+| **Container** cai | EasyPanel reinicia → `start.sh` refaz tudo | conforme restart policy |
 
 Ao (re)abrir o Claude, o supervisor (`claude-loop.sh`) **religa o remote-control sozinho**
 (comando fixo `/remote-control` + `REMOTE_CONTROL_NAME`, após o delay, **se o projeto tiver
@@ -99,8 +91,8 @@ botão **"Religar remote"** do painel.
 
 ## 💾 Persistência (o que NÃO some no redeploy)
 - **Volume `claude-data` → `/root`**: seus **projetos**, login do Claude (`~/.claude`),
-  `panel.json` vivo, config/extensões do VS Code. 👉 **Trabalhe sempre dentro de `/root`.**
-- **Imagem** (recriada a cada deploy): ubuntu, node, claude, playwright, code-server, painel
+  `panel.json` vivo. 👉 **Trabalhe sempre dentro de `/root`.**
+- **Imagem** (recriada a cada deploy): ubuntu, node, claude, playwright, painel
   buildado, ferramentas. O que estiver fora de `/root` volta ao estado da imagem.
 
 ---
@@ -111,7 +103,6 @@ Todas têm default no Dockerfile — o serviço sobe sem definir nada. Referênc
 
 | Variável | Default | O quê |
 |----------|---------|-------|
-| `IDE_ENABLED` | `true` | liga/desliga o IDE web |
 | `PROJECT_FOLDER` | `projects` | pasta (em `/root`) onde o Claude inicia (criada se faltar) |
 | `REMOTE_CONTROL_NAME` | `meu-servidor` | nome anexado ao comando → `/remote-control meu-servidor` |
 | `CLAUDE_AUTOCMD_DELAY` | `15` | segundos antes de enviar o remote-control |
@@ -124,17 +115,15 @@ Todas têm default no Dockerfile — o serviço sobe sem definir nada. Referênc
 | `PROJECTS_DIR` | `/root/projects` | diretório com as pastas de projeto |
 | **`PANEL_LOGIN`** | `admin` | **usuário do login do painel** |
 | **`PANEL_PASSWORD`** | (hex) | **senha do login do painel** — TROQUE por uma forte |
-| **`IDE_TOKEN`** | (hex) | **token de acesso ao `/ide`** (senha do code-server) — TROQUE |
 
 > O comando do remote-control é **fixo** (`/remote-control`); **ligar/desligar é por projeto**
-> no painel (`panel.json` → `autoRemote`). Não há mais `CLAUDE_AUTOCMD`/`IDE_PASSWORD`/`PANEL_USER`.
+> no painel (`panel.json` → `autoRemote`).
 
 ---
 
 ## 🛠️ Toolchain incluído
 `claude-code` · `playwright` (chromium + **Google Chrome** estável) · node 22 · npm/pnpm/yarn/bun ·
-git · `gh` · ripgrep · fd · jq · tree · build-essential · python3/pip/venv · `psql` · tmux ·
-code-server · caddy.
+git · `gh` · ripgrep · fd · jq · tree · build-essential · python3/pip/venv · `psql` · tmux · caddy.
 
 No Playwright, use o Chrome real com `channel: 'chrome'`. Mais browsers: `playwright install firefox webkit`.
 
@@ -163,8 +152,8 @@ O filtro de IP **não** fica no container (o proxy do EasyPanel mascara o IP rea
 - **Hoje:** `0.0.0.0/0` (aberto — só as credenciais protegem).
 - **Restringir:** adicione os CIDRs permitidos (ex.: `203.0.113.10/32`).
 
-> Enquanto estiver `0.0.0.0/0`, as únicas barreiras são o **login do painel** e o **token do IDE**
-> — use senha/token fortes. O Claude roda com permissão total restrita a `/root`.
+> Enquanto estiver `0.0.0.0/0`, a única barreira é o **login do painel**
+> — use uma senha forte. O Claude roda com permissão total restrita a `/root`.
 
 ---
 
