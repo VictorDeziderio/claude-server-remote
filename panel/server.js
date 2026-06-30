@@ -322,9 +322,10 @@ async function sendRemote(name) {
   if (!loginInfo().logged) return { ok: false, msg: 'Claude nao esta logado' };
   const sess = sessionName(name);
   const cmd = remoteCmdFor(name);
-  await sh('tmux', ['send-keys', '-t', sess, cmd]);
-  await new Promise((r) => setTimeout(r, 1000));
-  await sh('tmux', ['send-keys', '-t', sess, 'Enter']);
+  // Mesmo metodo do claude-loop.sh (caminho que funciona): comando + C-m (Enter real) numa
+  // UNICA chamada send-keys. O envio em 2 etapas com 'Enter' era fragil com a TUI do Claude
+  // (bracketed paste) e fazia o "Religar remote" nao surtir efeito.
+  await sh('tmux', ['send-keys', '-t', sess, cmd, 'C-m']);
   return { ok: true, msg: `remote reenviado: ${cmd}` };
 }
 async function setConfig(name, key, value) {
