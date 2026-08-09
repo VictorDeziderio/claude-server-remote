@@ -41,7 +41,24 @@ backup_repo() {
     return 0
   fi
 
-  git -C "$dir" add -A
+  # SEGURANÇA (achado F1, @security 2026-08-09): `add -A` sem exceção empurrava
+  # o worklog para o GitHub sem revisão humana. O worklog é escrito pelo Stop
+  # hook a partir da TRANSCRIÇÃO — e já levou uma senha root (2026-06-20) e uma
+  # chave de 256 bits gerada em produção (2026-07-27) para `origin/main`.
+  #
+  # O hook agora redige segredo antes de escrever, mas defesa em profundidade:
+  # snapshot AUTOMÁTICO (sem ninguém olhando) não leva worklog. Quem quiser
+  # versionar um worklog específico o faz num commit à mão, que passa por revisão.
+  git -C "$dir" add -A -- ':!docs/worklog'
+  # A exclusão acima só filtra o que é estagiado AGORA — ela não desfaz o que já
+  # estava no índice. Sem este reset, um worklog estagiado antes (por outra
+  # ferramenta, ou por um `git add` de uma sessão) entrava no snapshot mesmo
+  # assim; foi o que aconteceu no snapshot de 2026-08-09 14:41.
+  git -C "$dir" reset -q -- docs/worklog 2>/dev/null || true
+  # Nada sobrou para commitar depois do reset? então não cria commit vazio.
+  if [ -z "$(git -C "$dir" diff --cached --name-only)" ]; then
+    return 0
+  fi
   git -C "$dir" commit -m "chore(backup): auto-snapshot $(date '+%F %T')" >/dev/null 2>&1
   if git -C "$dir" push >/dev/null 2>&1; then
     log "ok    $name: snapshot enviado"
