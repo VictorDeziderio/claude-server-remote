@@ -30,8 +30,27 @@ const DIST = path.join(__dirname, 'dist');
 // Auth do painel: pagina de login propria (cookie assinado), em vez do basic_auth do gateway.
 const PANEL_LOGIN = process.env.PANEL_LOGIN || 'admin';
 const PANEL_PASSWORD = process.env.PANEL_PASSWORD || '';
+
+// FAIL-CLOSED no boot (achado da varredura de 2026-08-10). Sem PANEL_PASSWORD o
+// login ja era recusado (`!!PANEL_PASSWORD &&` em doLogin), MAS a checagem de
+// sessao nao: o AUTH_TOKEN caia num HMAC de chave LITERAL ('claude-remote'), ou
+// seja, um cookie CALCULAVEL — quem soubesse a formula entrava direto, sem
+// passar pelo login. E este painel expoe um shell root via tmux.
+//
+// Recusar a subir e melhor que subir inseguro: o operador ve o erro na hora, em
+// vez de descobrir depois que o dev-box estava aberto. Mesmo padrao do
+// ADMIN_API_KEY da api e do MAINTENANCE_CODE do guardian.
+if (!PANEL_PASSWORD) {
+  console.error(JSON.stringify({
+    level: 'error', service: 'claude-panel',
+    message: 'PANEL_PASSWORD nao definido — o painel expoe um shell root e NAO sobe sem senha.',
+    fix: 'defina PANEL_PASSWORD no Ambiente do servico (ou no env local) e suba de novo.',
+  }));
+  process.exit(1);
+}
+
 // token estavel derivado da senha (sobrevive a restart do painel; nao da p/ forjar sem a senha)
-const AUTH_TOKEN = crypto.createHmac('sha256', PANEL_PASSWORD || 'claude-remote')
+const AUTH_TOKEN = crypto.createHmac('sha256', PANEL_PASSWORD)
   .update('claude-remote-auth-v1').digest('hex');
 const COOKIE = 'cr_auth';
 
