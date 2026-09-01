@@ -69,6 +69,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends tmux gosu \
     && usermod -d /root ubuntu \
     && echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu \
     && chmod 0440 /etc/sudoers.d/ubuntu
+# Config global do tmux (truecolor, mouse, window-size latest p/ varios clientes, status
+# com o tema do painel). Em /etc para nao ser ocultada pelo volume montado em /root.
+COPY tmux.conf /etc/tmux.conf
 
 # ============================================================================
 # Runtime: ENV + scripts (o que muda no dia a dia)
@@ -108,12 +111,15 @@ COPY claude-loop.sh /usr/local/bin/claude-loop.sh
 COPY claude-session.sh /usr/local/bin/claude-session.sh
 COPY backup.sh /usr/local/bin/backup.sh
 COPY panel /usr/local/bin/panel
-# Build do painel "Claude Remote" (Vite/React) -> dist/. node_modules e removido depois:
-# em runtime o server.js usa SO modulos nativos do Node (http/fs/path/child_process).
+# Build do painel "Claude Remote" (Vite/React/xterm.js) -> dist/. Depois do build, mantem
+# SO as dependencias de runtime do server.js (ws + node-pty, compilado aqui com o
+# build-essential/python3 ja presentes); React/Vite/Tailwind sao devDependencies e saem.
 RUN cd /usr/local/bin/panel \
     && npm ci \
     && npm run build \
-    && rm -rf node_modules
+    && npm prune --omit=dev \
+    && npm cache clean --force \
+    && chown -R ubuntu:ubuntu /usr/local/bin/panel
 # Semente do panel.json (config dos projetos) — copiada p/ o volume na 1a subida (start.sh)
 COPY panel.json /usr/local/share/claude/panel.json
 RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/claude-loop.sh \
@@ -128,6 +134,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -fsS "http://localhost:${GATEWAY_PORT:-8080}/healthz" || exit 1
 
 # Gateway (Caddy) em primeiro plano + sessoes tmux por projeto persistentes.
-# Acesse a sessao do Claude pelo Console do EasyPanel: `tmux attach -t claude-<projeto>`.
+# Acesse a sessao do Claude pelo terminal do painel (/terminal/<projeto>) ou pelo Console
+# do EasyPanel: `tmux attach -t claude-<projeto>`.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/usr/local/bin/start.sh"]

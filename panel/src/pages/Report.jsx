@@ -1,15 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { BarChart3, MessageSquare, Layers, Database, TrendingUp, Loader2, CalendarRange } from 'lucide-react'
+import { Card, Empty, inputCls } from '../components/ui.jsx'
+import { fmtTok, fmtInt } from '../lib/format.js'
 import * as api from '../api.js'
 
-const fmtTok = (n) => {
-  n = n || 0
-  if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B'
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M'
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k'
-  return String(n)
-}
-const fmtInt = (n) => String(n ?? 0).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
 const pad = (n) => String(n).padStart(2, '0')
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 
@@ -31,7 +25,7 @@ function periodRange(key) {
 const PERIODS = [
   ['today', 'Hoje'], ['yesterday', 'Ontem'], ['week', 'Esta semana'],
   ['month', 'Este mês'], ['lastmonth', 'Mês passado'],
-  ['year', 'Este ano'], ['lastyear', 'Ano passado'],
+  ['year', 'Este ano'], ['lastyear', 'Ano passado'], ['all', 'Tudo'],
 ]
 
 function Kpi({ icon: Icon, label, value, hint }) {
@@ -43,18 +37,6 @@ function Kpi({ icon: Icon, label, value, hint }) {
     </div>
   )
 }
-function Card({ title, subtitle, children }) {
-  return (
-    <section className="rounded-2xl bg-ink-800 p-4 ring-1 ring-white/5">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-200">{title}</h3>
-        {subtitle && <span className="text-xs text-slate-500">{subtitle}</span>}
-      </div>
-      {children}
-    </section>
-  )
-}
-const Empty = () => <div className="py-8 text-center text-sm text-slate-500">sem dados no período</div>
 
 export default function Report({ data }) {
   const [period, setPeriod] = useState('month')
@@ -71,6 +53,7 @@ export default function Report({ data }) {
 
   const pick = (key) => { setPeriod(key); if (key !== 'custom') setRange(periodRange(key)) }
   const applyCustom = () => { if (custom.from && custom.to) { setPeriod('custom'); setRange({ from: custom.from, to: custom.to }) } }
+  const pill = (active) => `rounded-lg px-3 py-1.5 text-[13px] font-medium transition ${active ? 'bg-claude/90 text-white' : 'bg-ink-700/60 text-slate-300 ring-1 ring-white/5 hover:bg-ink-500'}`
 
   const u = usage || {}
   const byProject = Object.entries(u.byProject || {})
@@ -84,17 +67,10 @@ export default function Report({ data }) {
 
   return (
     <div className="space-y-5">
-      {/* Seletor de período */}
       <div className="rounded-2xl bg-ink-800 p-4 ring-1 ring-white/5">
         <div className="flex flex-wrap gap-2">
-          {PERIODS.map(([k, label]) => (
-            <button key={k} onClick={() => pick(k)}
-              className={`rounded-lg px-3 py-1.5 text-[13px] font-medium transition ${period === k ? 'bg-claude/90 text-white' : 'bg-ink-700/60 text-slate-300 ring-1 ring-white/5 hover:bg-ink-500'}`}>
-              {label}
-            </button>
-          ))}
-          <button onClick={() => setPeriod('custom')}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition ${period === 'custom' ? 'bg-claude/90 text-white' : 'bg-ink-700/60 text-slate-300 ring-1 ring-white/5 hover:bg-ink-500'}`}>
+          {PERIODS.map(([k, label]) => <button key={k} type="button" onClick={() => pick(k)} className={pill(period === k)}>{label}</button>)}
+          <button type="button" onClick={() => setPeriod('custom')} className={`inline-flex items-center gap-1.5 ${pill(period === 'custom')}`}>
             <CalendarRange className="h-3.5 w-3.5" /> Personalizado
           </button>
           {loading && <span className="inline-flex items-center gap-1.5 px-2 text-xs text-slate-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /> carregando…</span>}
@@ -102,29 +78,24 @@ export default function Report({ data }) {
         {period === 'custom' && (
           <div className="mt-3 flex flex-wrap items-end gap-2">
             <label className="text-xs text-slate-400">De
-              <input type="date" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))}
-                className="mt-1 block rounded-lg bg-ink-900 px-2.5 py-1.5 text-sm text-slate-200 ring-1 ring-white/10 focus:outline-none focus:ring-claude/40" /></label>
+              <input type="date" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} className={`mt-1 block ${inputCls}`} /></label>
             <label className="text-xs text-slate-400">Até
-              <input type="date" value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))}
-                className="mt-1 block rounded-lg bg-ink-900 px-2.5 py-1.5 text-sm text-slate-200 ring-1 ring-white/10 focus:outline-none focus:ring-claude/40" /></label>
-            <button onClick={applyCustom} disabled={!custom.from || !custom.to}
-              className="rounded-lg bg-claude/90 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-claude disabled:opacity-40">Aplicar</button>
+              <input type="date" value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} className={`mt-1 block ${inputCls}`} /></label>
+            <button type="button" onClick={applyCustom} disabled={!custom.from || !custom.to} className="rounded-lg bg-claude/90 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-claude disabled:opacity-40">Aplicar</button>
           </div>
         )}
         <div className="mt-2 text-xs text-slate-500">período: <code className="text-slate-300">{range.from || 'início'}</code> → <code className="text-slate-300">{range.to || 'hoje'}</code></div>
       </div>
 
-      {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi icon={BarChart3} label="Tokens (in+out)" value={fmtTok(totalTokens)} />
-        <Kpi icon={Database} label="Cache (esc+leit)" value={fmtTok(totalCache)} />
+        <Kpi icon={BarChart3} label="Tokens (in+out)" value={fmtTok(totalTokens)} hint={`${fmtTok(u.total?.in)} in · ${fmtTok(u.total?.out)} out`} />
+        <Kpi icon={Database} label="Cache (esc+leit)" value={fmtTok(totalCache)} hint={`${fmtTok(u.total?.cacheW)} esc · ${fmtTok(u.total?.cacheR)} leit`} />
         <Kpi icon={MessageSquare} label="Mensagens" value={fmtInt(u.messages)} />
         <Kpi icon={Layers} label="Dias com uso" value={fmtInt(daily.length)} />
       </div>
 
-      {/* Consumo diário */}
       <Card title="Consumo diário · entrada + saída" subtitle={daily.length ? `${daily[0].date} → ${daily[daily.length - 1].date}` : ''}>
-        {daily.length === 0 ? <Empty /> : (
+        {daily.length === 0 ? <Empty>sem dados no período</Empty> : (
           <>
             <div className="flex h-44 items-end gap-px">
               {daily.map((d) => {
@@ -138,9 +109,8 @@ export default function Report({ data }) {
         )}
       </Card>
 
-      {/* Tokens por projeto */}
       <Card title="Tokens por projeto" subtitle={`${byProject.length} projeto(s)`}>
-        {byProject.length === 0 ? <Empty /> : (
+        {byProject.length === 0 ? <Empty>sem dados no período</Empty> : (
           <div className="space-y-3">
             {byProject.map((p) => (
               <div key={p.name}>
@@ -155,9 +125,8 @@ export default function Report({ data }) {
         )}
       </Card>
 
-      {/* Detalhe por projeto */}
       <Card title="Detalhe por projeto">
-        {byProject.length === 0 ? <Empty /> : (
+        {byProject.length === 0 ? <Empty>sem dados no período</Empty> : (
           <div className="overflow-x-auto rounded-xl ring-1 ring-white/5">
             <table className="w-full text-sm">
               <thead className="bg-ink-700/60 text-[11px] uppercase tracking-wide text-slate-400">

@@ -20,16 +20,23 @@ Abra `https://<domínio>/` → aparece a **tela de login do Claude Remote**. Ent
 **`PANEL_LOGIN`** (default `admin`) e a senha **`PANEL_PASSWORD`**. O painel mostra status,
 consumo de tokens e seus projetos.
 
-### 2. Terminal e sessão do Claude (tmux)
-Abra o **Console** do serviço `claude` no EasyPanel e entre na sessão do projeto:
-```bash
-tmux attach -t claude-<projeto>
-```
-O Claude Code já está rodando nessa sessão.
+### 2. Terminal — igual a um SSH, no navegador
+Menu **Terminal** (ou `https://<domínio>/terminal/<projeto>`). É um terminal **de verdade**:
+**xterm.js ↔ WebSocket ↔ PTY (`node-pty`) ↔ `tmux attach`**. Cores, cursor, TUI do Claude,
+redimensionamento automático, mouse/rolagem, colar, reconexão automática. Abas na barra:
+- **Shell** → `bash` em `/root` (sessão `cr-shell`, criada sob demanda)
+- **&lt;projeto&gt;** → a sessão `claude-<projeto>` onde o Claude já está rodando
+
+Atalhos: `Ctrl+Shift+C` copia · `Ctrl+Shift+V` cola · `Shift`+arrastar seleciona ·
+roda do mouse rola o histórico · botão **⛶** tela cheia (`Shift+Esc` sai) · botão **⌨** liga a
+barra de teclas (Esc/Tab/Ctrl+C/setas — útil no celular). Fechar a aba **não** encerra a sessão.
+
+Também dá pelo **Console** do EasyPanel: `tmux attach -t claude-<projeto>`.
 
 ### 3. Primeiro login do Claude
-Na 1ª vez o Claude estará na tela de **login** (API key ou conta). Depois fica salvo em
-`/root/.claude` (volume) e **não pede de novo** nos próximos deploys.
+**Conta → Logar no Claude**: abre um terminal embutido, roda `claude`, detecta o link OAuth
+na tela (botão para abrir) e você cola o código. Depois fica salvo em `/root/.claude` (volume)
+e **não pede de novo** nos próximos deploys.
 
 > 🔓 **Permissões:** roda como usuário **não-root** (`ubuntu`) com política global em
 > `/etc/claude-code/managed-settings.json` → `"defaultMode": "bypassPermissions"` +
@@ -40,17 +47,35 @@ Na 1ª vez o Claude estará na tela de **login** (API key ou conta). Depois fica
 
 ## 🧩 Painel "Claude Remote"
 
-SPA em **React + Tailwind** (Vite), servida pelo `panel/server.js` (Node puro) que também
-expõe uma **API JSON** (`/api/state|create|rename|config|restart|remote|login|logout`).
-O painel tem **página de login própria** (cookie de sessão assinado — sem popup do navegador).
+SPA em **React + Tailwind + react-router + xterm.js** (Vite), servida pelo `panel/server.js`
+(Node; deps de runtime: `ws` + `node-pty`) que expõe a **API JSON** em `/api/*` e o
+**terminal em `/ws/term`** (WebSocket). Código do servidor em `panel/server/*.js`
+(`auth`, `projects`, `files`, `term`, `usage`, `claude`, `static`).
+
+**Rotas com URL própria** (F5 e link direto funcionam):
+
+| Rota | O quê |
+|------|-------|
+| `/dashboard` | status, consumo, cards dos projetos |
+| `/report` | relatório de tokens por período/projeto |
+| `/files/<caminho>` | gerenciador de arquivos (pasta → lista, arquivo → editor) |
+| `/terminal/shell` · `/terminal/<projeto>` | terminal real (tmux attach) |
+| `/account` | conta do Claude (login OAuth / logout) |
 
 Recursos:
-- **Status:** sessão tmux (de pé/fora), Claude (rodando/parado + pane), login, versão, projeto ativo, comando do remote.
+- **Status:** sessão tmux (de pé/fora), Claude (rodando/parado), login, versão, comando do remote, link do remote.
 - **Consumo de tokens:** hoje vs total (entrada/saída/cache), lido de `~/.claude/projects/**/*.jsonl`.
 - **Projetos** (cards): criar (`mkdir` + `git init` + grava config), **renomear** (renomeia a pasta
-  **+ migra o histórico do Claude** + recria a sessão se for o ativo), **reiniciar sessão**,
-  **religar remote**.
+  **+ migra o histórico do Claude** + recria a sessão), **excluir** (digitando o nome),
+  **reiniciar sessão**, **religar remote**, **primeira linha**.
 - **Config por projeto** (chips): **🤖 Claude ON/OFF** (`autoStartClaude`) e **📡 Remote ON/OFF** (`autoRemote`).
+- **Arquivos:** navegar `/root`, editar (Ctrl+S), criar, renomear, excluir, **download** e
+  **upload** (botão ou arrastar). Confinado a `/root` (path traversal bloqueado).
+
+**Segurança do painel:** login próprio com cookie de sessão **assinado e com expiração**
+(`PANEL_SESSION_DAYS`; trocar a senha invalida todas as sessões), comparação em tempo constante,
+**rate-limit** no login (8 falhas → 10 min), checagem de **Origin** em POST/WebSocket (CSRF),
+CSP + headers de segurança. Sem `PANEL_PASSWORD` o painel **recusa subir**.
 
 ### Config por projeto (`panel.json`)
 As flags por projeto ficam em **`/root/.claude/panel.json`** (cópia viva, no volume), semeada
@@ -67,10 +92,10 @@ A sessão `claude` sobrevive a desconexões do terminal **e se auto-recupera**.
 
 | Ação | Atalho/Comando |
 |------|----------------|
-| Entrar na sessão | `tmux attach -t claude-<projeto>` |
-| **Sair sem fechar** | `Ctrl+b` e depois `d` |
+| Entrar na sessão | painel → **Terminal** → aba do projeto · ou `tmux attach -t claude-<projeto>` |
+| **Sair sem fechar** | `Ctrl+b` e depois `d` (no painel: só fechar a aba) |
 | Listar sessões | `tmux ls` |
-| Rolar a tela | `Ctrl+b` e depois `[` (sai com `q`) |
+| Rolar a tela | roda do mouse (mouse ligado no `tmux.conf`) · ou `Ctrl+b` `[` (sai com `q`) |
 
 ### ♻️ Reabertura automática (respawn em 3 camadas)
 
@@ -115,6 +140,7 @@ Todas têm default no Dockerfile — o serviço sobe sem definir nada. Referênc
 | `PROJECTS_DIR` | `/root/projects` | diretório com as pastas de projeto |
 | **`PANEL_LOGIN`** | `admin` | **usuário do login do painel** |
 | **`PANEL_PASSWORD`** | (hex) | **senha do login do painel** — TROQUE por uma forte |
+| `PANEL_SESSION_DAYS` | `30` | validade da sessão do painel (dias) |
 
 > O comando do remote-control é **fixo** (`/remote-control`); **ligar/desligar é por projeto**
 > no painel (`panel.json` → `autoRemote`).
@@ -134,9 +160,11 @@ No Playwright, use o Chrome real com `channel: 'chrome'`. Mais browsers: `playwr
   `main`, **build path `/claude`**, Dockerfile) · **Armazenamento → Volume** `claude-data` →
   `/root` · **Domínios** → porta **`8080`** · Deploy.
 - **Imagem self-contained:** o `Dockerfile` builda **todo o toolchain** + **o painel React**
-  (`npm ci && npm run build`) no próprio build — **sem dependência de registry externo**. Por isso
-  o deploy leva alguns minutos (instala toolchain + dependências do painel); em compensação,
-  **sempre funciona sem credencial**.
+  (`npm ci && npm run build && npm prune --omit=dev`) no próprio build — **sem dependência de
+  registry externo**. Ficam só `ws` + `node-pty` (compilado ali mesmo) em runtime. Por isso o
+  deploy leva alguns minutos; em compensação, **sempre funciona sem credencial**.
+- **Dev local do painel:** `cd claude/panel && npm install && npm run dev` (Vite na 5173 com
+  proxy de `/api` e `/ws` para um `node server.js` na 7001 — precisa de tmux, i.e. Linux/WSL).
 - No dia a dia você **não precisa redeployar** — o container fica vivo e o trabalho está no
   volume. Redeploy só para **atualizar a imagem** (scripts/painel/ferramentas).
 
@@ -177,7 +205,8 @@ Repos sem `origin` são ignorados (log). Log: `/root/.claude/logs/backup.log`. M
 | `claude-session.sh` | (re)cria a sessão tmux na pasta ativa, honrando o `panel.json` |
 | `claude-loop.sh` | supervisor: roda o Claude em loop + religa o remote |
 | `backup.sh` | commit+push periódico dos projetos |
-| `panel/` | painel **Claude Remote** (React/Vite + `server.js` API/estático) |
+| `panel/` | painel **Claude Remote** (React/Vite/xterm.js + `server.js` + `server/*.js`: API, arquivos, terminal WS/PTY) |
 | `panel.json` | semente da config por projeto (`autoStartClaude`/`autoRemote`) |
+| `tmux.conf` | config global do tmux (`/etc/tmux.conf`): truecolor, mouse, `window-size latest`, status |
 | `managed-settings.json` | política global de permissões do Claude |
 | `.env.example` | referência das variáveis (defaults da imagem) |

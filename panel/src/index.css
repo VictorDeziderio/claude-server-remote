@@ -11,9 +11,16 @@ body {
     radial-gradient(1200px 600px at 80% -10%, rgba(217, 119, 87, 0.10), transparent 60%),
     #0b0d12;
   color: #e7e9ee;
+  overflow: hidden; /* cada pagina rola no seu proprio container (o terminal precisa de altura fixa) */
 }
 
 /* scrollbar discreta */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-thumb { background: #2a3140; border-radius: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
+
+/* xterm.js: ocupa o container inteiro, sem borda branca; scrollbar no tema */
+.xterm { height: 100%; padding: 6px 8px; }
+.xterm .xterm-viewport { background-color: transparent !important; }
+.xterm .xterm-viewport::-webkit-scrollbar-thumb { background: #2a3140; }
+.xterm .xterm-screen { outline: none; }

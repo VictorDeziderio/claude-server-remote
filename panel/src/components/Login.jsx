@@ -24,7 +24,7 @@ export default function Login({ onSuccess }) {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center px-4 py-10">
+    <div className="flex h-full items-center justify-center overflow-auto px-4 py-10">
       <form
         onSubmit={submit}
         className="w-full max-w-sm rounded-3xl bg-ink-800 p-7 ring-1 ring-white/5 shadow-2xl shadow-black/40"

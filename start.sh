@@ -173,8 +173,9 @@ run_bg() {  # $1=label  $2=logfile  resto=comando
   ( while true; do as_user "$@" >> "$log" 2>&1; echo "[$label saiu — reabrindo em 3s]" >> "$log"; sleep 3; done ) &
 }
 
-# Painel "Claude Remote": SPA React buildada (dist/) + API JSON, servida pelo server.js.
-# Sem auth propria — o gateway autentica. Acoes e status leem o panel.json / a sessao tmux.
+# Painel "Claude Remote": SPA React buildada (dist/) + API JSON + terminal WebSocket/PTY,
+# tudo servido pelo server.js (login proprio com cookie de sessao assinado). Roda como
+# ubuntu -> mesmo uid das sessoes tmux, entao o `tmux attach` do terminal enxerga todas.
 if [ "${PANEL_ENABLED:-true}" = "true" ]; then
   echo ">> painel Claude Remote (interno $PANEL_PORT, publicado em / pelo gateway) | projetos: $PROJECTS_DIR"
   run_bg "painel" "$H/.claude/logs/panel.log" \
@@ -182,6 +183,8 @@ if [ "${PANEL_ENABLED:-true}" = "true" ]; then
       PROJECTS_DIR="$PROJECTS_DIR" PANEL_CONFIG="$PANEL_CONFIG" \
       REMOTE_CONTROL_NAME="$REMOTE_CONTROL_NAME" CLAUDE_AUTOCMD_DELAY="$CLAUDE_AUTOCMD_DELAY" \
       PANEL_LOGIN="$PANEL_LOGIN" PANEL_PASSWORD="$PANEL_PASSWORD" \
+      PANEL_SESSION_DAYS="${PANEL_SESSION_DAYS:-30}" \
+      TERM=xterm-256color \
       node /usr/local/bin/panel/server.js
 fi
 
