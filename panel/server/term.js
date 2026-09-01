@@ -9,13 +9,14 @@
  *
  *    Alvos:  "shell" -> sessao cr-shell (bash em /root, criada sob demanda)
  *            <projeto> -> sessao claude-<projeto> (recriada via claude-session.sh se caiu)
+ *    Param `detach=1` -> `attach -d` (derruba outros clientes: "assumir a sessao").
  *
  *    Protocolo (frames de texto): cliente -> servidor: "\x01" + JSON = controle
  *    ({type:'resize',cols,rows} | {type:'ping'}); qualquer outra coisa = teclado (raw).
- *    servidor -> cliente: saida bruta do PTY; "\x01" + JSON = eventos ({type:'exit'}).
+ *    servidor -> cliente: saida bruta do PTY; "\x01" + JSON = eventos ({type:'ready'|'exit'}).
  *
- * 2) API REST de apoio (capture/send): usada pelo fluxo de login do Claude (detectar o
- *    link OAuth na tela e disparar `claude`) — nao e o terminal em si.
+ * 2) API REST de apoio: capture/send (login do Claude), janelas do tmux (listar/selecionar/
+ *    criar/fechar) e exit (Ctrl-C x2).
  */
 const { WebSocketServer } = require('ws');
 const cfg = require('./config');
@@ -76,6 +77,35 @@ async function termExit(name) {
   await sh('tmux', ['send-keys', '-t', sess, 'C-c']);
   return { ok: true, msg: `Claude encerrado em ${sess} — o supervisor abre uma nova conversa` };
 }
+// janelas do tmux da sessao
+async function listWindows(name) {
+  const sess = await targetSession(name, { create: false });
+  if (!sess) return { ok: false, msg: 'alvo invalido' };
+  if (!(await hasSession(sess))) return { ok: true, session: sess, windows: [], clients: 0 };
+  const [w, c] = await Promise.all([
+    sh('tmux', ['list-windows', '-t', '=' + sess, '-F', '#{window_index}\t#{window_name}\t#{window_active}\t#{pane_current_command}']),
+    sh('tmux', ['list-clients', '-t', '=' + sess, '-F', '#{client_tty}']),
+  ]);
+  const windows = (w.stdout || '').trim().split('\n').filter(Boolean).map((l) => {
+    const [index, wname, active, cmd] = l.split('\t');
+    return { index: parseInt(index, 10), name: wname, active: active === '1', cmd };
+  });
+  return { ok: true, session: sess, windows, clients: (c.stdout || '').trim().split('\n').filter(Boolean).length };
+}
+async function windowAction(name, action, index) {
+  const sess = await targetSession(name, { create: false });
+  if (!sess) return { ok: false, msg: 'alvo invalido' };
+  if (!(await hasSession(sess))) return { ok: false, msg: 'sessao nao esta de pe' };
+  const idx = clampInt(index, 0, 99, -1);
+  if (action === 'new') { const r = await sh('tmux', ['new-window', '-t', '=' + sess, '-c', cfg.HOME]); return { ok: r.ok, msg: r.ok ? 'nova janela aberta (Ctrl+b n/p alterna)' : r.stderr }; }
+  if (idx < 0) return { ok: false, msg: 'indice invalido' };
+  if (action === 'select') { const r = await sh('tmux', ['select-window', '-t', `=${sess}:${idx}`]); return { ok: r.ok, msg: r.ok ? '' : r.stderr }; }
+  if (action === 'kill') {
+    const r = await sh('tmux', ['kill-window', '-t', `=${sess}:${idx}`]);
+    return { ok: r.ok, msg: r.ok ? `janela ${idx} fechada` : r.stderr };
+  }
+  return { ok: false, msg: 'acao invalida' };
+}
 
 // ---------- WebSocket + PTY ----------
 const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
@@ -86,6 +116,7 @@ function attach(ws, params, ip) {
   const name = params.get('name') || 'shell';
   const cols = clampInt(params.get('cols'), 20, 500, 120);
   const rows = clampInt(params.get('rows'), 5, 200, 32);
+  const detach = params.get('detach') === '1';
   let proc = null;
   let alive = true;
 
@@ -102,16 +133,28 @@ function attach(ws, params, ip) {
       // env minimo (sem PANEL_PASSWORD & cia): o cliente tmux so precisa de PATH/HOME/TERM
       const env = { TERM: 'xterm-256color', COLORTERM: 'truecolor', HOME: cfg.HOME, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' };
       for (const k of ['PATH', 'USER', 'LOGNAME', 'TMUX_TMPDIR', 'TZ']) if (process.env[k]) env[k] = process.env[k];
-      proc = pty.spawn('tmux', ['-u', 'attach-session', '-t', '=' + sess], { name: 'xterm-256color', cols, rows, cwd: cfg.HOME, env });
+      const args = ['-u', 'attach-session', '-t', '=' + sess];
+      if (detach) args.push('-d');
+      proc = pty.spawn('tmux', args, { name: 'xterm-256color', cols, rows, cwd: cfg.HOME, env });
     } catch (e) {
       log('error', 'falha abrindo PTY', { err: e.message });
       return closeWith(4005, 'falha ao abrir o terminal');
     }
     live.add(proc);
-    log('info', 'terminal aberto', { ip, sess, cols, rows });
+    log('info', 'terminal aberto', { ip, sess, cols, rows, detach });
     sendCtl({ type: 'ready', session: sess });
-    proc.onData((d) => { if (ws.readyState === ws.OPEN) ws.send(d); });
+    // Coalesce: a TUI do Claude emite dezenas de fragmentos por redesenho; agrupamos em janelas
+    // de ~8ms (ou 32KB) -> muito menos frames no WebSocket, sem latencia perceptivel.
+    let buf = '', flushTimer = null;
+    const flush = () => { flushTimer = null; if (buf && ws.readyState === ws.OPEN) ws.send(buf); buf = ''; };
+    proc.onData((d) => {
+      buf += d;
+      if (buf.length >= 32 * 1024) { if (flushTimer) clearTimeout(flushTimer); flush(); return; }
+      if (!flushTimer) flushTimer = setTimeout(flush, 8);
+    });
     proc.onExit(({ exitCode }) => {
+      if (flushTimer) clearTimeout(flushTimer);
+      flush();
       live.delete(proc); proc = null;
       sendCtl({ type: 'exit', code: exitCode });
       closeWith(1000, 'sessao encerrada');
@@ -151,4 +194,4 @@ function shutdown() {
   for (const c of wss.clients) { try { c.terminate(); } catch { /* */ } }
 }
 
-module.exports = { termCapture, termSend, termExit, handleUpgrade, shutdown, ptyAvailable: !!pty };
+module.exports = { termCapture, termSend, termExit, listWindows, windowAction, handleUpgrade, shutdown, ptyAvailable: !!pty };

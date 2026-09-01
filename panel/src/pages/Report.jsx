@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
-import { BarChart3, MessageSquare, Layers, Database, TrendingUp, Loader2, CalendarRange } from 'lucide-react'
+import { BarChart3, MessageSquare, Layers, Database, TrendingUp, Loader2, CalendarRange, DollarSign, Info } from 'lucide-react'
 import { Card, Empty, inputCls } from '../components/ui.jsx'
-import { fmtTok, fmtInt } from '../lib/format.js'
+import { fmtTok, fmtInt, fmtUsd, shortModel } from '../lib/format.js'
 import * as api from '../api.js'
 
 const pad = (n) => String(n).padStart(2, '0')
@@ -38,12 +38,57 @@ function Kpi({ icon: Icon, label, value, hint }) {
   )
 }
 
+// grafico de barras diario com eixo Y, ticks no X e tooltip
+function DailyChart({ daily, metric }) {
+  const [hover, setHover] = useState(null)
+  const val = (d) => (metric === 'cost' ? d.cost || 0 : (d.in || 0) + (d.out || 0))
+  const fmt = metric === 'cost' ? fmtUsd : fmtTok
+  const max = Math.max(1e-9, ...daily.map(val))
+  const ticks = [1, 0.75, 0.5, 0.25, 0]
+  const xTicks = daily.length <= 8 ? daily.map((_, i) => i) : [0, Math.floor(daily.length / 4), Math.floor(daily.length / 2), Math.floor((3 * daily.length) / 4), daily.length - 1]
+  return (
+    <div className="relative">
+      <div className="flex">
+        <div className="flex w-14 shrink-0 flex-col justify-between pr-2 text-right text-[10px] text-slate-600" style={{ height: 176 }}>
+          {ticks.map((t) => <span key={t}>{fmt(max * t)}</span>)}
+        </div>
+        <div className="relative flex-1">
+          <div className="absolute inset-0 flex flex-col justify-between">{ticks.map((t) => <div key={t} className="border-t border-white/5" />)}</div>
+          <div className="relative flex h-44 items-end gap-px">
+            {daily.map((d, i) => {
+              const v = val(d)
+              const h = Math.max(2, Math.round((v / max) * 100))
+              return (
+                <div key={d.date} className="group relative flex-1" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+                  <div className={`w-full rounded-t transition ${hover === i ? 'bg-claude' : 'bg-claude/70'}`} style={{ height: h + '%' }} />
+                </div>
+              )
+            })}
+          </div>
+          <div className="relative mt-1 h-4 text-[10px] text-slate-600">
+            {xTicks.map((i) => daily[i] && <span key={i} className="absolute -translate-x-1/2" style={{ left: `${((i + 0.5) / daily.length) * 100}%` }}>{daily[i].date.slice(5)}</span>)}
+          </div>
+        </div>
+      </div>
+      {hover !== null && daily[hover] && (
+        <div className="pointer-events-none absolute right-2 top-0 rounded-lg bg-ink-900 px-3 py-2 text-xs text-slate-200 shadow-xl ring-1 ring-white/10">
+          <div className="font-semibold text-white">{daily[hover].date}</div>
+          <div>{fmtTok(daily[hover].in)} in · {fmtTok(daily[hover].out)} out</div>
+          <div className="text-slate-400">cache {fmtTok(daily[hover].cacheW)} esc · {fmtTok(daily[hover].cacheR)} leit</div>
+          <div className="text-claude">{fmtUsd(daily[hover].cost)} · {fmtInt(daily[hover].messages)} msgs</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Report({ data }) {
   const [period, setPeriod] = useState('month')
   const [range, setRange] = useState(() => periodRange('month'))
   const [custom, setCustom] = useState({ from: '', to: '' })
   const [usage, setUsage] = useState(data.usage || {})
   const [loading, setLoading] = useState(false)
+  const [metric, setMetric] = useState('tokens')
 
   const load = useCallback(async (from, to) => {
     setLoading(true)
@@ -56,14 +101,13 @@ export default function Report({ data }) {
   const pill = (active) => `rounded-lg px-3 py-1.5 text-[13px] font-medium transition ${active ? 'bg-claude/90 text-white' : 'bg-ink-700/60 text-slate-300 ring-1 ring-white/5 hover:bg-ink-500'}`
 
   const u = usage || {}
-  const byProject = Object.entries(u.byProject || {})
-    .map(([name, v]) => ({ name, ...v, total: (v.in || 0) + (v.out || 0) }))
-    .sort((a, b) => b.total - a.total)
+  const byProject = Object.entries(u.byProject || {}).map(([name, v]) => ({ name, ...v, total: (v.in || 0) + (v.out || 0) })).sort((a, b) => b.cost - a.cost)
+  const byModel = Object.entries(u.byModel || {}).map(([model, v]) => ({ model, ...v, total: (v.in || 0) + (v.out || 0) })).sort((a, b) => b.cost - a.cost)
   const daily = u.dailyArr || []
-  const maxProj = Math.max(1, ...byProject.map((p) => p.total))
-  const maxDay = Math.max(1, ...daily.map((d) => (d.in || 0) + (d.out || 0)))
+  const maxProj = Math.max(1e-9, ...byProject.map((p) => p.cost))
   const totalTokens = (u.total?.in || 0) + (u.total?.out || 0)
   const totalCache = (u.total?.cacheW || 0) + (u.total?.cacheR || 0)
+  const unknown = u.unknownModels || []
 
   return (
     <div className="space-y-5">
@@ -87,38 +131,54 @@ export default function Report({ data }) {
         <div className="mt-2 text-xs text-slate-500">período: <code className="text-slate-300">{range.from || 'início'}</code> → <code className="text-slate-300">{range.to || 'hoje'}</code></div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Kpi icon={DollarSign} label="Custo estimado" value={fmtUsd(u.total?.cost)} hint="preço de API por modelo" />
         <Kpi icon={BarChart3} label="Tokens (in+out)" value={fmtTok(totalTokens)} hint={`${fmtTok(u.total?.in)} in · ${fmtTok(u.total?.out)} out`} />
         <Kpi icon={Database} label="Cache (esc+leit)" value={fmtTok(totalCache)} hint={`${fmtTok(u.total?.cacheW)} esc · ${fmtTok(u.total?.cacheR)} leit`} />
         <Kpi icon={MessageSquare} label="Mensagens" value={fmtInt(u.messages)} />
         <Kpi icon={Layers} label="Dias com uso" value={fmtInt(daily.length)} />
       </div>
 
-      <Card title="Consumo diário · entrada + saída" subtitle={daily.length ? `${daily[0].date} → ${daily[daily.length - 1].date}` : ''}>
-        {daily.length === 0 ? <Empty>sem dados no período</Empty> : (
+      <Card title={`Consumo diário · ${metric === 'cost' ? 'custo' : 'entrada + saída'}`} subtitle={daily.length ? `${daily[0].date} → ${daily[daily.length - 1].date}` : ''}
+        actions={<div className="flex gap-1">{[['tokens', 'tokens'], ['cost', 'US$']].map(([k, l]) => <button key={k} type="button" onClick={() => setMetric(k)} className={`rounded-md px-2 py-0.5 text-[11px] ${metric === k ? 'bg-claude/20 text-claude' : 'bg-ink-700/60 text-slate-400 hover:text-white'}`}>{l}</button>)}</div>}>
+        {daily.length === 0 ? <Empty>sem dados no período</Empty> : <DailyChart daily={daily} metric={metric} />}
+      </Card>
+
+      <Card title="Custo por modelo" subtitle={`${byModel.length} modelo(s)`}>
+        {byModel.length === 0 ? <Empty>sem dados no período</Empty> : (
           <>
-            <div className="flex h-44 items-end gap-px">
-              {daily.map((d) => {
-                const v = (d.in || 0) + (d.out || 0)
-                const h = Math.max(2, Math.round((v / maxDay) * 100))
-                return <div key={d.date} className="group relative flex-1" title={`${d.date}: ${fmtTok(v)}`}><div className="w-full rounded-t bg-claude/70 transition group-hover:bg-claude" style={{ height: h + '%' }} /></div>
-              })}
+            <div className="overflow-x-auto rounded-xl ring-1 ring-white/5">
+              <table className="w-full text-sm">
+                <thead className="bg-ink-700/60 text-[11px] uppercase tracking-wide text-slate-400">
+                  <tr><th className="px-3 py-2 text-left font-medium">Modelo</th><th className="px-3 py-2 text-right font-medium">Entrada</th><th className="px-3 py-2 text-right font-medium">Saída</th><th className="px-3 py-2 text-right font-medium">Cache esc.</th><th className="px-3 py-2 text-right font-medium">Cache leit.</th><th className="px-3 py-2 text-right font-medium">Msgs</th><th className="px-3 py-2 text-right font-medium">Custo</th></tr>
+                </thead>
+                <tbody className="text-slate-200">
+                  {byModel.map((m) => (
+                    <tr key={m.model} className="border-t border-white/5">
+                      <td className="px-3 py-2"><span className="font-mono text-xs">{shortModel(m.model)}</span>{!m.known && <span className="ml-2 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300" title="modelo sem preço na tabela — usa o preço do Opus como estimativa">preço estimado</span>}</td>
+                      <td className="px-3 py-2 text-right">{fmtTok(m.in)}</td><td className="px-3 py-2 text-right">{fmtTok(m.out)}</td>
+                      <td className="px-3 py-2 text-right">{fmtTok(m.cacheW)}</td><td className="px-3 py-2 text-right">{fmtTok(m.cacheR)}</td>
+                      <td className="px-3 py-2 text-right">{fmtInt(m.messages)}</td><td className="px-3 py-2 text-right font-medium text-white">{fmtUsd(m.cost)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="mt-1 flex justify-between text-[10px] text-slate-600"><span>{daily[0].date?.slice(5)}</span><span>pico/dia: {fmtTok(maxDay)}</span><span>{daily[daily.length - 1].date?.slice(5)}</span></div>
+            <p className="mt-2 flex items-start gap-1.5 text-[11px] text-slate-500"><Info className="mt-0.5 h-3 w-3 shrink-0" /> Estimativa pela tabela pública de preços da API (entrada/saída/cache por modelo). Se você usa assinatura (Pro/Max), o valor é o <b>equivalente em API</b>, não a sua fatura.{unknown.length ? ` Modelos sem preço conhecido: ${unknown.map(shortModel).join(', ')}.` : ''}</p>
           </>
         )}
       </Card>
 
-      <Card title="Tokens por projeto" subtitle={`${byProject.length} projeto(s)`}>
+      <Card title="Custo por projeto" subtitle={`${byProject.length} projeto(s)`}>
         {byProject.length === 0 ? <Empty>sem dados no período</Empty> : (
           <div className="space-y-3">
             {byProject.map((p) => (
               <div key={p.name}>
                 <div className="mb-1 flex items-center justify-between text-sm">
                   <span className="inline-flex items-center gap-1.5 text-slate-200"><TrendingUp className="h-3.5 w-3.5 text-claude" /> {p.name}</span>
-                  <span className="text-slate-400">{fmtTok(p.total)} · {fmtInt(p.messages)} msgs</span>
+                  <span className="text-slate-400">{fmtUsd(p.cost)} · {fmtTok(p.total)} · {fmtInt(p.messages)} msgs</span>
                 </div>
-                <div className="h-2.5 w-full overflow-hidden rounded-full bg-ink-900 ring-1 ring-white/5"><div className="h-full rounded-full bg-gradient-to-r from-claude-700 to-claude" style={{ width: Math.round((p.total / maxProj) * 100) + '%' }} /></div>
+                <div className="h-2.5 w-full overflow-hidden rounded-full bg-ink-900 ring-1 ring-white/5"><div className="h-full rounded-full bg-gradient-to-r from-claude-700 to-claude" style={{ width: Math.round((p.cost / maxProj) * 100) + '%' }} /></div>
               </div>
             ))}
           </div>
@@ -130,17 +190,15 @@ export default function Report({ data }) {
           <div className="overflow-x-auto rounded-xl ring-1 ring-white/5">
             <table className="w-full text-sm">
               <thead className="bg-ink-700/60 text-[11px] uppercase tracking-wide text-slate-400">
-                <tr><th className="px-3 py-2 text-left font-medium">Projeto</th><th className="px-3 py-2 text-right font-medium">Entrada</th><th className="px-3 py-2 text-right font-medium">Saída</th><th className="px-3 py-2 text-right font-medium">Cache esc.</th><th className="px-3 py-2 text-right font-medium">Cache leit.</th><th className="px-3 py-2 text-right font-medium">Msgs</th></tr>
+                <tr><th className="px-3 py-2 text-left font-medium">Projeto</th><th className="px-3 py-2 text-right font-medium">Entrada</th><th className="px-3 py-2 text-right font-medium">Saída</th><th className="px-3 py-2 text-right font-medium">Cache esc.</th><th className="px-3 py-2 text-right font-medium">Cache leit.</th><th className="px-3 py-2 text-right font-medium">Msgs</th><th className="px-3 py-2 text-right font-medium">Custo</th></tr>
               </thead>
               <tbody className="text-slate-200">
                 {byProject.map((p) => (
                   <tr key={p.name} className="border-t border-white/5">
                     <td className="px-3 py-2">{p.name}</td>
-                    <td className="px-3 py-2 text-right">{fmtTok(p.in)}</td>
-                    <td className="px-3 py-2 text-right">{fmtTok(p.out)}</td>
-                    <td className="px-3 py-2 text-right">{fmtTok(p.cacheW)}</td>
-                    <td className="px-3 py-2 text-right">{fmtTok(p.cacheR)}</td>
-                    <td className="px-3 py-2 text-right">{fmtInt(p.messages)}</td>
+                    <td className="px-3 py-2 text-right">{fmtTok(p.in)}</td><td className="px-3 py-2 text-right">{fmtTok(p.out)}</td>
+                    <td className="px-3 py-2 text-right">{fmtTok(p.cacheW)}</td><td className="px-3 py-2 text-right">{fmtTok(p.cacheR)}</td>
+                    <td className="px-3 py-2 text-right">{fmtInt(p.messages)}</td><td className="px-3 py-2 text-right font-medium text-white">{fmtUsd(p.cost)}</td>
                   </tr>
                 ))}
               </tbody>

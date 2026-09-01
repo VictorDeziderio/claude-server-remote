@@ -1,0 +1,94 @@
+'use strict';
+// Backup: status por projeto (lido do backup.log), "backup agora" (roda o backup.sh), e backup da
+// CONFIG (~/.claude + ~/.claude.json): tarball local rotacionado (start.sh agenda 1x/dia) +
+// download direto pelo painel (stream `tar czf -`).
+const fs = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
+const cfg = require('./config');
+const { sh, validName, log } = require('./util');
+const { listProjects } = require('./projects-list');
+
+// backup.log tem linhas "[YYYY-MM-DD HH:MM:SS] ok    nome: msg" / "WARN  nome: ..." / "skip  nome: ..."
+function backupStatus() {
+  const p = path.join(cfg.LOGS_DIR, 'backup.log');
+  let text = '';
+  try {
+    const st = fs.statSync(p);
+    const want = Math.min(st.size, 256 * 1024);
+    const buf = Buffer.alloc(want);
+    const fd = fs.openSync(p, 'r'); fs.readSync(fd, buf, 0, want, st.size - want); fs.closeSync(fd);
+    text = buf.toString('utf8');
+  } catch { /* sem log ainda */ }
+  const byProject = {};
+  let lastRun = '';
+  for (const line of text.split('\n')) {
+    const m = line.match(/^\[([^\]]+)\]\s+(ok|WARN|skip)\s+([^:]+):\s*(.*)$/);
+    if (!m) continue;
+    const [, ts, level, name, msg] = m;
+    lastRun = ts;
+    byProject[name.trim()] = { ts, level, msg };
+  }
+  const projects = listProjects().map((name) => {
+    const dir = path.join(cfg.PROJECTS_DIR, name);
+    let git = false, origin = '';
+    try { git = fs.existsSync(path.join(dir, '.git')); } catch { /* */ }
+    return { name, git, origin, last: byProject[name] || null };
+  });
+  return { ok: true, enabled: process.env.BACKUP_ENABLED !== 'false', interval: parseInt(process.env.BACKUP_INTERVAL || '3600', 10), lastRun, projects };
+}
+// origin de cada repo (spawn por projeto; so quando a pagina de backup abre)
+async function backupStatusFull() {
+  const s = backupStatus();
+  await Promise.all(s.projects.map(async (p) => {
+    if (!p.git) return;
+    const r = await sh('git', ['-C', path.join(cfg.PROJECTS_DIR, p.name), 'remote', 'get-url', 'origin']);
+    p.origin = r.ok ? r.stdout.trim() : '';
+    const st = await sh('git', ['-C', path.join(cfg.PROJECTS_DIR, p.name), 'status', '--porcelain']);
+    p.dirty = st.ok ? st.stdout.split('\n').filter(Boolean).length : 0;
+  }));
+  s.configBackups = listConfigBackups();
+  return s;
+}
+async function runBackup(name) {
+  const args = [cfg.BACKUP_SCRIPT];
+  if (name) { if (!validName(name)) return { ok: false, msg: 'nome invalido' }; args.push(path.join(cfg.PROJECTS_DIR, name)); }
+  const r = await sh('bash', args, { timeout: 5 * 60 * 1000, env: { ...process.env, PROJECT_FOLDER: path.basename(cfg.PROJECTS_DIR) } });
+  const out = (r.stdout + r.stderr).trim().split('\n').slice(-20).join('\n');
+  return { ok: r.ok, msg: r.ok ? (out || 'backup executado (nada a enviar)') : 'backup falhou: ' + out, output: out };
+}
+async function runConfigBackup() {
+  const r = await sh('bash', [cfg.BACKUP_SCRIPT, '--config'], { timeout: 5 * 60 * 1000 });
+  const out = (r.stdout + r.stderr).trim().split('\n').slice(-10).join('\n');
+  return { ok: r.ok, msg: r.ok ? (out || 'backup da config gerado') : 'falhou: ' + out, backups: listConfigBackups() };
+}
+function listConfigBackups() {
+  try {
+    return fs.readdirSync(cfg.CONFIG_BACKUP_DIR).filter((f) => /^config-.*\.tgz$/.test(f))
+      .map((f) => { const st = fs.statSync(path.join(cfg.CONFIG_BACKUP_DIR, f)); return { file: f, size: st.size, mtime: st.mtimeMs }; })
+      .sort((a, b) => b.mtime - a.mtime);
+  } catch { return []; }
+}
+// download de um tarball ja gerado (nome validado) ou de um NOVO gerado na hora (stream)
+function downloadConfig(res, file, full) {
+  if (file) {
+    if (!/^config-[A-Za-z0-9_.-]+\.tgz$/.test(file)) { res.writeHead(400); return res.end('nome invalido'); }
+    const p = path.join(cfg.CONFIG_BACKUP_DIR, file);
+    let st; try { st = fs.statSync(p); } catch { res.writeHead(404); return res.end('nao encontrado'); }
+    res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': st.size, 'Content-Disposition': `attachment; filename="${file}"`, 'Cache-Control': 'no-store' });
+    return fs.createReadStream(p).pipe(res);
+  }
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const name = `config-${ts}${full ? '-full' : ''}.tgz`;
+  const args = ['czf', '-', '-C', cfg.HOME, '--ignore-failed-read'];
+  if (!full) args.push('--exclude=.claude/projects', '--exclude=.claude/logs', '--exclude=.claude/run', '--exclude=.claude/todos', '--exclude=.claude/shell-snapshots');
+  args.push('.claude', '.claude.json');
+  res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
+  const tar = spawn('tar', args, { cwd: cfg.HOME });
+  tar.stdout.pipe(res);
+  tar.stderr.on('data', () => {});
+  tar.on('error', (e) => { log('error', 'tar', { err: e.message }); res.end(); });
+  res.on('close', () => { try { tar.kill(); } catch { /* */ } });
+}
+
+module.exports = { backupStatus, backupStatusFull, runBackup, runConfigBackup, listConfigBackups, downloadConfig };

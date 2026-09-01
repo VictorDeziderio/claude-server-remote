@@ -1,6 +1,6 @@
 'use strict';
-// Projetos: config (panel.json), sessoes tmux por projeto, acoes (criar/renomear/reiniciar/
-// remote/primeira linha) e o estado consolidado do dashboard.
+// Projetos: config (panel.json), sessoes tmux por projeto, acoes (criar/renomear/excluir/
+// reiniciar/remote/primeira linha) e o estado consolidado do dashboard.
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
@@ -8,16 +8,18 @@ const { sh, validName, sessionName, truthy, log } = require('./util');
 const { listProjects } = require('./projects-list');
 const { loginInfo, claudeVersion } = require('./claude');
 const { usageSummary } = require('./usage');
+const events = require('./events');
 
 const remoteCmdFor = (name) => '/remote-control ' + (cfg.REMOTE_CONTROL_NAME || name);
 
 // ---------- config (panel.json) ----------
+const DEFAULTS = { autoStartClaude: true, autoRemote: true };
 function loadConfig() {
   try {
     const c = JSON.parse(fs.readFileSync(cfg.CONFIG_FILE, 'utf8'));
-    if (c && typeof c === 'object') { c.defaults = c.defaults || {}; c.projects = c.projects || {}; return c; }
+    if (c && typeof c === 'object') { c.defaults = { ...DEFAULTS, ...(c.defaults || {}) }; c.projects = c.projects || {}; c.settings = c.settings || {}; return c; }
   } catch { /* ausente/invalido -> defaults */ }
-  return { defaults: { autoStartClaude: true, autoRemote: true }, projects: {} };
+  return { defaults: { ...DEFAULTS }, projects: {}, settings: {} };
 }
 function saveConfig(c) {
   try {
@@ -49,14 +51,6 @@ function setProjConfig(name, patch) {
 // ---------- sessao tmux ----------
 const sessionUp = async (sess) => (await sh('tmux', ['has-session', '-t', '=' + sess])).ok;
 const ensureSession = (name) => sh('bash', [cfg.SESSION_SCRIPT, name]);
-
-// link de controle remoto ativo (claude.ai/code/session_...) lido da tela da sessao.
-async function remoteUrlOf(sess) {
-  const r = await sh('tmux', ['capture-pane', '-t', sess, '-p', '-S', '-300']);
-  if (!r.ok) return '';
-  const m = (r.stdout || '').match(/https:\/\/claude\.ai\/code\/[^\s'"()\]]+/g);
-  return m ? m[m.length - 1] : '';
-}
 // Claude de fato rodando nessa sessao? flag file mantido pelo claude-loop.sh
 function claudeRunningFlag(sess) {
   try { return fs.existsSync(path.join(cfg.RUN_DIR, sess + '.running')); } catch { return false; }
@@ -71,6 +65,7 @@ async function createProject(name, autoStartClaude, autoRemote) {
   await sh('git', ['-C', dir, 'init', '-q']);
   setProjConfig(name, { autoStartClaude: !!autoStartClaude, autoRemote: !!autoRemote });
   await ensureSession(name);
+  events.poke();
   return { ok: true, msg: `projeto "${name}" criado e sessao iniciada (Claude ${autoStartClaude ? 'ON' : 'OFF'}, remote ${autoRemote ? 'ON' : 'OFF'})` };
 }
 async function restartProject(name) {
@@ -81,13 +76,14 @@ async function restartProject(name) {
   // reabre o tmux + o Claude (supervisor), que re-emite o remote-control e envia a primeira linha.
   await sh('tmux', ['kill-session', '-t', '=' + sess]);
   await ensureSession(name);
+  events.poke();
   const c = projConfig(name);
   return { ok: true, msg: `"${name}": sessao reiniciada — Claude reaberto${c.autoRemote ? ', remote religado' : ''}${c.initLine ? ' e primeira linha enviada' : ''}` };
 }
 // Claude guarda o historico em ~/.claude/projects/<cwd codificado> (nao-alfanumerico -> "-").
 function migrateClaudeHistory(oldDir, newDir) {
   try {
-    const base = path.join(cfg.HOME, '.claude', 'projects');
+    const base = path.join(cfg.CLAUDE_DIR, 'projects');
     const enc = (p) => p.replace(/[^a-zA-Z0-9]/g, '-');
     const from = path.join(base, enc(oldDir));
     const to = path.join(base, enc(newDir));
@@ -113,6 +109,7 @@ async function renameProject(oldName, newName) {
     saveConfig(c);
   }
   await ensureSession(newName);
+  events.poke();
   return { ok: true, msg: `"${oldName}" -> "${newName}"${histMoved ? ' (historico migrado)' : ''} (sessao recriada)` };
 }
 async function deleteProject(name) {
@@ -124,6 +121,7 @@ async function deleteProject(name) {
   catch (e) { return { ok: false, msg: 'falha ao excluir: ' + e.message }; }
   const c = loadConfig();
   if (c.projects && c.projects[name]) { delete c.projects[name]; saveConfig(c); }
+  events.poke();
   return { ok: true, msg: `projeto "${name}" excluido (pasta + sessao). O historico do Claude foi mantido.` };
 }
 async function sendRemote(name) {
@@ -132,15 +130,19 @@ async function sendRemote(name) {
   if (!(await sessionUp(sess))) return { ok: false, msg: 'sessao tmux nao esta de pe' };
   if (!loginInfo().logged) return { ok: false, msg: 'Claude nao esta logado' };
   const cmd = remoteCmdFor(name);
-  // Mesmo metodo do claude-loop.sh: comando + C-m (Enter real) numa UNICA chamada send-keys.
-  await sh('tmux', ['send-keys', '-t', sess, cmd, 'C-m']);
-  return { ok: true, msg: `remote reenviado: ${cmd}` };
+  // Mesmo metodo do claude-loop.sh: texto literal, pausa p/ a TUI processar, depois Enter (C-m).
+  await sh('tmux', ['send-keys', '-t', sess, '-l', cmd]);
+  await new Promise((r) => setTimeout(r, 800));
+  await sh('tmux', ['send-keys', '-t', sess, 'C-m']);
+  events.poke();
+  return { ok: true, msg: `remote reenviado: ${cmd} — o link aparece no card em alguns segundos` };
 }
 async function setConfig(name, key, value) {
   if (!validName(name)) return { ok: false, msg: 'nome invalido' };
   if (key !== 'autoStartClaude' && key !== 'autoRemote') return { ok: false, msg: 'chave invalida' };
   const val = truthy(value);
   if (!setProjConfig(name, { [key]: val })) return { ok: false, msg: 'falha ao salvar panel.json' };
+  events.poke();
   if (key === 'autoRemote') {
     if (val) {
       const r = await sendRemote(name);
@@ -158,6 +160,7 @@ async function setInitLine(name, text) {
   if (!validName(name)) return { ok: false, msg: 'nome invalido' };
   const t = String(text == null ? '' : text).replace(/[\r\n]+/g, ' ').slice(0, 1000);
   if (!setProjConfig(name, { initLine: t })) return { ok: false, msg: 'falha ao salvar panel.json' };
+  events.poke();
   return { ok: true, msg: t ? `"${name}": primeira linha salva (vale no proximo inicio do Claude)` : `"${name}": primeira linha removida` };
 }
 
@@ -178,22 +181,24 @@ async function buildState() {
       autoRemote: c.autoRemote,
       initLine: c.initLine,
       remoteCmd: remoteCmdFor(name),
-      remoteUrl: up ? await remoteUrlOf(sess) : '',
+      remoteUrl: up ? events.remoteUrlOf(sess) : '',
     };
   }));
+  const conf = loadConfig();
   return {
     projectsDir: cfg.PROJECTS_DIR,
     login: loginInfo(),
     version: await claudeVersion(),
     remoteNameForced: cfg.REMOTE_CONTROL_NAME,
     shellSession: cfg.SHELL_SESSION,
+    settings: conf.settings || {},
     usage: usageSummary(),
     projects,
   };
 }
 
 module.exports = {
-  listProjects, projConfig, sessionUp, ensureSession,
+  listProjects, projConfig, loadConfig, saveConfig, sessionUp, ensureSession,
   createProject, restartProject, renameProject, deleteProject, sendRemote, setConfig, setInitLine,
   buildState,
 };

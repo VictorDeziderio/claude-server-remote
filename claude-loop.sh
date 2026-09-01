@@ -49,6 +49,37 @@ read_initline() {
   ' "$H/.claude/panel.json" "$PROJ_NAME" 2>/dev/null
 }
 
+# tela atual da sessao (ultimas 80 linhas)
+screen() { tmux capture-pane -t "$SESS" -p -S -80 2>/dev/null; }
+# TUI do Claude pronta p/ receber comando? (rodape/prompt visiveis)
+tui_ready() { screen | grep -qE '(\? for shortcuts|bypass permissions|shift\+tab to cycle|^[[:space:]]*[>❯][[:space:]]*$)'; }
+# remote ja ativo? (link do controle remoto ou status na tela)
+remote_up() { screen | grep -qE '(claude\.ai/code/|[Rr]emote[- ]control (is )?(on|active|enabled|started|conectado|ativo))'; }
+
+send_remote_when_ready() {
+  local waited=0 attempt=0
+  sleep "$DELAY"
+  is_logged_in || { echo "[remote] sem login — nao enviei $FULL_AUTOCMD"; return 0; }
+  # espera a TUI (ate 120s)
+  while ! tui_ready; do
+    sleep 3; waited=$((waited + 3))
+    [ "$waited" -ge 120 ] && { echo "[remote] TUI nao ficou pronta em 120s — envio mesmo assim"; break; }
+  done
+  while [ "$attempt" -lt 3 ]; do
+    attempt=$((attempt + 1))
+    remote_up && { echo "[remote] ja ativo"; return 0; }
+    tmux send-keys -t "$SESS" -l "$FULL_AUTOCMD"
+    sleep 0.8
+    tmux send-keys -t "$SESS" C-m
+    sleep 12
+    if remote_up; then echo "[remote] ativo (tentativa $attempt)"; return 0; fi
+    # se a linha ficou digitada sem enviar, limpa antes de tentar de novo
+    tmux send-keys -t "$SESS" C-u 2>/dev/null || true
+    sleep 5
+  done
+  echo "[remote] nao confirmei o remote apos $attempt tentativas (use 'Religar remote' no painel)"
+}
+
 # garante que o flag suma se o supervisor for encerrado (kill-session, etc.)
 cleanup() { rm -f "$RUN_FLAG"; }
 trap cleanup EXIT INT TERM
@@ -59,16 +90,28 @@ while true; do
   # (o send-keys falhava com a TUI do Claude por causa do bracketed paste).
   IL="$(read_initline)"
 
-  # REMOTE-CONTROL: vai por send-keys DEPOIS que o Claude carregar (em paralelo ao `claude`).
-  # C-m (Enter real) e mais confiavel que "Enter" com a TUI do Claude.
+  # REMOTE-CONTROL: em paralelo ao `claude`, ESPERA A TUI FICAR PRONTA (le a tela em vez de
+  # um sleep fixo — em container lento 15s nao bastavam), manda o texto e o Enter em dois
+  # passos (a TUI precisa processar o texto antes do Enter), VERIFICA se o remote subiu
+  # (link claude.ai/code na tela) e tenta de novo ate 3x. Sem login, nao envia.
   if [ -n "$FULL_AUTOCMD" ]; then
-    ( sleep "$DELAY"
-      is_logged_in && tmux send-keys -t "$SESS" "$FULL_AUTOCMD" C-m
-    ) &
+    ( send_remote_when_ready ) &
+  fi
+
+  # CONTINUAR CONVERSA: o painel (Historico -> "Continuar") grava <sessao>.resume com o id da
+  # conversa e derruba o Claude; aqui reabrimos com `claude --resume <id>` (uma vez) e apagamos o flag.
+  RESUME_FLAG="$RUN_DIR/$SESS.resume"
+  RESUME_ID=""
+  if [ -s "$RESUME_FLAG" ]; then
+    RESUME_ID="$(head -c 100 "$RESUME_FLAG" | tr -cd 'A-Za-z0-9_-')"
+    rm -f "$RESUME_FLAG"
   fi
 
   : > "$RUN_FLAG"               # marca: Claude rodando
-  if [ -n "$IL" ]; then
+  if [ -n "$RESUME_ID" ]; then
+    echo "[continuando a conversa $RESUME_ID]"
+    claude --resume "$RESUME_ID"
+  elif [ -n "$IL" ]; then
     claude "$IL"                # inicia interativo JA executando a primeira linha
   else
     claude

@@ -1,3 +1,7 @@
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/jetbrains-mono/700.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -12,6 +16,7 @@ body {
     #0b0d12;
   color: #e7e9ee;
   overflow: hidden; /* cada pagina rola no seu proprio container (o terminal precisa de altura fixa) */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 /* scrollbar discreta */
@@ -24,3 +29,14 @@ body {
 .xterm .xterm-viewport { background-color: transparent !important; }
 .xterm .xterm-viewport::-webkit-scrollbar-thumb { background: #2a3140; }
 .xterm .xterm-screen { outline: none; }
+
+/* CodeMirror (editor de arquivos) */
+.cm-editor { height: 100%; font-size: 13px; }
+.cm-editor .cm-scroller { font-family: "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace; line-height: 1.55; }
+.cm-editor.cm-focused { outline: none; }
+.cm-editor .cm-gutters { background: #0b0d12; border-right: 1px solid rgba(255,255,255,.05); color: #5b6478; }
+.cm-editor .cm-activeLineGutter { background: rgba(255,255,255,.04); }
+.cm-editor .cm-content { background: #0b0d12; }
+.cm-editor .cm-activeLine { background: rgba(255,255,255,.03); }
+.cm-editor .cm-selectionBackground, .cm-editor.cm-focused .cm-selectionBackground { background: rgba(217,119,87,.28) !important; }
+.cm-editor .cm-cursor { border-left-color: #D97757; }

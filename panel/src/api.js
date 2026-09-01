@@ -12,12 +12,15 @@ const handle = async (r) => {
 const get = (path) => fetch(path, { cache: 'no-store' }).then(handle)
 const post = (path, body) =>
   fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then(handle)
+const q = (obj) => new URLSearchParams(obj).toString()
 
 // Retorna { __unauth: true } quando nao autenticado (a SPA mostra o login).
 export const getState = () => get('/api/state').catch((e) => { if (e.unauth) return { __unauth: true }; throw e })
 
-export const login = (loginName, password) => post('/api/login', { login: loginName, password })
+export const loginInfo = () => get('/api/login/info')
+export const login = (loginName, password, code) => post('/api/login', { login: loginName, password, code })
 export const logout = () => post('/api/logout', {})
+export const eventsUrl = () => '/api/events'
 
 // --- projetos ---
 export const createProject = (name, autoStartClaude, autoRemote) => post('/api/create', { name, autoStartClaude, autoRemote })
@@ -29,7 +32,6 @@ export const restartProject = (name) => post('/api/restart', { name })
 export const reconnectRemote = (name) => post('/api/remote', { name })
 
 // --- arquivos (sandbox em /root) ---
-const q = (obj) => new URLSearchParams(obj).toString()
 export const fsStat = (p) => get('/api/fs/stat?' + q({ path: p || '' }))
 export const fsList = (p) => get('/api/fs/list?' + q({ path: p || '' }))
 export const fsRead = (p) => get('/api/fs/read?' + q({ path: p || '' }))
@@ -43,17 +45,43 @@ export const fsUpload = (p, file, overwrite = false) =>
     method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file,
   }).then(handle)
 
-// --- terminal: WebSocket real + REST de apoio (login do Claude) ---
-export const termWsUrl = (name, cols, rows) => {
+// --- terminal: WebSocket real + REST de apoio ---
+export const termWsUrl = (name, cols, rows, detach) => {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  return `${proto}://${window.location.host}/ws/term?` + q({ name: name || 'shell', cols, rows })
+  return `${proto}://${window.location.host}/ws/term?` + q({ name: name || 'shell', cols, rows, detach: detach ? '1' : '0' })
 }
 export const termCapture = (name) => get('/api/term/capture?' + q({ name: name || '' }))
 export const termSend = (name, text, key) => post('/api/term/send', { name, text, key })
 export const termExit = (name) => post('/api/term/exit', { name })
+export const termWindows = (name) => get('/api/term/windows?' + q({ name: name || '' }))
+export const termWindow = (name, action, index) => post('/api/term/window', { name, action, index })
 
 // --- relatorio por periodo ---
 export const report = (from, to) => get('/api/report?' + q({ from: from || '', to: to || '' }))
 
-// --- conta do Claude ---
+// --- conta do Claude / painel ---
 export const claudeLogout = () => post('/api/claude/logout', {})
+export const claudeUpdate = () => post('/api/claude/update', {})
+export const sessions = () => get('/api/sessions')
+export const revokeSession = (id) => post('/api/sessions/revoke', { id })
+export const revokeOtherSessions = () => post('/api/sessions/revoke-others', {})
+export const totpSetup = () => post('/api/totp/setup', {})
+export const totpEnable = (code) => post('/api/totp/enable', { code })
+export const totpDisable = (code) => post('/api/totp/disable', { code })
+
+// --- historico de conversas ---
+export const history = (name) => get('/api/history?' + q({ name }))
+export const conversation = (name, id) => get('/api/history/conversation?' + q({ name, id }))
+export const resumeConversation = (name, id) => post('/api/history/resume', { name, id })
+
+// --- logs / saude / backup / settings ---
+export const logs = () => get('/api/logs')
+export const logTail = (file, lines) => get('/api/logs/tail?' + q({ file, lines: lines || 300 }))
+export const health = () => get('/api/health')
+export const backupStatus = () => get('/api/backup/status')
+export const backupRun = (name) => post('/api/backup/run', { name: name || '' })
+export const backupConfig = () => post('/api/backup/config', {})
+export const backupDownloadUrl = (file, full) => '/api/backup/download?' + q({ file: file || '', full: full ? '1' : '0' })
+export const settings = () => get('/api/settings')
+export const setDefaults = (patch) => post('/api/settings/defaults', patch)
+export const setSettings = (patch) => post('/api/settings', patch)

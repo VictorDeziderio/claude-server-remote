@@ -146,6 +146,12 @@ if [ "${BACKUP_ENABLED:-true}" = "true" ]; then
       sleep "${BACKUP_INTERVAL:-3600}"
       as_user env PROJECT_FOLDER="$PROJECT_FOLDER" bash /usr/local/bin/backup.sh >/dev/null 2>&1 || true
     done ) &
+  # backup da CONFIG (~/.claude + ~/.claude.json) 1x/dia -> /root/.claude-backups (rotaciona 7).
+  # Baixe pelo painel (Backup) de tempos em tempos: se o volume sumir, o login/config vao junto.
+  ( sleep 120; while true; do
+      as_user bash /usr/local/bin/backup.sh --config >/dev/null 2>&1 || true
+      sleep "${CONFIG_BACKUP_INTERVAL:-86400}"
+    done ) &
 fi
 
 # ============================================================================
@@ -184,6 +190,9 @@ if [ "${PANEL_ENABLED:-true}" = "true" ]; then
       REMOTE_CONTROL_NAME="$REMOTE_CONTROL_NAME" CLAUDE_AUTOCMD_DELAY="$CLAUDE_AUTOCMD_DELAY" \
       PANEL_LOGIN="$PANEL_LOGIN" PANEL_PASSWORD="$PANEL_PASSWORD" \
       PANEL_SESSION_DAYS="${PANEL_SESSION_DAYS:-30}" \
+      BACKUP_ENABLED="${BACKUP_ENABLED:-true}" BACKUP_INTERVAL="${BACKUP_INTERVAL:-3600}" \
+      GATEWAY_PORT="$GATEWAY_PORT" PROJECT_FOLDER="$PROJECT_FOLDER" GH_TOKEN="${GH_TOKEN:-}" \
+      GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-}" GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-}" TZ="${TZ:-}" \
       TERM=xterm-256color \
       node /usr/local/bin/panel/server.js
 fi

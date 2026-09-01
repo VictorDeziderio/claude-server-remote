@@ -7,6 +7,9 @@
 # Uso:
 #   backup.sh            -> uma passada em TODOS os projetos de $PROJ
 #   backup.sh /caminho   -> backup so desse repo
+#   backup.sh --config   -> tarball da CONFIG (~/.claude sem historico/logs + ~/.claude.json)
+#                           em $H/.claude-backups/config-<data>.tgz (mantem os 7 mais recentes).
+#                           Baixe pelo painel (Backup) — se o volume sumir, o login/config vao junto.
 #
 # Roda como o usuario "ubuntu" (HOME=/root, volume). Identidade git e definida
 # no start.sh (ou cai num default local aqui).
@@ -17,9 +20,28 @@ PROJECT_FOLDER="${PROJECT_FOLDER:-projects}"
 PROJ="$H/$PROJECT_FOLDER"
 LOG_DIR="$H/.claude/logs"
 LOG="$LOG_DIR/backup.log"
+CFG_BACKUP_DIR="$H/.claude-backups"
+CFG_KEEP="${CONFIG_BACKUP_KEEP:-7}"
 mkdir -p "$LOG_DIR"
 
 log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
+
+backup_config() {
+  mkdir -p "$CFG_BACKUP_DIR"
+  local out="$CFG_BACKUP_DIR/config-$(date '+%Y%m%d-%H%M%S').tgz"
+  if tar czf "$out" -C "$H" --ignore-failed-read \
+       --exclude=.claude/projects --exclude=.claude/logs --exclude=.claude/run \
+       --exclude=.claude/todos --exclude=.claude/shell-snapshots \
+       .claude .claude.json 2>/dev/null; then
+    chmod 600 "$out"
+    log "ok    config: $(basename "$out") ($(du -h "$out" | cut -f1))"
+    # rotacao: mantem os N mais recentes
+    ls -1t "$CFG_BACKUP_DIR"/config-*.tgz 2>/dev/null | tail -n +"$((CFG_KEEP + 1))" | xargs -r rm -f
+  else
+    log "WARN  config: falha ao gerar o tarball"
+    return 1
+  fi
+}
 
 backup_repo() {
   local dir="$1" name
@@ -67,7 +89,9 @@ backup_repo() {
   fi
 }
 
-if [ "$#" -ge 1 ]; then
+if [ "${1:-}" = "--config" ]; then
+  backup_config
+elif [ "$#" -ge 1 ]; then
   backup_repo "$1"
 else
   [ -d "$PROJ" ] || { log "pasta $PROJ inexistente, nada a fazer"; exit 0; }

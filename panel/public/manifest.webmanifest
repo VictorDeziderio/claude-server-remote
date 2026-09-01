@@ -1,0 +1,15 @@
+{
+  "name": "Claude Remote",
+  "short_name": "Claude Remote",
+  "description": "Painel do dev-box: terminal, projetos, arquivos e Claude Code",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0d12",
+  "theme_color": "#0b0d12",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

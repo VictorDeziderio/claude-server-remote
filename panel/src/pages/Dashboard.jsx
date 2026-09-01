@@ -1,41 +1,75 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Cpu, GitBranch, Radio, RefreshCw, Activity, Pencil, Plus, Power, Wifi, WifiOff,
-  Lock, Save, UserRound, Tag, SquareTerminal, FolderOpen, Trash2,
+  Cpu, Radio, RefreshCw, Activity, Plus, Power, Wifi, WifiOff, Save, UserRound, Tag, SquareTerminal, FolderOpen,
+  Trash2, Settings2, History, DatabaseBackup, Pencil, HardDrive, MemoryStick, Gauge, Clock, ArrowUpCircle, CheckCircle2, ExternalLink, BarChart3,
 } from 'lucide-react'
-import { Dot, Btn, Chip, Modal, inputCls } from '../components/ui.jsx'
-import { fmtInt, fmtTok } from '../lib/format.js'
+import { Dot, Btn, Chip, Modal, Drawer, ActivityBadge, inputCls, Skeleton } from '../components/ui.jsx'
+import { fmtInt, fmtTok, fmtSize, fmtDate, fmtUsd, fmtUptime } from '../lib/format.js'
 import * as api from '../api.js'
 
-function StatItem({ icon: Icon, label, children }) {
+function StatItem({ icon: Icon, label, children, warn }) {
   return (
-    <div className="flex items-start gap-3 rounded-xl bg-ink-700/60 p-3 ring-1 ring-white/5">
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-claude" />
-      <div className="min-w-0">
+    <div className={`flex items-start gap-3 rounded-xl bg-ink-700/60 p-3 ring-1 ${warn ? 'ring-amber-500/40' : 'ring-white/5'}`}>
+      <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${warn ? 'text-amber-300' : 'text-claude'}`} />
+      <div className="min-w-0 flex-1">
         <div className="text-[11px] uppercase tracking-wide text-slate-400">{label}</div>
         <div className="truncate text-sm text-slate-100">{children}</div>
       </div>
     </div>
   )
 }
-function ProjStatus({ p }) {
+const pct = (p) => (p >= 90 ? 'bg-rose-400' : p >= 75 ? 'bg-amber-400' : 'bg-emerald-400')
+function Meter({ icon: Icon, label, value, hint }) {
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
-      <span className="inline-flex items-center gap-1.5"><Activity className="h-3.5 w-3.5 text-slate-500" /> tmux <Dot on={p.up} /> {p.up ? 'de pé' : 'fora'}</span>
-      <span className="inline-flex items-center gap-1.5"><Cpu className="h-3.5 w-3.5 text-slate-500" /> Claude <Dot on={p.claudeRunning} /> {p.claudeRunning ? 'rodando' : 'parado'}</span>
-      <span className="inline-flex items-center gap-1.5"><Radio className="h-3.5 w-3.5 text-slate-500" /> remote {p.autoRemote ? <code className="text-slate-300">{p.remoteCmd}</code> : <span className="text-slate-500">desligado</span>}</span>
+    <div className="rounded-xl bg-ink-700/60 p-3 ring-1 ring-white/5">
+      <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-400"><span className="inline-flex items-center gap-1.5"><Icon className="h-3.5 w-3.5 text-claude" /> {label}</span><span className="text-slate-300">{value}%</span></div>
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-ink-900"><div className={`h-full rounded-full ${pct(value)}`} style={{ width: Math.min(100, value) + '%' }} /></div>
+      {hint && <div className="mt-1 text-[11px] text-slate-500">{hint}</div>}
     </div>
   )
 }
 
-export default function Dashboard({ data, refresh, onFlash, showNew, setShowNew }) {
+// Saude do host + versao do Claude Code (com "atualizar")
+export function HealthCard({ onFlash, compact }) {
+  const [h, setH] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const load = () => api.health().then((r) => { if (r.ok) setH(r) }).catch(() => {})
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t) }, [])
+  const update = async () => {
+    setBusy(true)
+    const r = await api.claudeUpdate().catch((e) => ({ ok: false, msg: e.message }))
+    setBusy(false); onFlash?.(r); load()
+  }
+  if (!h) return <Skeleton className="h-24" />
+  const c = h.claude || {}
+  return (
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <Meter icon={HardDrive} label="Disco (/root)" value={h.disk?.pct ?? 0} hint={h.disk ? `${fmtSize(h.disk.used)} de ${fmtSize(h.disk.total)} · livre ${fmtSize(h.disk.avail)}` : ''} />
+      <Meter icon={MemoryStick} label="Memória" value={h.mem?.pct ?? 0} hint={h.mem ? `${fmtSize(h.mem.used)} de ${fmtSize(h.mem.total)}` : ''} />
+      <div className="rounded-xl bg-ink-700/60 p-3 ring-1 ring-white/5">
+        <div className="text-[11px] uppercase tracking-wide text-slate-400"><span className="inline-flex items-center gap-1.5"><Gauge className="h-3.5 w-3.5 text-claude" /> Load / CPUs</span></div>
+        <div className="mt-1 text-sm text-slate-100">{(h.load || []).join(' · ')} <span className="text-slate-500">/ {h.cpus}</span></div>
+        <div className="mt-1 text-[11px] text-slate-500"><Clock className="mr-1 inline h-3 w-3" />host há {fmtUptime(h.uptime)} · painel há {fmtUptime(h.panel?.uptime)}</div>
+      </div>
+      <div className={`rounded-xl bg-ink-700/60 p-3 ring-1 ${c.updateAvailable ? 'ring-amber-500/40' : 'ring-white/5'}`}>
+        <div className="text-[11px] uppercase tracking-wide text-slate-400"><span className="inline-flex items-center gap-1.5"><Tag className="h-3.5 w-3.5 text-claude" /> Claude Code</span></div>
+        <div className="mt-1 truncate text-sm text-slate-100" title={c.current}>{c.currentNum || c.current || '?'}{c.latest && <span className="text-slate-500"> · npm {c.latest}</span>}</div>
+        <div className="mt-1.5 flex items-center gap-2">
+          {c.updateAvailable
+            ? <Btn size="sm" variant="accent" busy={busy} onClick={update} title="npm i -g @anthropic-ai/claude-code@latest"><ArrowUpCircle className="h-3.5 w-3.5" /> Atualizar p/ {c.latest}</Btn>
+            : <span className="inline-flex items-center gap-1 text-[11px] text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5" /> {c.latest ? 'atualizado' : 'sem acesso ao npm'}</span>}
+          {!compact && <Link to="/account" className="text-[11px] text-slate-500 hover:text-slate-300">detalhes →</Link>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function Dashboard({ data, activity, refresh, onFlash, showNew, setShowNew }) {
   const [busy, setBusy] = useState('')
-  const [drafts, setDrafts] = useState({})
-  const [editing, setEditing] = useState({})
-  const [initDrafts, setInitDrafts] = useState({})
   const [form, setForm] = useState({ name: '', autoStartClaude: true, autoRemote: true })
-  const [confirmDel, setConfirmDel] = useState(null) // { name, typed }
+  const [drawer, setDrawer] = useState(null) // nome do projeto em configuracao
 
   const run = async (key, fn) => {
     setBusy(key)
@@ -43,67 +77,37 @@ export default function Dashboard({ data, refresh, onFlash, showNew, setShowNew 
     catch (e) { onFlash({ ok: false, msg: e.message }); return null }
     finally { setBusy(''); refresh() }
   }
-  const startRename = (name) => {
-    if (!window.confirm(`Renomear "${name}" vai RENOMEAR A PASTA no servidor e migrar o histórico do Claude. A sessão tmux será recriada.\n\nDesbloquear o campo para editar?`)) return
-    setDrafts((d) => ({ ...d, [name]: name })); setEditing((e) => ({ ...e, [name]: true }))
-  }
-  const cancelRename = (name) => { setEditing((e) => ({ ...e, [name]: false })); setDrafts((d) => ({ ...d, [name]: name })) }
-  const commitRename = (name) => run(`rename:${name}`, async () => {
-    const r = await api.renameProject(name, (drafts[name] || '').trim())
-    if (r.ok) setEditing((e) => ({ ...e, [name]: false }))
-    return r
-  })
   const createNow = () => run('create', async () => {
     const r = await api.createProject(form.name.trim(), form.autoStartClaude, form.autoRemote)
     if (r.ok) { setForm({ name: '', autoStartClaude: true, autoRemote: true }); setShowNew(false) }
-    return r
-  })
-  const deleteNow = () => run(`delete:${confirmDel.name}`, async () => {
-    const r = await api.deleteProject(confirmDel.name)
-    if (r.ok) setConfirmDel(null)
     return r
   })
 
   const login = data.login || { logged: false, account: '' }
   const u = data.usage || { today: {}, total: {} }
   const projects = data.projects || []
+  const actOf = (p) => (activity && activity[p.session] && activity[p.session].state) || p.activity || 'off'
+  const running = projects.filter((p) => p.claudeRunning).length
+  const waiting = projects.filter((p) => actOf(p) === 'prompt').length
+  const drawerProj = drawer && projects.find((p) => p.name === drawer)
 
   return (
     <>
       {/* Resumo */}
       <section className="mb-5 rounded-2xl bg-ink-800 p-4 ring-1 ring-white/5">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <StatItem icon={UserRound} label="Conta Claude">
+          <StatItem icon={UserRound} label="Conta Claude" warn={!login.logged}>
             <Link to="/account" className="inline-flex items-center gap-2 hover:underline"><Dot on={login.logged} /> {login.logged ? (login.account || 'logado') : 'deslogado — clique p/ logar'}</Link>
           </StatItem>
-          <StatItem icon={Tag} label="Versão">{data.version || '?'}</StatItem>
-          <StatItem icon={SquareTerminal} label="Terminal">
-            <Link to="/terminal/shell" className="hover:underline">abrir shell em /root →</Link>
+          <StatItem icon={Cpu} label="Sessões">
+            {running}/{projects.length} com Claude rodando{waiting ? <span className="text-rose-300"> · {waiting} aguardando você</span> : ''}
+          </StatItem>
+          <StatItem icon={BarChart3} label="Hoje">
+            <Link to="/report" className="hover:underline">{fmtTok((u.today?.in || 0) + (u.today?.out || 0))} tokens · {fmtUsd(u.today?.cost)} · {fmtInt(u.today?.messages)} msgs</Link>
           </StatItem>
         </div>
         <div className="mt-4 border-t border-white/5 pt-4">
-          <div className="mb-2 flex items-center justify-between">
-            <Link to="/report" className="flex items-center gap-2 text-sm font-medium text-slate-200 hover:text-white"><GitBranch className="h-4 w-4 text-claude" /> Consumo de tokens</Link>
-            <div className="text-xs text-slate-400">{u.sessions} sessões · {fmtInt(u.messages)} msgs</div>
-          </div>
-          <div className="overflow-x-auto rounded-xl ring-1 ring-white/5">
-            <table className="w-full text-sm">
-              <thead className="bg-ink-700/60 text-[11px] uppercase tracking-wide text-slate-400">
-                <tr><th className="px-3 py-2 text-left font-medium"></th><th className="px-3 py-2 text-right font-medium">Entrada</th><th className="px-3 py-2 text-right font-medium">Saída</th><th className="px-3 py-2 text-right font-medium">Cache esc.</th><th className="px-3 py-2 text-right font-medium">Cache leit.</th></tr>
-              </thead>
-              <tbody className="text-slate-200">
-                {[['Hoje', u.today], ['Total', u.total]].map(([label, row]) => (
-                  <tr key={label} className="border-t border-white/5">
-                    <td className="px-3 py-2 text-slate-400">{label}</td>
-                    <td className="px-3 py-2 text-right">{fmtTok(row?.in)}</td>
-                    <td className="px-3 py-2 text-right">{fmtTok(row?.out)}</td>
-                    <td className="px-3 py-2 text-right">{fmtTok(row?.cacheW)}</td>
-                    <td className="px-3 py-2 text-right">{fmtTok(row?.cacheR)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <HealthCard onFlash={onFlash} />
         </div>
       </section>
 
@@ -120,71 +124,48 @@ export default function Dashboard({ data, refresh, onFlash, showNew, setShowNew 
             Nenhum projeto ainda. <button type="button" className="text-claude hover:underline" onClick={() => setShowNew(true)}>Criar o primeiro</button>.
           </div>
         )}
-        {projects.map((p) => (
-          <div key={p.name} className={`rounded-2xl bg-ink-800 p-4 ring-1 ${p.claudeRunning ? 'ring-claude/30' : 'ring-white/5'}`}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2"><Dot on={p.up && p.claudeRunning} /><Link to={'/terminal/' + encodeURIComponent(p.name)} className="font-medium text-white hover:underline">{p.name}</Link></div>
-                <div className="mt-1 truncate text-xs text-slate-500">{p.dir}</div>
-                <ProjStatus p={p} />
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Chip Icon={Cpu} on={p.autoStartClaude} busy={busy === `cfg:${p.name}:autoStartClaude`} labelOn="Claude: ON" labelOff="Claude: OFF"
-                    onClick={() => run(`cfg:${p.name}:autoStartClaude`, () => api.setConfig(p.name, 'autoStartClaude', !p.autoStartClaude))} />
-                  <Chip Icon={p.autoRemote ? Wifi : WifiOff} on={p.autoRemote} busy={busy === `cfg:${p.name}:autoRemote`} labelOn="Remote: ON" labelOff="Remote: OFF"
-                    onClick={() => run(`cfg:${p.name}:autoRemote`, () => api.setConfig(p.name, 'autoRemote', !p.autoRemote))} />
+        {projects.map((p) => {
+          const act = actOf(p)
+          return (
+            <div key={p.name} className={`rounded-2xl bg-ink-800 p-4 ring-1 transition ${act === 'prompt' ? 'ring-rose-500/40' : p.claudeRunning ? 'ring-claude/30' : 'ring-white/5'}`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link to={'/terminal/' + encodeURIComponent(p.name)} className="text-base font-semibold text-white hover:underline">{p.name}</Link>
+                    {p.claudeRunning ? <ActivityBadge state={act} since={p.activitySince} /> : <ActivityBadge state="off" />}
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+                    <span className="inline-flex items-center gap-1.5"><Activity className="h-3.5 w-3.5 text-slate-500" /> tmux <Dot on={p.up} /> {p.up ? 'de pé' : 'fora'}</span>
+                    <span className="inline-flex items-center gap-1.5"><Cpu className="h-3.5 w-3.5 text-slate-500" /> Claude <Dot on={p.claudeRunning} /> {p.claudeRunning ? 'rodando' : 'parado'}</span>
+                    <span className="inline-flex items-center gap-1.5"><Radio className="h-3.5 w-3.5 text-slate-500" /> {p.autoRemote ? <code className="text-slate-300">{p.remoteCmd}</code> : <span className="text-slate-500">remote desligado</span>}</span>
+                    {p.initLine && <span className="truncate text-slate-500" title={p.initLine}>1ª linha: “{p.initLine.slice(0, 60)}{p.initLine.length > 60 ? '…' : ''}”</span>}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Chip Icon={Cpu} on={p.autoStartClaude} busy={busy === `cfg:${p.name}:autoStartClaude`} labelOn="Claude: ON" labelOff="Claude: OFF"
+                      onClick={() => run(`cfg:${p.name}:autoStartClaude`, () => api.setConfig(p.name, 'autoStartClaude', !p.autoStartClaude))} />
+                    <Chip Icon={p.autoRemote ? Wifi : WifiOff} on={p.autoRemote} busy={busy === `cfg:${p.name}:autoRemote`} labelOn="Remote: ON" labelOff="Remote: OFF"
+                      onClick={() => run(`cfg:${p.name}:autoRemote`, () => api.setConfig(p.name, 'autoRemote', !p.autoRemote))} />
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {p.remoteUrl && (
+                    <a href={p.remoteUrl} target="_blank" rel="noreferrer" title="abre/reconecta o controle remoto — o link continua válido mesmo se você fechou a aba no PC"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500/90 px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-sky-500">
+                      <ExternalLink className="h-3.5 w-3.5" /> Abrir remote
+                    </a>
+                  )}
+                  <Link to={'/terminal/' + encodeURIComponent(p.name)} className="inline-flex items-center gap-1.5 rounded-lg bg-claude/90 px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-claude"><SquareTerminal className="h-3.5 w-3.5" /> Terminal</Link>
+                  <Link to={'/files/projects/' + encodeURIComponent(p.name)} className="inline-flex items-center gap-1.5 rounded-lg bg-ink-500 px-3 py-1.5 text-[13px] font-medium text-slate-100 transition hover:bg-ink-500/70"><FolderOpen className="h-3.5 w-3.5" /> Arquivos</Link>
+                  <Btn busy={busy === `restart:${p.name}`} onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title="mata a sessão tmux (fecha remote + Claude) → reabre o Claude → religa o remote → envia a primeira linha"><RefreshCw className="h-3.5 w-3.5" /> Reiniciar</Btn>
+                  <Btn variant="ghost" onClick={() => setDrawer(p.name)} title="configurar: primeira linha, renomear, histórico, backup, excluir"><Settings2 className="h-3.5 w-3.5" /></Btn>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                {p.remoteUrl && (
-                  <a href={p.remoteUrl} target="_blank" rel="noreferrer" title="abre/reconecta o controle remoto — o link continua válido mesmo se você fechou a aba no PC"
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500/90 px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-sky-500">
-                    <Radio className="h-3.5 w-3.5" /> Abrir remote
-                  </a>
-                )}
-                <Btn variant="accent" busy={busy === `restart:${p.name}`} onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title="mata a sessão tmux (fecha remote + Claude) → reabre o Claude → religa o remote → envia a primeira linha"><RefreshCw className="h-3.5 w-3.5" /> Reiniciar Claude</Btn>
-                <Btn busy={busy === `remote:${p.name}`} onClick={() => run(`remote:${p.name}`, () => api.reconnectRemote(p.name))} title="re-emite o /remote-control sem reiniciar (preserva a conversa)"><Radio className="h-3.5 w-3.5" /> Religar remote</Btn>
-                <Link to={'/terminal/' + encodeURIComponent(p.name)} className="inline-flex items-center gap-1.5 rounded-lg bg-ink-500 px-3 py-1.5 text-[13px] font-medium text-slate-100 transition hover:bg-ink-500/70"><SquareTerminal className="h-3.5 w-3.5" /> Terminal</Link>
-                <Link to={'/files/projects/' + encodeURIComponent(p.name)} className="inline-flex items-center gap-1.5 rounded-lg bg-ink-500 px-3 py-1.5 text-[13px] font-medium text-slate-100 transition hover:bg-ink-500/70"><FolderOpen className="h-3.5 w-3.5" /> Arquivos</Link>
-              </div>
             </div>
-
-            {/* Primeira linha */}
-            <div className="mt-3 border-t border-white/5 pt-3">
-              <label className="text-xs text-slate-400">Primeira linha <span className="text-slate-600">— enviada ao Claude assim que ele fica pronto (todo início)</span></label>
-              <div className="mt-1 flex items-center gap-2">
-                <input
-                  value={initDrafts[p.name] ?? p.initLine ?? ''}
-                  onChange={(e) => setInitDrafts((d) => ({ ...d, [p.name]: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter') run(`init:${p.name}`, () => api.setInitLine(p.name, initDrafts[p.name] ?? p.initLine ?? '')) }}
-                  placeholder="ex.: Você é o assistente da Empresa X. Cumprimente o cliente e ofereça ajuda."
-                  className={`flex-1 ${inputCls}`}
-                />
-                <Btn variant="ghost" busy={busy === `init:${p.name}`} onClick={() => run(`init:${p.name}`, () => api.setInitLine(p.name, initDrafts[p.name] ?? p.initLine ?? ''))}>
-                  <Save className="h-3.5 w-3.5" /> Salvar
-                </Btn>
-              </div>
-            </div>
-
-            {/* Renomear / excluir */}
-            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/5 pt-3">
-              {editing[p.name] ? <Pencil className="h-3.5 w-3.5 text-claude" /> : <Lock className="h-3.5 w-3.5 text-slate-500" />}
-              <input value={drafts[p.name] ?? p.name} onChange={(e) => setDrafts((d) => ({ ...d, [p.name]: e.target.value }))} disabled={!editing[p.name]} pattern="[A-Za-z0-9._-]{1,64}"
-                onKeyDown={(e) => { if (e.key === 'Enter') commitRename(p.name); if (e.key === 'Escape') cancelRename(p.name) }}
-                className={`w-44 rounded-lg px-2.5 py-1 text-sm ring-1 focus:outline-none ${editing[p.name] ? 'bg-ink-900 text-slate-200 ring-white/10 focus:ring-claude/40' : 'cursor-not-allowed bg-ink-900/50 text-slate-400 ring-white/5'}`} />
-              {editing[p.name] ? (
-                <>
-                  <Btn variant="accent" busy={busy === `rename:${p.name}`} onClick={() => commitRename(p.name)}><Save className="h-3.5 w-3.5" /> Salvar</Btn>
-                  <Btn variant="ghost" onClick={() => cancelRename(p.name)}>Cancelar</Btn>
-                </>
-              ) : (
-                <Btn variant="ghost" onClick={() => startRename(p.name)}><Lock className="h-3.5 w-3.5" /> Alterar</Btn>
-              )}
-              <span className="text-xs text-slate-600">{editing[p.name] ? '⚠ renomeia a pasta no servidor' : 'nome travado — clique em “Alterar”'}</span>
-              <Btn variant="danger" className="ml-auto" onClick={() => setConfirmDel({ name: p.name, typed: '' })}><Trash2 className="h-3.5 w-3.5" /> Excluir</Btn>
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </section>
+
+      {drawerProj && <ProjectDrawer p={drawerProj} data={data} busy={busy} run={run} onClose={() => setDrawer(null)} />}
 
       {/* Modal: novo projeto */}
       {showNew && (
@@ -208,21 +189,80 @@ export default function Dashboard({ data, refresh, onFlash, showNew, setShowNew 
           <p className="mt-3 text-xs text-slate-500">Cria a pasta em <code>{data.projectsDir}</code> + <code>git init</code> e sobe a sessão tmux do projeto.</p>
         </Modal>
       )}
-
-      {/* Modal: excluir projeto (digitar o nome) */}
-      {confirmDel && (
-        <Modal title={`Excluir "${confirmDel.name}"`} icon={Trash2} onClose={() => setConfirmDel(null)}>
-          <p className="text-sm text-slate-300">Isso <b>apaga a pasta</b> <code className="text-slate-200">{data.projectsDir}/{confirmDel.name}</code> no servidor e mata a sessão tmux. Não tem volta (o histórico de conversas do Claude é mantido).</p>
-          <label className="mt-4 mb-1 block text-xs text-slate-400">Digite o nome do projeto para confirmar</label>
-          <input value={confirmDel.typed} onChange={(e) => setConfirmDel((c) => ({ ...c, typed: e.target.value }))} autoFocus placeholder={confirmDel.name}
-            onKeyDown={(e) => { if (e.key === 'Enter' && confirmDel.typed === confirmDel.name) deleteNow() }}
-            className={`w-full ${inputCls} px-3 py-2`} />
-          <div className="mt-5 flex justify-end gap-2">
-            <Btn variant="ghost" onClick={() => setConfirmDel(null)}>Cancelar</Btn>
-            <Btn variant="danger" busy={busy === `delete:${confirmDel.name}`} disabled={confirmDel.typed !== confirmDel.name} onClick={deleteNow}><Trash2 className="h-3.5 w-3.5" /> Excluir definitivamente</Btn>
-          </div>
-        </Modal>
-      )}
     </>
+  )
+}
+
+// Drawer "Configurar projeto": primeira linha, remote, renomear, historico, backup, excluir
+function ProjectDrawer({ p, data, busy, run, onClose }) {
+  const [initLine, setInitLine] = useState(p.initLine || '')
+  const [newName, setNewName] = useState(p.name)
+  const [renaming, setRenaming] = useState(false)
+  const [delTyped, setDelTyped] = useState('')
+  const [bk, setBk] = useState(null)
+  useEffect(() => { api.backupStatus().then((r) => { if (r.ok) setBk(r.projects.find((x) => x.name === p.name) || null) }).catch(() => {}) }, [p.name])
+
+  const Section = ({ title, icon: Icon, children, danger }) => (
+    <section className={`rounded-xl p-4 ring-1 ${danger ? 'bg-rose-500/5 ring-rose-500/20' : 'bg-ink-900/60 ring-white/5'}`}>
+      <h4 className={`mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide ${danger ? 'text-rose-300' : 'text-slate-400'}`}><Icon className="h-3.5 w-3.5" /> {title}</h4>
+      {children}
+    </section>
+  )
+
+  return (
+    <Drawer title={`Configurar “${p.name}”`} icon={Settings2} onClose={onClose}>
+      <div className="space-y-4">
+        <div className="text-xs text-slate-500">{p.dir} · sessão <code>{p.session}</code></div>
+
+        <Section title="Primeira linha" icon={Pencil}>
+          <p className="mb-2 text-xs text-slate-500">Enviada ao Claude assim que ele fica pronto, em todo início (como prompt inicial).</p>
+          <div className="flex items-center gap-2">
+            <input value={initLine} onChange={(e) => setInitLine(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') run(`init:${p.name}`, () => api.setInitLine(p.name, initLine)) }}
+              placeholder="ex.: Você é o assistente da Empresa X. Cumprimente o cliente e ofereça ajuda." className={`flex-1 ${inputCls}`} />
+            <Btn variant="accent" busy={busy === `init:${p.name}`} onClick={() => run(`init:${p.name}`, () => api.setInitLine(p.name, initLine))}><Save className="h-3.5 w-3.5" /></Btn>
+          </div>
+        </Section>
+
+        <Section title="Controle remoto" icon={Radio}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Btn busy={busy === `remote:${p.name}`} onClick={() => run(`remote:${p.name}`, () => api.reconnectRemote(p.name))} title="re-emite o /remote-control sem reiniciar (preserva a conversa)"><Radio className="h-3.5 w-3.5" /> Religar remote</Btn>
+            {p.remoteUrl && <a href={p.remoteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500/90 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-sky-500"><ExternalLink className="h-3.5 w-3.5" /> Abrir link</a>}
+            <span className="text-xs text-slate-500">comando: <code>{p.remoteCmd}</code></span>
+          </div>
+        </Section>
+
+        <Section title="Histórico de conversas" icon={History}>
+          <Link to={'/history/' + encodeURIComponent(p.name)} onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg bg-ink-500 px-3 py-1.5 text-[13px] font-medium text-slate-100 hover:bg-ink-500/70"><History className="h-3.5 w-3.5" /> Ver conversas / continuar</Link>
+        </Section>
+
+        <Section title="Backup (git)" icon={DatabaseBackup}>
+          <div className="mb-2 text-xs text-slate-400">
+            {bk === null ? 'carregando…' : !bk?.git ? 'esta pasta não é um repositório git' : !bk.origin ? 'sem remote origin — o backup automático ignora este projeto' : bk.last ? <>último: <span className={bk.last.level === 'ok' ? 'text-emerald-300' : 'text-amber-300'}>{bk.last.level}</span> em {bk.last.ts} — {bk.last.msg}</> : 'ainda sem backup registrado'}
+            {bk?.dirty ? <span className="text-amber-300"> · {bk.dirty} arquivo(s) alterado(s) sem commit</span> : null}
+          </div>
+          <Btn busy={busy === `backup:${p.name}`} onClick={() => run(`backup:${p.name}`, () => api.backupRun(p.name))}><DatabaseBackup className="h-3.5 w-3.5" /> Fazer backup agora</Btn>
+        </Section>
+
+        <Section title="Renomear" icon={Pencil}>
+          <p className="mb-2 text-xs text-slate-500">Renomeia a <b>pasta no servidor</b>, migra o histórico do Claude e recria a sessão tmux (a conversa atual é encerrada).</p>
+          {renaming ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <input value={newName} onChange={(e) => setNewName(e.target.value)} pattern="[A-Za-z0-9._-]{1,64}" autoFocus className={`w-48 ${inputCls}`}
+                onKeyDown={(e) => { if (e.key === 'Escape') setRenaming(false) }} />
+              <Btn variant="accent" busy={busy === `rename:${p.name}`} disabled={!newName.trim() || newName === p.name} onClick={() => run(`rename:${p.name}`, async () => { const r = await api.renameProject(p.name, newName.trim()); if (r.ok) onClose(); return r })}><Save className="h-3.5 w-3.5" /> Salvar</Btn>
+              <Btn variant="ghost" onClick={() => { setRenaming(false); setNewName(p.name) }}>Cancelar</Btn>
+            </div>
+          ) : <Btn variant="ghost" onClick={() => setRenaming(true)}><Pencil className="h-3.5 w-3.5" /> Alterar nome</Btn>}
+        </Section>
+
+        <Section title="Excluir projeto" icon={Trash2} danger>
+          <p className="mb-2 text-xs text-slate-400">Apaga <code className="text-slate-300">{data.projectsDir}/{p.name}</code> e mata a sessão. Sem volta (o histórico de conversas é mantido). Digite o nome para confirmar:</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input value={delTyped} onChange={(e) => setDelTyped(e.target.value)} placeholder={p.name} className={`w-48 ${inputCls}`} />
+            <Btn variant="danger" busy={busy === `delete:${p.name}`} disabled={delTyped !== p.name} onClick={() => run(`delete:${p.name}`, async () => { const r = await api.deleteProject(p.name); if (r.ok) onClose(); return r })}><Trash2 className="h-3.5 w-3.5" /> Excluir definitivamente</Btn>
+          </div>
+        </Section>
+      </div>
+    </Drawer>
   )
 }

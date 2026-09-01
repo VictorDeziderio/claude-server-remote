@@ -11,3 +11,8 @@ createRoot(document.getElementById('root')).render(
     </BrowserRouter>
   </React.StrictMode>,
 )
+
+// PWA: service worker minimo (permite "instalar" no celular; nao faz cache da API/terminal)
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}) })
+}

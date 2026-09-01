@@ -17,7 +17,7 @@ function loginInfo() {
     } catch { /* json invalido */ }
   }
   let logged = !!account;
-  try { if (fs.statSync(path.join(cfg.HOME, '.claude', '.credentials.json')).size > 0) logged = true; } catch { /* */ }
+  try { if (fs.statSync(path.join(cfg.CLAUDE_DIR, '.credentials.json')).size > 0) logged = true; } catch { /* */ }
   if (!logged && raw && /"oauthAccount"|"accessToken"|"apiKey"|"primaryApiKey"/.test(raw)) logged = true;
   return { logged, account, org, method: logged ? 'oauth' : '' };
 }
@@ -25,7 +25,7 @@ function loginInfo() {
 // desloga o Claude: remove o token OAuth (.credentials.json) e o cache de conta (oauthAccount)
 function claudeLogout() {
   let did = false;
-  try { fs.rmSync(path.join(cfg.HOME, '.claude', '.credentials.json'), { force: true }); did = true; } catch { /* */ }
+  try { fs.rmSync(path.join(cfg.CLAUDE_DIR, '.credentials.json'), { force: true }); did = true; } catch { /* */ }
   try {
     const p = path.join(cfg.HOME, '.claude.json');
     const j = JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -42,5 +42,6 @@ async function claudeVersion() {
   if (v) verCache = v;
   return v || '?';
 }
+const resetVersionCache = () => { verCache = ''; };
 
-module.exports = { loginInfo, claudeLogout, claudeVersion };
+module.exports = { loginInfo, claudeLogout, claudeVersion, resetVersionCache };

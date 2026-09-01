@@ -1,10 +1,41 @@
 # Dev-box "claude" — imagem SELF-CONTAINED: constroi todo o toolchain + runtime aqui mesmo.
-# Nao depende de imagem base externa (GHCR) -> builda sem credencial nenhuma. Mais lento no
-# deploy (rebuilda o toolchain), porem sempre funciona.
+# Nao depende de imagem base externa (GHCR) -> builda sem credencial nenhuma.
+#
+# Multi-stage: o painel (React/Vite/xterm.js + node-pty) e buildado numa stage Node separada e
+# so o resultado (dist/ + deps de runtime) entra na imagem final. Versoes PINADAS (ARG) para
+# builds reproduziveis — suba-as de proposito, nao por acidente.
 #
 # Monte um Volume do EasyPanel em /root para o trabalho + login do Claude (~/.claude)
 # nao sumirem no redeploy.
+
+ARG CLAUDE_CODE_VERSION=2.1.258
+ARG PLAYWRIGHT_VERSION=1.62.1
+# quais browsers instalar no Playwright: "chromium chrome" (default) | "chrome" (so o Google Chrome,
+# ~300MB a menos; scripts sem channel:'chrome' deixam de funcionar) | "chromium"
+ARG PLAYWRIGHT_BROWSERS="chromium chrome"
+
+# ============================================================================
+# Stage 1: build do painel (dist/ + node_modules so de runtime: ws + node-pty compilado)
+# ============================================================================
+FROM node:22-bookworm-slim AS panel-build
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /panel
+COPY panel/package.json panel/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY panel/ ./
+RUN npm run build \
+    && npm prune --omit=dev \
+    && npm cache clean --force \
+    && rm -rf src public test index.html vite.config.mjs tailwind.config.js postcss.config.js
+
+# ============================================================================
+# Stage 2: imagem final (Ubuntu 24.04 + toolchain + Claude Code + Playwright + tmux + Caddy)
+# ============================================================================
 FROM ubuntu:24.04
+ARG CLAUDE_CODE_VERSION
+ARG PLAYWRIGHT_VERSION
+ARG PLAYWRIGHT_BROWSERS
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=America/Sao_Paulo \
@@ -40,19 +71,17 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
-# 4) Claude Code + Playwright + gerenciadores JS (global)
-RUN npm install -g @anthropic-ai/claude-code playwright pnpm yarn bun \
+# 4) Claude Code + Playwright (versoes pinadas) + gerenciadores JS (global)
+RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "playwright@${PLAYWRIGHT_VERSION}" pnpm yarn bun \
     && npm cache clean --force
 
-# 5) Browsers do Playwright + dependencias de SO.
+# 5) Browsers do Playwright + dependencias de SO (ver ARG PLAYWRIGHT_BROWSERS).
 #    - chromium: bundled do Playwright (em /opt/ms-playwright)
-#    - chrome: Google Chrome estavel real (canal "chrome"), instalado no sistema
-#      (/opt/google/chrome) via apt. Use no Playwright com channel: 'chrome'.
-RUN playwright install --with-deps chromium chrome \
+#    - chrome: Google Chrome estavel real (canal "chrome"). Use no Playwright com channel: 'chrome'.
+RUN playwright install --with-deps ${PLAYWRIGHT_BROWSERS} \
     && rm -rf /var/lib/apt/lists/*
 
-# 6) Caddy — gateway/reverse-proxy de uma porta so (painel em /).
-# Binario unico, lida com WebSocket nativamente.
+# 6) Caddy — gateway/reverse-proxy de uma porta so (painel em /). Lida com WebSocket nativamente.
 RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
         | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
     && echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
@@ -81,23 +110,24 @@ ENV \
     # Multi-tmux: cada projeto tem sua sessao "claude-<nome>" e seu remote-control.
     # PROJECT_FOLDER = nome do projeto default (criado se o container subir sem nenhum).
     # REMOTE_CONTROL_NAME vazio -> o remote usa o NOME DO PROJETO (ex.: /remote-control pilot).
-    #   Defina um valor so se quiser FORCAR um nome fixo para todos os projetos.
     PROJECT_FOLDER=projects \
     REMOTE_CONTROL_NAME= \
     CLAUDE_AUTOCMD_DELAY=15 \
     # GitHub: token (escopo repo) p/ auto-login do gh e push do backup. Defina no Environment.
     GH_TOKEN= \
-    # Backup automatico dos projetos: liga/desliga + intervalo (segundos)
+    # Backup automatico dos projetos: liga/desliga + intervalo (segundos); config 1x/dia
     BACKUP_ENABLED=true \
     BACKUP_INTERVAL=3600 \
+    CONFIG_BACKUP_INTERVAL=86400 \
     # Gateway/painel: porta publica + dir dos projetos
     PANEL_ENABLED=true \
     GATEWAY_PORT=8080 \
     PROJECTS_DIR=/root/projects \
-    # AUTH: painel via PANEL_LOGIN+PANEL_PASSWORD (pagina de login propria do painel).
+    # AUTH: painel via PANEL_LOGIN+PANEL_PASSWORD (+ 2FA opcional ativado no painel).
     # TROQUE no Environment do EasyPanel.
     PANEL_LOGIN=admin \
-    PANEL_PASSWORD=senha-antiga-removida
+    PANEL_PASSWORD=senha-antiga-removida \
+    PANEL_SESSION_DAYS=30
 
 # Politica GLOBAL do Claude Code (managed settings) — permissao para TUDO em todo o
 # container, para qualquer usuario/projeto. Fica em /etc (nao e ocultado pelo volume /root)
@@ -105,21 +135,13 @@ ENV \
 RUN mkdir -p /etc/claude-code
 COPY managed-settings.json /etc/claude-code/managed-settings.json
 
-# entrypoint + supervisor + sessao + backup + painel (o que muda no dia a dia)
+# entrypoint + supervisor + sessao + backup
 COPY start.sh /usr/local/bin/start.sh
 COPY claude-loop.sh /usr/local/bin/claude-loop.sh
 COPY claude-session.sh /usr/local/bin/claude-session.sh
 COPY backup.sh /usr/local/bin/backup.sh
-COPY panel /usr/local/bin/panel
-# Build do painel "Claude Remote" (Vite/React/xterm.js) -> dist/. Depois do build, mantem
-# SO as dependencias de runtime do server.js (ws + node-pty, compilado aqui com o
-# build-essential/python3 ja presentes); React/Vite/Tailwind sao devDependencies e saem.
-RUN cd /usr/local/bin/panel \
-    && npm ci \
-    && npm run build \
-    && npm prune --omit=dev \
-    && npm cache clean --force \
-    && chown -R ubuntu:ubuntu /usr/local/bin/panel
+# painel "Claude Remote" ja buildado (stage 1): server.js + server/ + dist/ + node_modules (runtime)
+COPY --from=panel-build --chown=ubuntu:ubuntu /panel /usr/local/bin/panel
 # Semente do panel.json (config dos projetos) — copiada p/ o volume na 1a subida (start.sh)
 COPY panel.json /usr/local/share/claude/panel.json
 RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/claude-loop.sh \
