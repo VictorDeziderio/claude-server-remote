@@ -27,6 +27,7 @@ let timer = null;
 let ticking = false;
 
 // padroes na tela que indicam "Claude esperando VOCE" (permissao/confirmacao/escolha)
+// (o dialogo do /remote-control — "Esc to continue" — NAO conta: o loop/painel fecham sozinhos)
 const PROMPT_RX = /(Do you want to (proceed|allow|make this edit|run|create|continue)|Allow (this|the) |Yes, (and )?(don't|allow|proceed)|^\s*(❯\s*)?1\.\s*Yes\b|\(y\/n\)|\[Y\/n\]|Would you like to|permission to|Waiting for (your )?(input|approval))/im;
 const REMOTE_RX = /https:\/\/claude\.ai\/code\/[^\s'"()\]]+/g;
 

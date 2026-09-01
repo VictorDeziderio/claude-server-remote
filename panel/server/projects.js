@@ -134,6 +134,17 @@ async function sendRemote(name) {
   await sh('tmux', ['send-keys', '-t', sess, '-l', cmd]);
   await new Promise((r) => setTimeout(r, 800));
   await sh('tmux', ['send-keys', '-t', sess, 'C-m']);
+  // o /remote-control abre um dialogo ("> Continue · Esc to continue") que trava o prompt:
+  // em ~10s, se ele estiver na tela, manda Esc p/ voltar ao prompt (o link continua valido)
+  setTimeout(async () => {
+    for (let i = 0; i < 5; i++) {
+      const r = await sh('tmux', ['capture-pane', '-t', sess, '-p', '-S', '-60']);
+      if (!r.ok || !/Esc to continue|Disconnect this session|Show QR code/.test(r.stdout)) break;
+      await sh('tmux', ['send-keys', '-t', sess, 'Escape']);
+      await new Promise((r2) => setTimeout(r2, 1000));
+    }
+    events.poke();
+  }, 10000);
   events.poke();
   return { ok: true, msg: `remote reenviado: ${cmd} — o link aparece no card em alguns segundos` };
 }

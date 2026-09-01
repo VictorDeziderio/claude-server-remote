@@ -55,6 +55,17 @@ screen() { tmux capture-pane -t "$SESS" -p -S -80 2>/dev/null; }
 tui_ready() { screen | grep -qE '(\? for shortcuts|bypass permissions|shift\+tab to cycle|^[[:space:]]*[>❯][[:space:]]*$)'; }
 # remote ja ativo? (link do controle remoto ou status na tela)
 remote_up() { screen | grep -qE '(claude\.ai/code/|[Rr]emote[- ]control (is )?(on|active|enabled|started|conectado|ativo))'; }
+# o /remote-control abre um dialogo ("Disconnect this session / Show QR code / > Continue",
+# "Enter to select · Esc to continue") que trava o prompt ate alguem apertar Enter/Esc.
+dialog_open() { screen | grep -qE '(Esc to continue|Disconnect this session|Show QR code)'; }
+dismiss_dialog() {
+  local i=0
+  while [ "$i" -lt 5 ]; do
+    dialog_open || return 0
+    tmux send-keys -t "$SESS" Escape
+    sleep 1; i=$((i + 1))
+  done
+}
 
 send_remote_when_ready() {
   local waited=0 attempt=0
@@ -67,12 +78,16 @@ send_remote_when_ready() {
   done
   while [ "$attempt" -lt 3 ]; do
     attempt=$((attempt + 1))
-    remote_up && { echo "[remote] ja ativo"; return 0; }
+    remote_up && { echo "[remote] ja ativo"; dismiss_dialog; return 0; }
     tmux send-keys -t "$SESS" -l "$FULL_AUTOCMD"
     sleep 0.8
     tmux send-keys -t "$SESS" C-m
     sleep 12
-    if remote_up; then echo "[remote] ativo (tentativa $attempt)"; return 0; fi
+    if remote_up; then
+      echo "[remote] ativo (tentativa $attempt)"
+      dismiss_dialog          # fecha o dialogo de confirmacao -> volta ao prompt
+      return 0
+    fi
     # se a linha ficou digitada sem enviar, limpa antes de tentar de novo
     tmux send-keys -t "$SESS" C-u 2>/dev/null || true
     sleep 5
