@@ -24,6 +24,8 @@ WORKDIR /panel
 COPY panel/package.json panel/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY panel/ ./
+# carimbo do build (aparece no rodape do painel -> da pra saber se o deploy novo esta no ar)
+RUN date -u +%Y-%m-%dT%H:%M:%SZ > BUILD_TIME
 RUN npm run build \
     && npm prune --omit=dev \
     && npm cache clean --force \

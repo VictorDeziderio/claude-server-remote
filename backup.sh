@@ -28,7 +28,9 @@ log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
 
 backup_config() {
   mkdir -p "$CFG_BACKUP_DIR"
-  local out="$CFG_BACKUP_DIR/config-$(date '+%Y%m%d-%H%M%S').tgz"
+  local out stamp
+  stamp="$(date '+%Y%m%d-%H%M%S')"
+  out="$CFG_BACKUP_DIR/config-$stamp.tgz"
   if tar czf "$out" -C "$H" --ignore-failed-read \
        --exclude=.claude/projects --exclude=.claude/logs --exclude=.claude/run \
        --exclude=.claude/todos --exclude=.claude/shell-snapshots \

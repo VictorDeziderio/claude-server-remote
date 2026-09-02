@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, BarChart3, FolderTree, SquareTerminal, UserRound, LogOut, RefreshCw, History, ScrollText,
-  Settings, DatabaseBackup, PanelLeftClose, PanelLeftOpen, Bell, BellOff, BellRing, HardDrive, MemoryStick, Gauge, Radio,
+  Settings, DatabaseBackup, PanelLeftClose, PanelLeftOpen, Bell, BellOff, BellRing, HardDrive, MemoryStick, Gauge, Radio, ArrowUpCircle,
 } from 'lucide-react'
 import Logo from './Logo.jsx'
 import { Dot, Btn } from './ui.jsx'
@@ -73,6 +73,11 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
           <button type="button" onClick={toggle} title={collapsed ? 'expandir menu' : 'recolher menu'} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-500 transition hover:bg-white/5 hover:text-slate-300 ${collapsed ? 'justify-center' : ''}`}>
             {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <><PanelLeftClose className="h-4 w-4" /> recolher</>}
           </button>
+          {!collapsed && data?.panelVersion && (
+            <div className="px-3 text-[10px] text-slate-600" title={data.buildTime ? 'build ' + data.buildTime : 'build local'}>
+              painel v{data.panelVersion}{data.buildTime ? ` · ${data.buildTime.slice(0, 10)} ${data.buildTime.slice(11, 16)}` : ''}
+            </div>
+          )}
         </div>
       </aside>
 
@@ -97,10 +102,11 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {health && (
-              <Link to="/dashboard" className="hidden items-center gap-3 rounded-lg bg-ink-800 px-2.5 py-1.5 text-[11px] ring-1 ring-white/5 lg:flex" title="saúde do host — clique p/ detalhes">
+              <Link to={health.claude?.updateAvailable ? '/account' : '/dashboard'} className={`hidden items-center gap-3 rounded-lg bg-ink-800 px-2.5 py-1.5 text-[11px] ring-1 lg:flex ${health.claude?.updateAvailable ? 'ring-amber-500/40' : 'ring-white/5'}`} title={health.claude?.updateAvailable ? `Claude Code ${health.claude.latest} disponível (instalado ${health.claude.currentNum}) — clique p/ atualizar` : 'saúde do host — clique p/ detalhes'}>
                 <span className={`inline-flex items-center gap-1 ${pctCls(health.disk?.pct || 0)}`}><HardDrive className="h-3 w-3" /> {health.disk?.pct ?? '?'}%</span>
                 <span className={`inline-flex items-center gap-1 ${pctCls(health.mem?.pct || 0)}`}><MemoryStick className="h-3 w-3" /> {health.mem?.pct ?? '?'}%</span>
                 <span className="inline-flex items-center gap-1 text-slate-300"><Gauge className="h-3 w-3" /> {health.load?.[0] ?? '?'}</span>
+                {health.claude?.updateAvailable && <span className="inline-flex items-center gap-1 text-amber-300"><ArrowUpCircle className="h-3 w-3" /> Claude {health.claude.latest}</span>}
               </Link>
             )}
             {actions}

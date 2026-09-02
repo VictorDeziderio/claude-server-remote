@@ -119,7 +119,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, auth.doLogin(body, req, res));
     }
     if (req.method === 'POST' && url === '/api/logout') return sendJson(res, 200, auth.doLogout(req, res));
-    if (req.method === 'GET' && url === '/api/login/info') return sendJson(res, 200, { ok: true, twofa: totp.isEnabled() });
+    if (req.method === 'GET' && url === '/api/login/info') return sendJson(res, 200, { ok: true, twofa: totp.isEnabled(), panelVersion: cfg.PANEL_VERSION });
 
     // --- API protegida ---
     if (url.startsWith('/api/')) {

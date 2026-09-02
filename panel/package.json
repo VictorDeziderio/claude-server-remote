@@ -1,7 +1,7 @@
 {
   "name": "claude-remote-panel",
   "private": true,
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Claude Remote — painel do dev-box (React + Tailwind + xterm.js + CodeMirror, servido pelo server.js com terminal via WebSocket/PTY, SSE, 2FA)",
   "scripts": {
     "dev": "vite",

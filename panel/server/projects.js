@@ -198,6 +198,8 @@ async function buildState() {
   const conf = loadConfig();
   return {
     projectsDir: cfg.PROJECTS_DIR,
+    panelVersion: cfg.PANEL_VERSION,
+    buildTime: cfg.BUILD_TIME,
     login: loginInfo(),
     version: await claudeVersion(),
     remoteNameForced: cfg.REMOTE_CONTROL_NAME,

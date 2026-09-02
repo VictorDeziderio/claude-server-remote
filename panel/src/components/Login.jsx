@@ -8,8 +8,9 @@ export default function Login({ onSuccess }) {
   const [need2fa, setNeed2fa] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [ver, setVer] = useState('')
 
-  useEffect(() => { loginInfo().then((r) => { if (r && r.twofa) setNeed2fa(true) }).catch(() => {}) }, [])
+  useEffect(() => { loginInfo().then((r) => { if (r && r.twofa) setNeed2fa(true); if (r && r.panelVersion) setVer(r.panelVersion) }).catch(() => {}) }, [])
 
   const submit = async (e) => {
     e.preventDefault()
@@ -68,6 +69,7 @@ export default function Login({ onSuccess }) {
           className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-claude/90 py-2.5 text-sm font-semibold text-white transition hover:bg-claude focus:outline-none focus-visible:ring-2 focus-visible:ring-claude/60 disabled:opacity-50">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />} Entrar
         </button>
+        {ver && <p className="mt-4 text-center text-[10px] text-slate-600">painel v{ver}</p>}
       </form>
     </div>
   )

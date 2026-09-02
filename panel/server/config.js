@@ -4,9 +4,13 @@ const path = require('path');
 
 const HOME = process.env.HOME || '/root';
 const CLAUDE_DIR = path.join(HOME, '.claude');
+let PANEL_VERSION = '?';
+try { PANEL_VERSION = require('../package.json').version; } catch { /* sem package.json */ }
 
 const cfg = {
   HOME,
+  PANEL_VERSION,
+  BUILD_TIME: (() => { try { return require('fs').readFileSync(path.join(__dirname, '..', 'BUILD_TIME'), 'utf8').trim(); } catch { return ''; } })(), // gravado no Dockerfile
   CLAUDE_DIR,
   PORT: parseInt(process.env.PANEL_PORT || '7001', 10),
   BIND: process.env.PANEL_BIND || '127.0.0.1',
