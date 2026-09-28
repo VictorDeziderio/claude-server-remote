@@ -181,6 +181,21 @@ No Playwright, use o Chrome real com `channel: 'chrome'`. Mais browsers: `playwr
 
 ---
 
+## 🚚 Fluxo de entrega (validar → PR → deploy)
+1. Trabalhe numa branch (`fix/…`, `feat/…`, `chore/…`), nunca direto na `main`.
+2. Valide antes de subir: `cd claude/panel && npm ci && npm run check && npm run build && npm test`
+   (no macOS: `chmod +x node_modules/node-pty/prebuilds/*/spawn-helper` antes do teste) e
+   `cd claude && shellcheck -S warning *.sh`. Mudou Dockerfile/boot: `docker build` + container em
+   localhost (Mac ARM: `--build-arg PLAYWRIGHT_BROWSERS=chromium`).
+3. PR para `main`. **Deploy = merge na `main`**: o webhook do EasyPanel no repo dispara o build do
+   serviço sozinho. Confira no rodapé do painel (versão + build) que o deploy novo subiu.
+
+> Armadilhas já encontradas: em `node -e 'script' a b` os argumentos começam em `process.argv[1]`;
+> alvo tmux sempre exato (`=sessao:`, senão casa por prefixo); `capture-pane -J` para URLs longas;
+> a regra de default do `panel.json` tem de ser igual em `devbox-lib.sh` e `server/projects.js`.
+
+---
+
 ## 🔐 Segurança — IP allowlist
 O filtro de IP **não** fica no container (o proxy do EasyPanel mascara o IP real, que chega em
 `X-Forwarded-For`). Configure a allowlist na **aba Segurança do serviço `claude`**.
