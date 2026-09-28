@@ -131,6 +131,36 @@ try {
   r = await j('POST', '/api/fs/delete', { path: '.claude' }); ok('fs delete .claude protegido', r.data.ok === false)
   r = await j('POST', '/api/fs/delete', { path: 'projects/demo/b.txt' }); ok('fs delete', r.data.ok)
 
+  // sandbox x SYMLINK: link dentro de HOME apontando PARA FORA nao pode ler/gravar/apagar la fora
+  {
+    const OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-outside-'))
+    fs.writeFileSync(path.join(OUT, 'secret.txt'), 'SEGREDO')
+    fs.symlinkSync(OUT, path.join(ROOT, 'escape'))                                  // pasta -> fora
+    fs.symlinkSync(path.join(OUT, 'secret.txt'), path.join(ROOT, 'filelink.txt'))  // arquivo -> fora
+    fs.symlinkSync(path.join(ROOT, 'projects'), path.join(ROOT, 'inlink'))         // pasta -> DENTRO
+    const outside = () => fs.readdirSync(OUT).sort().join(',')
+    const secret = () => fs.readFileSync(path.join(OUT, 'secret.txt'), 'utf8')
+    const refused = (d) => d && d.ok === false && /symlink/i.test(d.msg || '')
+    r = await j('GET', '/api/fs/list?path=escape'); ok('symlink p/ fora: list recusado', refused(r.data), JSON.stringify(r.data).slice(0, 160))
+    r = await j('GET', '/api/fs/read?path=escape/secret.txt'); ok('symlink p/ fora: read recusado', refused(r.data), JSON.stringify(r.data).slice(0, 160))
+    r = await j('GET', '/api/fs/read?path=filelink.txt'); ok('symlink de arquivo p/ fora: read recusado', refused(r.data), JSON.stringify(r.data).slice(0, 160))
+    r = await j('GET', '/api/fs/stat?path=escape/secret.txt'); ok('symlink p/ fora: stat recusado', refused(r.data), JSON.stringify(r.data).slice(0, 160))
+    r = await j('POST', '/api/fs/save', { path: 'escape/novo.txt', content: 'x' }); ok('symlink p/ fora: save (novo) recusado', refused(r.data) && outside() === 'secret.txt', JSON.stringify(r.data).slice(0, 160))
+    r = await j('POST', '/api/fs/save', { path: 'filelink.txt', content: 'x' }); ok('symlink p/ fora: save (existente) recusado', refused(r.data) && secret() === 'SEGREDO', JSON.stringify(r.data).slice(0, 160))
+    r = await j('POST', '/api/fs/create', { path: 'escape/pasta', kind: 'dir' }); ok('symlink p/ fora: create recusado', refused(r.data) && outside() === 'secret.txt', JSON.stringify(r.data).slice(0, 160))
+    r = await j('POST', '/api/fs/delete', { path: 'escape/secret.txt' }); ok('symlink p/ fora: delete recusado', refused(r.data) && secret() === 'SEGREDO', JSON.stringify(r.data).slice(0, 160))
+    r = await j('POST', '/api/fs/rename', { path: 'escape/secret.txt', newPath: 'projects/demo/roubado.txt' }); ok('symlink p/ fora: rename (origem) recusado', refused(r.data) && secret() === 'SEGREDO', JSON.stringify(r.data).slice(0, 160))
+    fs.writeFileSync(path.join(ROOT, 'projects', 'demo', 'meu.txt'), 'meu')
+    r = await j('POST', '/api/fs/rename', { path: 'projects/demo/meu.txt', newPath: 'escape/meu.txt' }); ok('symlink p/ fora: rename (destino) recusado', refused(r.data) && outside() === 'secret.txt', JSON.stringify(r.data).slice(0, 160))
+    r = await fetch(BASE + '/api/fs/download?path=escape/secret.txt', { headers: { cookie } }); ok('symlink p/ fora: download recusado', r.status !== 200 && !(await r.text()).includes('SEGREDO'))
+    r = await fetch(BASE + '/api/fs/upload?path=escape/up.bin', { method: 'POST', headers: { cookie, ...H, 'content-type': 'application/octet-stream' }, body: Buffer.from([1, 2]) }); ok('symlink p/ fora: upload recusado', refused(await r.json()) && outside() === 'secret.txt')
+    r = await j('GET', '/api/fs/list?path='); const esc = r.data.entries && r.data.entries.find((e) => e.name === 'escape'); ok('list da raiz marca o link p/ fora sem expor o alvo', !!esc && esc.outside === true && !esc.size && !esc.mtime, JSON.stringify(esc))
+    r = await j('GET', '/api/fs/read?path=inlink/demo/meu.txt'); ok('symlink p/ DENTRO da base: permitido', r.data.ok && r.data.content === 'meu', JSON.stringify(r.data).slice(0, 160))
+    r = await j('POST', '/api/fs/delete', { path: 'escape' }); ok('apagar o PROPRIO link p/ fora: permitido, alvo intacto', r.data.ok && !fs.existsSync(path.join(ROOT, 'escape')) && secret() === 'SEGREDO', JSON.stringify(r.data).slice(0, 160))
+    r = await j('GET', '/api/fs/list?path=../..'); ok('controle textual ../.. continua recusado', r.data.ok === false)
+    fs.rmSync(OUT, { recursive: true, force: true })
+  }
+
   // projetos / config
   r = await j('POST', '/api/config', { name: 'demo', key: 'autoStartClaude', value: false }); ok('config set', r.data.ok, r.data.msg)
   r = await j('POST', '/api/initline', { name: 'demo', text: 'oi\nmundo' }); ok('initline', r.data.ok)

@@ -198,10 +198,12 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
             <Row key={e.name} onOpen={() => go(full)}
               icon={<Ic className={`h-4 w-4 ${e.type === 'dir' ? 'text-claude' : 'text-slate-400'}`} />}
               name={e.name}
-              right={!embedded && <span className="hidden text-[11px] text-slate-500 sm:inline">{e.type === 'file' ? fmtSize(e.size) + ' · ' : ''}{fmtDate(e.mtime)}</span>}
+              right={e.outside
+                ? <span className="text-[11px] text-amber-300" title="symlink que aponta para fora de /root — o painel não abre; você pode renomear ou excluir o link">link p/ fora de /root</span>
+                : !embedded && <span className="hidden text-[11px] text-slate-500 sm:inline">{e.type === 'file' ? fmtSize(e.size) + ' · ' : ''}{fmtDate(e.mtime)}</span>}
               actions={
                 <>
-                  {e.type === 'file' && <a href={api.fsDownloadUrl(full)} onClick={(ev) => ev.stopPropagation()} title="baixar" className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-slate-200"><Download className="h-3.5 w-3.5" /></a>}
+                  {e.type === 'file' && !e.outside && <a href={api.fsDownloadUrl(full)} onClick={(ev) => ev.stopPropagation()} title="baixar" className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-slate-200"><Download className="h-3.5 w-3.5" /></a>}
                   <button type="button" onClick={(ev) => { ev.stopPropagation(); setRenaming(e.name) }} title="renomear" className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-slate-200"><Pencil className="h-3.5 w-3.5" /></button>
                   <button type="button" onClick={(ev) => { ev.stopPropagation(); setDeleting(e.name) }} title="excluir" className="rounded p-1 text-slate-500 hover:bg-rose-500/10 hover:text-rose-300"><Trash2 className="h-3.5 w-3.5" /></button>
                 </>

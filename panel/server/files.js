@@ -1,7 +1,21 @@
 'use strict';
 // Gerenciador de arquivos CONFINADO a FS_BASE (=/root): listar, stat, ler, salvar, criar,
-// excluir, renomear, download e upload. resolveSafe rejeita qualquer caminho que escape
-// da raiz (path traversal), inclusive via symlink resolvido.
+// excluir, renomear, download e upload.
+//
+// Confinamento (guard): duas checagens, nesta ordem.
+//  1. TEXTUAL: o caminho pedido, normalizado (path.resolve), tem de ficar dentro da base
+//     -> barra "../..", "/etc", "..\\..".
+//  2. REAL (symlinks): o caminho e resolvido com realpath — o do proprio alvo quando ele
+//     existe; o do ancestral existente mais proximo quando ainda vai ser criado — e o
+//     resultado tem de ficar dentro do realpath da base.
+//     - symlink que aponta para DENTRO da base: permitido (e so um atalho);
+//     - symlink que aponta para FORA: recusado, com a mensagem dizendo o motivo;
+//     - excluir/renomear o PROPRIO link: permitido (age no link, nunca no alvo) — assim da
+//       para remover um link perigoso pelo painel. Para isso checa-se o diretorio-pai.
+//  Na listagem, um link para fora aparece marcado (outside:true) sem stat do alvo.
+//  Risco aceito: entre a checagem e o uso (TOCTOU) outro processo pode trocar um caminho
+//  por um symlink. Quem tem acesso ao painel ja tem um shell no servidor; a sandbox protege
+//  contra engano/clique errado no gerenciador, nao contra o proprio usuario do shell.
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
@@ -11,10 +25,39 @@ const MAX_TEXT = 2 * 1024 * 1024;     // leitura/edicao inline
 const MAX_SAVE = 5 * 1024 * 1024;
 const MAX_UPLOAD = 100 * 1024 * 1024;
 
-function resolveSafe(rel) {
+let baseReal = null;
+const realBase = () => {
+  if (!baseReal) { try { baseReal = fs.realpathSync(BASE); } catch { baseReal = BASE; } }
+  return baseReal;
+};
+const inside = (p, base) => p === base || p.startsWith(base + path.sep);
+const OUTSIDE_MSG = 'recusado: esse caminho passa por um symlink que aponta para fora de ' + BASE;
+
+// realpath de `full`; se ele (ou parte do fim) ainda nao existe, realpath do ancestral
+// existente mais proximo + o resto do caminho
+function realOf(full) {
+  let cur = full;
+  const rest = [];
+  for (;;) {
+    try { return path.join(fs.realpathSync(cur), ...rest.reverse()); } catch (e) {
+      if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') throw e;
+      const parent = path.dirname(cur);
+      if (parent === cur) return full;
+      rest.push(path.basename(cur)); cur = parent;
+    }
+  }
+}
+
+// -> { full } | { err }.  self=true: a operacao age no PROPRIO caminho (excluir/renomear),
+// entao um symlink no fim do caminho e aceito e so o diretorio-pai precisa ser real-dentro.
+function guard(rel, { self = false } = {}) {
   const full = path.resolve(BASE, String(rel == null ? '' : rel).replace(/^[/\\]+/, ''));
-  if (full !== BASE && !full.startsWith(BASE + path.sep)) return null;
-  return full;
+  if (!inside(full, BASE)) return { err: 'caminho invalido' };
+  let real;
+  try { real = self && full !== BASE ? path.join(realOf(path.dirname(full)), path.basename(full)) : realOf(full); }
+  catch (e) { return { err: e.message }; }
+  if (!inside(real, realBase())) return { err: OUTSIDE_MSG };
+  return { full };
 }
 const relOf = (full) => path.relative(BASE, full).split(path.sep).join('/');
 
@@ -27,22 +70,25 @@ const MIME = {
 
 function statEntry(full, name) {
   try {
+    if (fs.lstatSync(full).isSymbolicLink() && !inside(realOf(full), realBase())) {
+      return { name, type: 'file', size: 0, mtime: 0, link: true, outside: true }; // sem stat do alvo
+    }
     const st = fs.statSync(full);
     return { name, type: st.isDirectory() ? 'dir' : 'file', size: st.isFile() ? st.size : 0, mtime: st.mtimeMs };
   } catch { return { name, type: 'file', size: 0, mtime: 0, broken: true }; }
 }
 
 function fsStat(rel) {
-  const full = resolveSafe(rel);
-  if (!full) return { ok: false, msg: 'caminho invalido' };
+  const { full, err } = guard(rel);
+  if (err) return { ok: false, msg: err };
   try {
     const st = fs.statSync(full);
     return { ok: true, path: relOf(full), type: st.isDirectory() ? 'dir' : 'file', size: st.size, mtime: st.mtimeMs };
   } catch (e) { return { ok: false, msg: e.code === 'ENOENT' ? 'nao encontrado' : e.message, code: e.code }; }
 }
 function fsList(rel) {
-  const full = resolveSafe(rel);
-  if (!full) return { ok: false, msg: 'caminho invalido' };
+  const { full, err } = guard(rel);
+  if (err) return { ok: false, msg: err };
   try {
     const entries = fs.readdirSync(full, { withFileTypes: true })
       .map((d) => statEntry(path.join(full, d.name), d.name))
@@ -51,8 +97,8 @@ function fsList(rel) {
   } catch (e) { return { ok: false, msg: e.code === 'ENOTDIR' ? 'nao e uma pasta' : e.message, code: e.code }; }
 }
 function fsRead(rel) {
-  const full = resolveSafe(rel);
-  if (!full) return { ok: false, msg: 'caminho invalido' };
+  const { full, err } = guard(rel);
+  if (err) return { ok: false, msg: err };
   try {
     const st = fs.statSync(full);
     if (!st.isFile()) return { ok: false, msg: 'nao e um arquivo' };
@@ -64,8 +110,9 @@ function fsRead(rel) {
   } catch (e) { return { ok: false, msg: e.message }; }
 }
 function fsSave(rel, content) {
-  const full = resolveSafe(rel);
-  if (!full || full === BASE) return { ok: false, msg: 'caminho invalido' };
+  const { full, err } = guard(rel);
+  if (err) return { ok: false, msg: err };
+  if (full === BASE) return { ok: false, msg: 'caminho invalido' };
   if (typeof content !== 'string') return { ok: false, msg: 'conteudo invalido' };
   if (content.length > MAX_SAVE) return { ok: false, msg: 'conteudo muito grande (>5MB)' };
   try {
@@ -75,8 +122,9 @@ function fsSave(rel, content) {
   } catch (e) { return { ok: false, msg: e.message }; }
 }
 function fsCreate(rel, kind) {
-  const full = resolveSafe(rel);
-  if (!full || full === BASE) return { ok: false, msg: 'caminho invalido' };
+  const { full, err } = guard(rel);
+  if (err) return { ok: false, msg: err };
+  if (full === BASE) return { ok: false, msg: 'caminho invalido' };
   if (fs.existsSync(full)) return { ok: false, msg: 'ja existe' };
   try {
     if (kind === 'dir') fs.mkdirSync(full, { recursive: true });
@@ -85,26 +133,30 @@ function fsCreate(rel, kind) {
   } catch (e) { return { ok: false, msg: e.message }; }
 }
 function fsDelete(rel) {
-  const full = resolveSafe(rel);
-  if (!full || full === BASE) return { ok: false, msg: 'caminho invalido' };
+  const { full, err } = guard(rel, { self: true }); // apagar um link remove o LINK, nunca o alvo
+  if (err) return { ok: false, msg: err };
+  if (full === BASE) return { ok: false, msg: 'caminho invalido' };
   // protege o coracao do volume (login do Claude, config do painel)
   if (full === path.join(BASE, '.claude') || full === path.join(BASE, '.claude.json')) return { ok: false, msg: 'protegido' };
   try { fs.rmSync(full, { recursive: true, force: true }); return { ok: true, msg: `excluido: ${relOf(full)}` }; }
   catch (e) { return { ok: false, msg: e.message }; }
 }
 function fsRename(rel, newRel) {
-  const a = resolveSafe(rel), b = resolveSafe(newRel);
-  if (!a || !b || a === BASE || b === BASE) return { ok: false, msg: 'caminho invalido' };
+  const ga = guard(rel, { self: true }), gb = guard(newRel);
+  if (ga.err || gb.err) return { ok: false, msg: ga.err || gb.err };
+  const a = ga.full, b = gb.full;
+  if (a === BASE || b === BASE) return { ok: false, msg: 'caminho invalido' };
   if (fs.existsSync(b)) return { ok: false, msg: 'o destino ja existe' };
   try { fs.mkdirSync(path.dirname(b), { recursive: true }); fs.renameSync(a, b); return { ok: true, msg: `renomeado: ${relOf(b)}`, path: relOf(b) }; }
   catch (e) { return { ok: false, msg: e.message }; }
 }
 // download: stream do arquivo com Content-Disposition (qualquer tipo/tamanho)
 function fsDownload(rel, res) {
-  const full = resolveSafe(rel);
+  const { full, err } = guard(rel);
+  if (err) { res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end(err); }
   let st;
-  try { st = full && fs.statSync(full); } catch { /* */ }
-  if (!full || !st || !st.isFile()) {
+  try { st = fs.statSync(full); } catch { /* */ }
+  if (!st || !st.isFile()) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end('arquivo nao encontrado');
   }
@@ -120,8 +172,9 @@ function fsDownload(rel, res) {
 }
 // upload: corpo bruto -> arquivo (ja lido pelo caller com readRaw)
 function fsUpload(rel, buf, overwrite) {
-  const full = resolveSafe(rel);
-  if (!full || full === BASE) return { ok: false, msg: 'caminho invalido' };
+  const { full, err } = guard(rel);
+  if (err) return { ok: false, msg: err };
+  if (full === BASE) return { ok: false, msg: 'caminho invalido' };
   if (!buf) return { ok: false, msg: `upload muito grande (>${MAX_UPLOAD / 1024 / 1024}MB) ou interrompido` };
   if (!overwrite && fs.existsSync(full)) return { ok: false, msg: 'ja existe (marque sobrescrever)' };
   try {
