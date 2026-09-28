@@ -147,7 +147,7 @@ Todas têm default no Dockerfile — o serviço sobe sem definir nada. Referênc
 | `GATEWAY_PORT` | `8080` | **porta pública** do gateway (aponte o domínio pra ela) |
 | `PROJECTS_DIR` | `/root/projects` | diretório com as pastas de projeto |
 | **`PANEL_LOGIN`** | `admin` | **usuário do login do painel** |
-| **`PANEL_PASSWORD`** | (vazio) | **senha do login do painel**. Vazio → o boot **gera uma forte**, salva em `/root/.claude/.panel-password` e mostra no log |
+| **`PANEL_PASSWORD`** | (vazio) | **senha do login do painel — obrigatória**. Vazia ou igual ao antigo default público → o painel **recusa subir** (fail-closed) |
 | `PANEL_SESSION_DAYS` | `30` | validade da sessão do painel (dias) |
 
 ---

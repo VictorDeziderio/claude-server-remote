@@ -22,10 +22,21 @@ const { audit } = require('./audit');
 
 const COOKIE = 'cr_auth';
 
-// FAIL-CLOSED: sem senha o painel nao sobe (ele expoe um shell no servidor).
-if (!cfg.PANEL_PASSWORD) {
-  log('error', 'PANEL_PASSWORD nao definido — o painel expoe um shell e NAO sobe sem senha.',
-    { fix: 'defina PANEL_PASSWORD no Environment do servico e suba de novo.' });
+// FAIL-CLOSED: o painel expoe um shell no servidor (usuario com sudo). Ele NAO sobe:
+//  - sem senha;
+//  - com uma senha sabidamente publica: o default que ja esteve versionado no Dockerfile e no
+//    .env.example (comparado por sha256 — o valor nao fica no codigo) e o "changeme" historico.
+// Aviso em log ninguem le; recusar subir e o que garante que um deploy sem config nao fica aberto.
+const KNOWN_PUBLIC = new Set([
+  '98a2fc5119f2b61af6d90d9d7bb59813820e6cd43411eeb0a91484a769a0ccb9', // default antigo do Dockerfile/.env.example
+  '057ba03d6c44104863dc7361fe4578965d1887360f90a0895882e58a6248fc86', // "changeme"
+]);
+const passHash = crypto.createHash('sha256').update(String(cfg.PANEL_PASSWORD)).digest('hex');
+if (!cfg.PANEL_PASSWORD || KNOWN_PUBLIC.has(passHash)) {
+  log('error', cfg.PANEL_PASSWORD
+    ? 'PANEL_PASSWORD e uma senha PUBLICA (default que ja esteve no repo) — o painel expoe um shell e NAO sobe com ela.'
+    : 'PANEL_PASSWORD nao definido — o painel expoe um shell e NAO sobe sem senha.',
+  { fix: 'defina uma PANEL_PASSWORD forte no Environment do servico e suba de novo.' });
   process.exit(1);
 }
 

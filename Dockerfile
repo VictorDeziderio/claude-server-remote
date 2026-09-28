@@ -126,8 +126,9 @@ ENV \
     GATEWAY_PORT=8080 \
     PROJECTS_DIR=/root/projects \
     # AUTH: painel via PANEL_LOGIN+PANEL_PASSWORD (+ 2FA opcional ativado no painel).
-    # Defina PANEL_PASSWORD no Environment do EasyPanel. Vazio -> o start.sh gera uma senha
-    # forte, guarda em /root/.claude/.panel-password e mostra no log do boot.
+    # PANEL_PASSWORD fica VAZIO de proposito: o painel expoe um shell e, sem senha (ou com o
+    # default publico antigo), RECUSA subir (fail-closed em panel/server/auth.js). Defina no
+    # Environment do EasyPanel. Nao coloque default aqui: tudo que esta no repo e publico.
     PANEL_LOGIN=admin \
     PANEL_PASSWORD= \
     PANEL_SESSION_DAYS=30

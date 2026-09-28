@@ -61,6 +61,25 @@ fs.writeFileSync(path.join(encDir, 'abc123def456.jsonl'), [
   JSON.stringify({ timestamp: '2026-08-01T10:00:00Z', message: { role: 'user', content: 'Cria um README' } }),
   JSON.stringify({ timestamp: '2026-08-01T10:00:05Z', message: { role: 'assistant', model: 'claude-opus-5', content: [{ type: 'text', text: 'Feito.' }], usage: { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 500 } } }),
 ].join('\n') + '\n')
+// FAIL-CLOSED: o painel expoe um shell — nao pode subir sem senha nem com o default que ja
+// esteve versionado no repo (valor PUBLICO, comprometido: fica aqui so p/ provar que e recusado)
+const LEAKED_DEFAULT = 'senha-antiga-removida'
+const bootWith = (pass) => new Promise((resolve) => {
+  const p = spawn(process.execPath, ['server.js'], { cwd: PANEL, env: { ...env, PANEL_PASSWORD: pass, PANEL_PORT: String(PORT + 1) }, stdio: ['ignore', 'pipe', 'pipe'] })
+  let out = ''; p.stdout.on('data', (d) => { out += d }); p.stderr.on('data', (d) => { out += d })
+  const t = setTimeout(() => { p.kill(); resolve({ code: 'still-running', out }) }, 2500)
+  p.on('exit', (code) => { clearTimeout(t); resolve({ code, out }) })
+})
+const failClosed = []
+for (const [label, pass] of [['vazia', ''], ['default publico versionado', LEAKED_DEFAULT], ['changeme', 'changeme']]) {
+  const b = await bootWith(pass)
+  failClosed.push([`painel NAO sobe com senha ${label}`, b.code === 1 && !b.out.includes(pass || '\u0000'), JSON.stringify({ code: b.code, out: b.out.slice(-160) })])
+}
+// o default nao pode voltar a ser versionado (Dockerfile / .env.example)
+for (const f of ['Dockerfile', '.env.example']) {
+  const txt = fs.readFileSync(path.join(DEVBOX, f), 'utf8')
+  failClosed.push([`${f} sem senha default`, !txt.includes(LEAKED_DEFAULT) && /^\s*PANEL_PASSWORD=\s*(\\)?\s*$/m.test(txt), f])
+}
 const srv = spawn(process.execPath, ['server.js'], { cwd: PANEL, env, stdio: ['ignore', 'pipe', 'pipe'] })
 let logs = ''
 srv.stdout.on('data', (d) => { logs += d })
@@ -90,6 +109,7 @@ const wsOpen = (url, headers) => new Promise((resolve) => {
 
 try {
   console.log(`\n== servidor em ${BASE} | HOME=${ROOT} | tmux: ${HAS_TMUX ? 'sim' : 'nao'}\n`)
+  for (const [name, cond, extra] of failClosed) ok(name, cond, extra)
   let r = await fetch(BASE + '/healthz'); ok('healthz', r.status === 200 && (await r.text()) === 'ok')
   r = await j('GET', '/api/login/info'); ok('login/info sem 2FA', r.data.ok && r.data.twofa === false)
   r = await j('GET', '/api/state'); ok('state sem auth -> 401', r.status === 401)

@@ -109,21 +109,13 @@ fi
 # ---------------------------------------------------------------------------
 PANEL_LOGIN="${PANEL_LOGIN:-admin}"
 PANEL_PASSWORD="${PANEL_PASSWORD:-}"
-# Senha vazia ou o default publico do repo -> gera uma forte, persiste no volume e mostra no
-# log UMA vez por boot. O painel expoe um shell: nunca sobe com senha conhecida.
-DEFAULT_CRED='senha-antiga-removida'
-GEN_PASS_FILE="$H/.claude/.panel-password"
-case "$PANEL_PASSWORD" in
-  ''|changeme|"$DEFAULT_CRED")
-    if [ ! -s "$GEN_PASS_FILE" ]; then
-      head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24 > "$GEN_PASS_FILE"
-      chmod 600 "$GEN_PASS_FILE"; chown "$U:$U" "$GEN_PASS_FILE"
-    fi
-    PANEL_PASSWORD="$(cat "$GEN_PASS_FILE")"
-    say "[SEGURANCA] PANEL_PASSWORD vazio/default -> usando a senha gerada em $GEN_PASS_FILE: $PANEL_PASSWORD"
-    say "[SEGURANCA] defina PANEL_PASSWORD no Environment do EasyPanel para escolher a sua."
-    ;;
-esac
+# Sem senha (ou com o default publico antigo) o PAINEL RECUSA SUBIR — fail-closed em
+# panel/server/auth.js. Aqui so um aviso claro no boot; o valor NUNCA vai para o log.
+if [ -z "$PANEL_PASSWORD" ]; then
+  say "[SEGURANCA] PANEL_PASSWORD vazio -> o painel NAO vai subir. Defina no Environment do EasyPanel."
+elif [ "$(printf '%s' "$PANEL_PASSWORD" | sha256sum | cut -c1-64)" = "98a2fc5119f2b61af6d90d9d7bb59813820e6cd43411eeb0a91484a769a0ccb9" ]; then
+  say "[SEGURANCA] PANEL_PASSWORD e o default PUBLICO que ja esteve no repo -> o painel NAO vai subir. Troque no Environment."
+fi
 
 # respawn simples: roda um comando em loop (reabre se cair), como ubuntu, logando em arquivo
 run_bg() {  # $1=label  $2=logfile  resto=comando
