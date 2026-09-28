@@ -66,7 +66,8 @@ async function tickSession(name, running) {
     if (prevState !== 'off') { a.changedAt = Date.now(); broadcast('activity', { name, session: sess, state: 'off', since: a.changedAt }); }
     return;
   }
-  const r = await sh('tmux', ['capture-pane', '-t', '=' + sess, '-p', '-S', '-300']);
+  // -J: junta as linhas quebradas pela largura (o link do remote sai inteiro)
+  const r = await sh('tmux', ['capture-pane', '-t', '=' + sess + ':', '-p', '-J', '-S', '-300']);
   if (!r.ok) return;
   const screen = r.stdout || '';
   const m = screen.match(REMOTE_RX);

@@ -28,15 +28,21 @@ redimensionamento automático, mouse/rolagem, colar, busca no histórico, recone
   com bolinha de atividade (🟡 trabalhando · 🔴 esperando você · 🟢 ocioso).
 - Linha de janelas do tmux: clique para alternar, **+** abre outra, **×** fecha; **assumir sessão**
   derruba outros clientes (quando o Console do EasyPanel travou o tamanho da tela).
-- **Botão direito = colar** (ou copiar, se houver seleção) · botão do meio cola ·
-  `Ctrl+Shift+C/V` copia/cola · `Ctrl+Shift+F` busca · `Shift`+arrastar seleciona · roda do mouse rola.
+- **Copiar/colar estilo PuTTY:** **selecionou com o mouse, copiou** (a seleção do tmux junta as
+  linhas quebradas → URL longa sai inteira; chega ao navegador por OSC 52) · **`Ctrl+C`** com seleção
+  copia, sem seleção interrompe (`^C`) · **`Ctrl+V`** / `Cmd+V` / botão direito / botão do meio colam ·
+  `Ctrl+Shift+C/V` também · `Ctrl+Shift+F` busca · `Shift`+arrastar = seleção do navegador · roda rola.
 - Botões: fonte ±, colar, limpar, **⌨ barra de teclas** (Esc/Tab/Ctrl+C/setas — celular),
   **arquivos ao lado** (split redimensionável), reconectar, **⛶ tela cheia** (`Shift+Esc` sai).
 - Fechar a aba **não** encerra a sessão. Também dá pelo Console do EasyPanel: `tmux attach -t claude-<projeto>`.
 
 ### 3. Primeiro login do Claude
-**Conta → Logar no Claude**: abre um terminal embutido, roda `claude`, detecta o link OAuth na tela
-(botão para abrir) e você cola o código. Fica salvo em `/root/.claude` (volume) e **não pede de novo**.
+**Conta → Logar no Claude** (ou "deslogado — clique p/ logar" no Dashboard): o painel roda o `claude`
+numa sessão própria (`cr-login`, 500 colunas → o link nunca quebra), **passa sozinho** pela tela de tema e
+**seleciona "Claude account with subscription"**. Você só: **Abrir link** (ou **Copiar link**) → autoriza →
+cola o código → **Conectar**. Fica salvo em `/root/.claude` (volume) e **não pede de novo**; projetos que
+subiram antes do login e ficaram parados na tela de login são reiniciados sozinhos. Já logado, o mesmo
+fluxo vira **Trocar de conta**. Telas inesperadas aparecem no modal com teclas (↑ ↓ Enter Esc).
 
 > 🔓 **Permissões:** roda como usuário **não-root** (`ubuntu`) com política global em
 > `/etc/claude-code/managed-settings.json` → `"defaultMode": "bypassPermissions"` +
@@ -76,10 +82,13 @@ Sem `PANEL_PASSWORD` o painel **recusa subir**. Se perder o 2FA: apague `~/.clau
 
 ### Config por projeto (`panel.json`)
 As flags por projeto ficam em **`/root/.claude/panel.json`** (cópia viva, no volume), semeada
-de `claude/panel.json` (imagem) na 1ª subida. O painel grava nela; o `claude-session.sh` lê:
-- `autoStartClaude: false` → a sessão sobe só com um **shell** (não inicia o Claude).
-- `autoRemote: false` → **não** religa o remote-control nesse projeto.
+de `claude/panel.json` (imagem) na 1ª subida. O painel grava nela; os scripts leem (via `devbox-lib.sh`):
+- `enabled: false` → projeto **DESLIGADO** (chip **Ligado/Desligado** no Dashboard): sem sessão tmux, e
+  continua assim no **restart do container** e no watchdog. **Ligar/Reiniciar** volta.
+- `autoStartClaude: false` → a sessão fica só com um **shell** (chip **Claude ON/OFF** aplica **na hora**).
+- `autoRemote: false` → **não** religa o remote-control nesse projeto (vale no próximo início do Claude).
 - `initLine` → **primeira linha** enviada ao Claude em todo início (prompt inicial).
+- O supervisor **relê** o `panel.json` a cada início do Claude: mudou no painel, vale sem recriar a sessão.
 - Sem entrada própria → usa `defaults` (editáveis em **Configurações**).
 
 ---
@@ -99,7 +108,7 @@ A sessão `claude-<projeto>` sobrevive a desconexões **e se auto-recupera**.
 | O que cai | Quem reabre | Tempo |
 |-----------|-------------|-------|
 | **Claude** (você deu `exit` ou crashou) | loop `while` no tmux reabre o `claude` | ~3s |
-| **Sessão tmux** some (container vivo) | watchdog do `start.sh` recria a sessão | ~10s |
+| **Sessão tmux** some (container vivo) | watchdog do `start.sh` recria a sessão (**só projetos ligados**) | ~10s |
 | **Container** cai | EasyPanel reinicia → `start.sh` refaz tudo | conforme restart policy |
 
 Ao (re)abrir o Claude, o supervisor (`claude-loop.sh`) **religa o remote-control sozinho**: espera a
@@ -107,7 +116,8 @@ TUI ficar pronta (lê a tela — sem depender de um sleep fixo), envia `/remote-
 **confirma** que o link apareceu e **tenta até 3×**. Só se o projeto tiver `autoRemote: true` e o
 Claude estiver logado. Manual: botão **Religar remote** (⚙ do projeto).
 
-> 🐚 **Cair no shell de propósito:** `exit` e **`Ctrl+C`** na janela de 3s (`[claude saiu — reabrindo em 3s]`).
+> 🐚 **Cair no shell de propósito:** `exit` e **`Ctrl+C`** na janela de 3s (`[claude saiu — reabrindo em 3s]`),
+> ou **Claude OFF** no Dashboard. Log do supervisor (envio do remote etc.): **Logs → Sessões**.
 
 ---
 
@@ -137,7 +147,7 @@ Todas têm default no Dockerfile — o serviço sobe sem definir nada. Referênc
 | `GATEWAY_PORT` | `8080` | **porta pública** do gateway (aponte o domínio pra ela) |
 | `PROJECTS_DIR` | `/root/projects` | diretório com as pastas de projeto |
 | **`PANEL_LOGIN`** | `admin` | **usuário do login do painel** |
-| **`PANEL_PASSWORD`** | (hex) | **senha do login do painel** — TROQUE por uma forte |
+| **`PANEL_PASSWORD`** | (vazio) | **senha do login do painel**. Vazio → o boot **gera uma forte**, salva em `/root/.claude/.panel-password` e mostra no log |
 | `PANEL_SESSION_DAYS` | `30` | validade da sessão do painel (dias) |
 
 ---
@@ -195,11 +205,12 @@ O filtro de IP **não** fica no container (o proxy do EasyPanel mascara o IP rea
 |---------|-------|
 | `Dockerfile` | imagem self-contained multi-stage (toolchain + painel), versões pinadas por `ARG` |
 | `start.sh` | entrypoint: settings, sessões tmux, watchdog, backups, gateway Caddy |
-| `claude-session.sh` | (re)cria a sessão tmux de um projeto, honrando o `panel.json` |
-| `claude-loop.sh` | supervisor: roda o Claude em loop, religa o remote (com confirmação), `--resume` a pedido do painel |
+| `devbox-lib.sh` | biblioteca comum dos scripts (`/usr/local/lib/devbox/lib.sh`): leitura do `panel.json`, nome da sessão, login |
+| `claude-session.sh` | garante a sessão tmux de um projeto (`--all` = todos os ligados), honrando o `panel.json` |
+| `claude-loop.sh` | supervisor: roda o Claude em loop relendo o `panel.json`, religa o remote (com confirmação), `--resume` a pedido do painel |
 | `backup.sh` | commit+push dos projetos · `--config` = snapshot da config |
 | `panel/` | painel **Claude Remote**: `server.js` + `server/*.js` (API, SSE, terminal WS/PTY, 2FA…) + `src/` (React) + `test/smoke.mjs` |
 | `panel.json` | semente da config por projeto |
-| `tmux.conf` | config global do tmux (`/etc/tmux.conf`): truecolor, mouse, `window-size latest`, status |
+| `tmux.conf` | config global do tmux (`/etc/tmux.conf`): truecolor, mouse, clipboard (OSC 52), `window-size latest`, status |
 | `managed-settings.json` | política global de permissões do Claude |
 | `.env.example` | referência das variáveis (defaults da imagem) |

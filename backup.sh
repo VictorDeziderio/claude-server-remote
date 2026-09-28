@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Backup automatico dos projetos (item 6): percorre cada repo git dentro de
-# $PROJ e faz add + commit (se houver mudanca) + push (best-effort). Repos sem
+# Backup automatico dos projetos: percorre cada repo git dentro de
+# $PROJECTS_DIR e faz add + commit (se houver mudanca) + push (best-effort). Repos sem
 # remote 'origin' sao ignorados (com aviso no log). A autenticacao do push usa
 # o gh/GH_TOKEN configurado no start.sh (gh auth setup-git).
 #
 # Uso:
-#   backup.sh            -> uma passada em TODOS os projetos de $PROJ
+#   backup.sh            -> uma passada em TODOS os projetos de $PROJECTS_DIR
 #   backup.sh /caminho   -> backup so desse repo
 #   backup.sh --config   -> tarball da CONFIG (~/.claude sem historico/logs + ~/.claude.json)
 #                           em $H/.claude-backups/config-<data>.tgz (mantem os 7 mais recentes).
@@ -15,9 +15,10 @@
 # no start.sh (ou cai num default local aqui).
 set -uo pipefail   # sem -e: um repo que falha nao aborta os demais
 
-H=/root
-PROJECT_FOLDER="${PROJECT_FOLDER:-projects}"
-PROJ="$H/$PROJECT_FOLDER"
+H="${HOME:-/root}"
+# a MESMA pasta de projetos do painel/sessoes (antes usava /root/$PROJECT_FOLDER, que so
+# coincidia com o default; com PROJECT_FOLDER=outro o backup varria a pasta errada)
+PROJECTS_DIR="${PROJECTS_DIR:-$H/projects}"
 LOG_DIR="$H/.claude/logs"
 LOG="$LOG_DIR/backup.log"
 CFG_BACKUP_DIR="$H/.claude-backups"
@@ -96,9 +97,9 @@ if [ "${1:-}" = "--config" ]; then
 elif [ "$#" -ge 1 ]; then
   backup_repo "$1"
 else
-  [ -d "$PROJ" ] || { log "pasta $PROJ inexistente, nada a fazer"; exit 0; }
+  [ -d "$PROJECTS_DIR" ] || { log "pasta $PROJECTS_DIR inexistente, nada a fazer"; exit 0; }
   shopt -s nullglob
-  for d in "$PROJ"/*/; do
+  for d in "$PROJECTS_DIR"/*/; do
     [ -d "$d" ] && backup_repo "${d%/}"
   done
 fi

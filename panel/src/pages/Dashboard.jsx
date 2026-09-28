@@ -88,6 +88,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
   const projects = data.projects || []
   const actOf = (p) => (activity && activity[p.session] && activity[p.session].state) || p.activity || 'off'
   const running = projects.filter((p) => p.claudeRunning).length
+  const off = projects.filter((p) => p.enabled === false).length
   const waiting = projects.filter((p) => actOf(p) === 'prompt').length
   const drawerProj = drawer && projects.find((p) => p.name === drawer)
 
@@ -97,10 +98,10 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
       <section className="mb-5 rounded-2xl bg-ink-800 p-4 ring-1 ring-white/5">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <StatItem icon={UserRound} label="Conta Claude" warn={!login.logged}>
-            <Link to="/account" className="inline-flex items-center gap-2 hover:underline"><Dot on={login.logged} /> {login.logged ? (login.account || 'logado') : 'deslogado — clique p/ logar'}</Link>
+            <Link to={login.logged ? '/account' : '/account?login=1'} className="inline-flex items-center gap-2 hover:underline"><Dot on={login.logged} /> {login.logged ? (login.account || 'logado') : 'deslogado — clique p/ logar'}</Link>
           </StatItem>
           <StatItem icon={Cpu} label="Sessões">
-            {running}/{projects.length} com Claude rodando{waiting ? <span className="text-rose-300"> · {waiting} aguardando você</span> : ''}
+            {running}/{projects.length} com Claude rodando{off ? <span className="text-slate-500"> · {off} desligado(s)</span> : ''}{waiting ? <span className="text-rose-300"> · {waiting} aguardando você</span> : ''}
           </StatItem>
           <StatItem icon={BarChart3} label="Hoje">
             <Link to="/report" className="hover:underline">{fmtTok((u.today?.in || 0) + (u.today?.out || 0))} tokens · {fmtUsd(u.today?.cost)} · {fmtInt(u.today?.messages)} msgs</Link>
@@ -126,13 +127,15 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
         )}
         {projects.map((p) => {
           const act = actOf(p)
+          const on = p.enabled !== false
           return (
-            <div key={p.name} className={`rounded-2xl bg-ink-800 p-4 ring-1 transition ${act === 'prompt' ? 'ring-rose-500/40' : p.claudeRunning ? 'ring-claude/30' : 'ring-white/5'}`}>
+            <div key={p.name} className={`rounded-2xl bg-ink-800 p-4 ring-1 transition ${!on ? 'opacity-70 ring-white/5' : act === 'prompt' ? 'ring-rose-500/40' : p.claudeRunning ? 'ring-claude/30' : 'ring-white/5'}`}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <Link to={'/terminal/' + encodeURIComponent(p.name)} className="text-base font-semibold text-white hover:underline">{p.name}</Link>
-                    {p.claudeRunning ? <ActivityBadge state={act} since={p.activitySince} /> : <ActivityBadge state="off" />}
+                    {!on ? <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-[11px] text-slate-400 ring-1 ring-white/10">desligado</span>
+                      : p.claudeRunning ? <ActivityBadge state={act} since={p.activitySince} /> : <ActivityBadge state="off" />}
                   </div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
                     <span className="inline-flex items-center gap-1.5"><Activity className="h-3.5 w-3.5 text-slate-500" /> tmux <Dot on={p.up} /> {p.up ? 'de pé' : 'fora'}</span>
@@ -141,6 +144,8 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                     {p.initLine && <span className="truncate text-slate-500" title={p.initLine}>1ª linha: “{p.initLine.slice(0, 60)}{p.initLine.length > 60 ? '…' : ''}”</span>}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
+                    <Chip Icon={Power} on={on} busy={busy === `power:${p.name}`} labelOn="Ligado" labelOff="Desligado"
+                      onClick={() => run(`power:${p.name}`, () => api.setPower(p.name, !on))} />
                     <Chip Icon={Cpu} on={p.autoStartClaude} busy={busy === `cfg:${p.name}:autoStartClaude`} labelOn="Claude: ON" labelOff="Claude: OFF"
                       onClick={() => run(`cfg:${p.name}:autoStartClaude`, () => api.setConfig(p.name, 'autoStartClaude', !p.autoStartClaude))} />
                     <Chip Icon={p.autoRemote ? Wifi : WifiOff} on={p.autoRemote} busy={busy === `cfg:${p.name}:autoRemote`} labelOn="Remote: ON" labelOff="Remote: OFF"
@@ -156,7 +161,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                   )}
                   <Link to={'/terminal/' + encodeURIComponent(p.name)} className="inline-flex items-center gap-1.5 rounded-lg bg-claude/90 px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-claude"><SquareTerminal className="h-3.5 w-3.5" /> Terminal</Link>
                   <Link to={'/files/projects/' + encodeURIComponent(p.name)} className="inline-flex items-center gap-1.5 rounded-lg bg-ink-500 px-3 py-1.5 text-[13px] font-medium text-slate-100 transition hover:bg-ink-500/70"><FolderOpen className="h-3.5 w-3.5" /> Arquivos</Link>
-                  <Btn busy={busy === `restart:${p.name}`} onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title="mata a sessão tmux (fecha remote + Claude) → reabre o Claude → religa o remote → envia a primeira linha"><RefreshCw className="h-3.5 w-3.5" /> Reiniciar</Btn>
+                  <Btn busy={busy === `restart:${p.name}`} onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title={on ? 'mata a sessão tmux (fecha remote + Claude) → reabre o Claude → religa o remote → envia a primeira linha' : 'liga o projeto e sobe a sessão'}><RefreshCw className="h-3.5 w-3.5" /> {on ? 'Reiniciar' : 'Ligar'}</Btn>
                   <Btn variant="ghost" onClick={() => setDrawer(p.name)} title="configurar: primeira linha, renomear, histórico, backup, excluir"><Settings2 className="h-3.5 w-3.5" /></Btn>
                 </div>
               </div>

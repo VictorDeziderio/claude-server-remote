@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
-const { sh, validName, sessionName } = require('./util');
+const { sh, validName, sessionName, paneOf } = require('./util');
 
 const encOf = (p) => p.replace(/[^a-zA-Z0-9]/g, '-');
 const dirOf = (name) => path.join(cfg.CLAUDE_DIR, 'projects', encOf(path.join(cfg.PROJECTS_DIR, name)));
@@ -67,9 +67,9 @@ function readConversation(name, id) {
   if (!s) return { ok: false, msg: 'conversa nao encontrada' };
   return { ok: true, conversation: s };
 }
-// Continuar: grava ~/.claude/run/<sess>.resume com o id; o claude-loop.sh, ao reabrir o Claude,
-// usa `claude --resume <id>`. Depois derruba o Claude atual (Ctrl-C x2) p/ o loop reabrir.
-// Se a sessao esta so com shell (autoStart OFF), manda o comando direto.
+// Continuar: grava ~/.claude/run/<sess>.resume com o id e RECRIA a sessao; o claude-loop.sh, ao
+// abrir o Claude, usa `claude --resume <id>`. (Antes mandava Ctrl-C x2, que falhava com o Claude
+// ocupado ou com texto no prompt.) Sessao so com shell (Claude OFF): manda o comando direto.
 async function resumeConversation(name, id, running) {
   if (!validName(name) || !/^[A-Za-z0-9_-]{6,80}$/.test(String(id || ''))) return { ok: false, msg: 'parametros invalidos' };
   const sess = sessionName(name);
@@ -77,12 +77,11 @@ async function resumeConversation(name, id, running) {
   if (running) {
     fs.mkdirSync(cfg.RUN_DIR, { recursive: true });
     fs.writeFileSync(path.join(cfg.RUN_DIR, sess + '.resume'), id + '\n');
-    await sh('tmux', ['send-keys', '-t', sess, 'C-c']);
-    await new Promise((r) => setTimeout(r, 400));
-    await sh('tmux', ['send-keys', '-t', sess, 'C-c']);
-    return { ok: true, msg: `"${name}": Claude vai reabrir em ~3s continuando a conversa ${id.slice(0, 8)}…` };
+    await require('./projects').recreateSession(name); // lazy: evita ciclo de require
+    return { ok: true, msg: `"${name}": Claude reaberto continuando a conversa ${id.slice(0, 8)}…` };
   }
-  await sh('tmux', ['send-keys', '-t', sess, `claude --resume ${id}`, 'C-m']);
+  await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', `claude --resume ${id}`]);
+  await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-m']);
   return { ok: true, msg: `"${name}": claude --resume enviado ao shell da sessao` };
 }
 

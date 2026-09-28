@@ -30,6 +30,7 @@ export const setConfig = (name, key, value) => post('/api/config', { name, key, 
 export const setInitLine = (name, text) => post('/api/initline', { name, text })
 export const restartProject = (name) => post('/api/restart', { name })
 export const reconnectRemote = (name) => post('/api/remote', { name })
+export const setPower = (name, on) => post('/api/power', { name, on })
 
 // --- arquivos (sandbox em /root) ---
 export const fsStat = (p) => get('/api/fs/stat?' + q({ path: p || '' }))
@@ -62,6 +63,11 @@ export const report = (from, to) => get('/api/report?' + q({ from: from || '', t
 // --- conta do Claude / painel ---
 export const claudeLogout = () => post('/api/claude/logout', {})
 export const claudeUpdate = () => post('/api/claude/update', {})
+export const loginStart = () => post('/api/claude/login/start', {})
+export const loginStatus = () => get('/api/claude/login/status')
+export const loginCode = (code) => post('/api/claude/login/code', { code })
+export const loginKey = (key) => post('/api/claude/login/key', { key })
+export const loginCancel = () => post('/api/claude/login/cancel', {})
 export const sessions = () => get('/api/sessions')
 export const revokeSession = (id) => post('/api/sessions/revoke', { id })
 export const revokeOtherSessions = () => post('/api/sessions/revoke-others', {})

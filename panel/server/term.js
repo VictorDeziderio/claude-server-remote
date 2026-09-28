@@ -11,8 +11,9 @@
  *            <projeto> -> sessao claude-<projeto> (recriada via claude-session.sh se caiu)
  *    Param `detach=1` -> `attach -d` (derruba outros clientes: "assumir a sessao").
  *
- *    Protocolo (frames de texto): cliente -> servidor: "\x01" + JSON = controle
- *    ({type:'resize',cols,rows} | {type:'ping'}); qualquer outra coisa = teclado (raw).
+ *    Protocolo (frames de texto): cliente -> servidor: "\x01" + JSON de um tipo conhecido =
+ *    controle ({type:'resize',cols,rows} | {type:'ping'}); qualquer outra coisa = teclado (raw).
+ *    ("\x01" sozinho e o Ctrl+A do teclado — antes era engolido como controle invalido.)
  *    servidor -> cliente: saida bruta do PTY; "\x01" + JSON = eventos ({type:'ready'|'exit'}).
  *
  * 2) API REST de apoio: capture/send (login do Claude), janelas do tmux (listar/selecionar/
@@ -20,8 +21,8 @@
  */
 const { WebSocketServer } = require('ws');
 const cfg = require('./config');
-const { sh, validName, sessionName, clampInt, log } = require('./util');
-const { ensureSession } = require('./projects');
+const { sh, validName, sessionName, paneOf, clampInt, log } = require('./util');
+const { ensureSession, projConfig } = require('./projects');
 
 let pty = null;
 try { pty = require('node-pty'); }
@@ -36,6 +37,7 @@ async function ensureShell() {
   return cfg.SHELL_SESSION;
 }
 // resolve o alvo ("shell" | projeto) p/ nome de sessao tmux, subindo a sessao se preciso
+// (projeto DESLIGADO nao sobe: o claude-session.sh respeita enabled=false)
 async function targetSession(name, { create = true } = {}) {
   if (!name || name === 'shell') return create ? ensureShell() : cfg.SHELL_SESSION;
   if (!validName(name)) return null;
@@ -43,13 +45,15 @@ async function targetSession(name, { create = true } = {}) {
   if (create && !(await hasSession(sess))) await ensureSession(name);
   return sess;
 }
+const isDisabled = (name) => !!name && name !== 'shell' && validName(name) && !projConfig(name).enabled;
 
 // ---------- REST de apoio ----------
 async function termCapture(name) {
   const sess = await targetSession(name, { create: false });
   if (!sess) return { ok: false, msg: 'alvo invalido' };
   if (!(await hasSession(sess))) return { ok: false, msg: 'sessao nao esta de pe' };
-  const r = await sh('tmux', ['capture-pane', '-t', sess, '-p', '-S', '-200']);
+  // -J junta as linhas quebradas pela largura do terminal (URL longa sai inteira)
+  const r = await sh('tmux', ['capture-pane', '-t', paneOf(sess), '-p', '-J', '-S', '-200']);
   return { ok: r.ok, content: r.stdout || '', msg: r.ok ? '' : 'falha ao capturar a tela' };
 }
 const KEYS = new Set(['Enter', 'Escape', 'Tab', 'Space', 'BSpace', 'Up', 'Down', 'Left', 'Right', 'PageUp', 'PageDown', 'Home', 'End', 'IC', 'DC']);
@@ -59,11 +63,11 @@ async function termSend(name, text, key) {
   if (!(await hasSession(sess))) return { ok: false, msg: 'sessao nao esta de pe' };
   if (typeof text === 'string' && text.length) {
     if (text.length > 4096) return { ok: false, msg: 'texto muito longo' };
-    await sh('tmux', ['send-keys', '-t', sess, '-l', text]);
+    await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', text]);
   }
   if (typeof key === 'string' && key.length) {
     if (!KEYS.has(key) && !/^C-[a-z]$/.test(key)) return { ok: false, msg: 'tecla nao permitida' };
-    await sh('tmux', ['send-keys', '-t', sess, key]);
+    await sh('tmux', ['send-keys', '-t', paneOf(sess), key]);
   }
   return { ok: true };
 }
@@ -72,9 +76,9 @@ async function termExit(name) {
   if (!validName(name)) return { ok: false, msg: 'projeto invalido' };
   const sess = sessionName(name);
   if (!(await hasSession(sess))) return { ok: false, msg: 'sessao nao esta de pe' };
-  await sh('tmux', ['send-keys', '-t', sess, 'C-c']);
+  await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-c']);
   await new Promise((r) => setTimeout(r, 400));
-  await sh('tmux', ['send-keys', '-t', sess, 'C-c']);
+  await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-c']);
   return { ok: true, msg: `Claude encerrado em ${sess} — o supervisor abre uma nova conversa` };
 }
 // janelas do tmux da sessao
@@ -111,6 +115,12 @@ async function windowAction(name, action, index) {
 const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
 const live = new Set(); // ptys abertos (p/ encerrar no shutdown)
 const CTRL = '\x01';
+const CTL_TYPES = new Set(['resize', 'ping']);
+// frame de controle = "\x01" + JSON de um tipo conhecido; senao e teclado (ex.: Ctrl+A = "\x01")
+function parseCtl(s) {
+  if (s.charCodeAt(0) !== 1 || s.charCodeAt(1) !== 123 /* { */) return null;
+  try { const c = JSON.parse(s.slice(1)); return c && CTL_TYPES.has(c.type) ? c : null; } catch { return null; }
+}
 
 function attach(ws, params, ip) {
   const name = params.get('name') || 'shell';
@@ -127,7 +137,9 @@ function attach(ws, params, ip) {
     if (!pty) return closeWith(4003, 'node-pty indisponivel no servidor');
     const sess = await targetSession(name);
     if (!sess) return closeWith(4000, 'alvo invalido');
-    if (!(await hasSession(sess))) return closeWith(4004, 'sessao nao esta de pe');
+    if (!(await hasSession(sess))) {
+      return isDisabled(name) ? closeWith(4006, 'projeto desligado — ligue no Dashboard') : closeWith(4004, 'sessao nao esta de pe');
+    }
     if (!alive) return;
     try {
       // env minimo (sem PANEL_PASSWORD & cia): o cliente tmux so precisa de PATH/HOME/TERM
@@ -163,8 +175,8 @@ function attach(ws, params, ip) {
 
   ws.on('message', (m, isBinary) => {
     const s = isBinary ? m.toString('utf8') : String(m);
-    if (s.charCodeAt(0) === 1) {
-      let c; try { c = JSON.parse(s.slice(1)); } catch { return; }
+    const c = parseCtl(s);
+    if (c) {
       if (c.type === 'resize' && proc) {
         const w = clampInt(c.cols, 20, 500, cols), h = clampInt(c.rows, 5, 200, rows);
         try { proc.resize(w, h); } catch { /* pty ja fechou */ }

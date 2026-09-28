@@ -20,14 +20,30 @@ const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-smoke-'))
 fs.mkdirSync(path.join(ROOT, 'projects', 'demo'), { recursive: true })
 const HAS_TMUX = spawnSync('tmux', ['-V']).status === 0
 const PORT = 7000 + Math.floor(Math.random() * 900), BASE = `http://127.0.0.1:${PORT}`
-// session script falso: cria a sessao tmux do projeto (como o claude-session.sh faria)
-const SESSION_SCRIPT = path.join(ROOT, 'session.sh')
-fs.writeFileSync(SESSION_SCRIPT, '#!/usr/bin/env bash\nn="$1"; s="claude-$n"; tmux has-session -t "=$s" 2>/dev/null && exit 0; tmux new-session -d -s "$s" -c "$HOME" "echo SMOKE-READY-$n; exec bash"\n')
+// claude-session.sh REAL (respeita enabled/autoStartClaude do panel.json) + supervisor FALSO
+// (no lugar do claude-loop.sh: imprime um banner e vira um bash)
+const DEVBOX = path.resolve(PANEL, '..')
+const SESSION_SCRIPT = path.join(DEVBOX, 'claude-session.sh')
+const FAKE_LOOP = path.join(ROOT, 'loop.sh')
+fs.writeFileSync(FAKE_LOOP, '#!/usr/bin/env bash\necho SMOKE-READY-$2; exec bash --norc\n')
+// `claude` FALSO: simula o 1o login (tema -> metodo -> link OAuth LONGO -> codigo -> sucesso)
+const BIN = path.join(ROOT, 'bin')
+fs.mkdirSync(BIN)
+const LONG = 'x'.repeat(700) // link maior que a janela de 500 colunas: testa a juncao das linhas
+fs.writeFileSync(path.join(BIN, 'claude'), `#!/usr/bin/env bash
+[ "$1" = "--version" ] && { echo "9.9.9 (Claude Code)"; exit 0; }
+echo "Choose the text style that looks best with your terminal"; read -r _
+echo "Select login method:"; echo " ❯ 1. Claude account with subscription · Pro, Max"; read -r _
+echo "Browser didn't open? Use the url below to sign in"
+echo "https://claude.ai/oauth/authorize?code=true&client_id=abc&state=${LONG}"
+printf "Paste code here if prompted > "; read -r code
+if [ "$code" = "good-code" ]; then mkdir -p "$HOME/.claude"; echo '{"ok":1}' > "$HOME/.claude/.credentials.json"; echo "Login successful. Press Enter to continue"; read -r _; fi
+`, { mode: 0o755 })
 const BACKUP_SCRIPT = path.join(ROOT, 'backup.sh')
 fs.writeFileSync(BACKUP_SCRIPT, '#!/usr/bin/env bash\nmkdir -p "$HOME/.claude/logs"; echo "[2026-01-01 00:00:00] ok    demo: snapshot enviado" | tee -a "$HOME/.claude/logs/backup.log"; if [ "$1" = "--config" ]; then mkdir -p "$HOME/.claude-backups"; tar czf "$HOME/.claude-backups/config-smoke.tgz" -C "$HOME" .claude; echo "[2026-01-01 00:00:00] ok    config: config-smoke.tgz"; fi\n')
 
 // no Windows, bash/tar do Git for Windows (p/ os scripts falsos de backup)
-let PATH = process.env.PATH || ''
+let PATH = BIN + path.delimiter + (process.env.PATH || '')
 if (process.platform === 'win32') {
   for (const d of ['C:\\Program Files\\Git\\usr\\bin', 'C:\\Program Files\\Git\\bin']) if (fs.existsSync(d)) PATH = d + path.delimiter + PATH
 }
@@ -35,6 +51,7 @@ const env = {
   ...process.env, PATH, HOME: ROOT, PANEL_PORT: String(PORT), PANEL_BIND: '127.0.0.1', PANEL_LOGIN: 'admin', PANEL_PASSWORD: 'test123',
   PROJECTS_DIR: path.join(ROOT, 'projects'), PANEL_CONFIG: path.join(ROOT, '.claude', 'panel.json'),
   SESSION_SCRIPT, BACKUP_SCRIPT, TMUX_TMPDIR: ROOT,
+  DEVBOX_LIB: path.join(DEVBOX, 'devbox-lib.sh'), CLAUDE_LOOP: FAKE_LOOP,
 }
 // historico falso do Claude (usado pelo relatorio de custo e pela pagina Historico) — antes de
 // subir o servidor, porque o relatorio cacheia a varredura por 10s
@@ -122,6 +139,8 @@ try {
   r = await j('POST', '/api/nada', {}); ok('rota POST desconhecida 404', r.status === 404)
   r = await j('POST', '/api/create', { name: 'demo' }, { headers: { origin: 'http://evil.example' } }); ok('POST origem errada -> 403', r.status === 403)
   r = await j('GET', '/api/term/status'); ok('term status', r.data.ok === true && typeof r.data.pty === 'boolean')
+  r = await j('POST', '/api/config', { name: 'demo', key: 'autoStartClaude', value: true }); ok('config volta autoStartClaude', r.data.ok, r.data.msg)
+  r = await j('POST', '/api/power', { name: 'nao-existe', on: false }); ok('power projeto inexistente', r.data.ok === false)
 
   // settings / logs / saude / backup / historico / sessoes
   r = await j('POST', '/api/settings/defaults', { autoRemote: false }); ok('settings defaults', r.data.ok && r.data.defaults.autoRemote === false)
@@ -217,6 +236,50 @@ try {
       r = await j('GET', '/api/term/capture?name=demo'); ok('term capture', r.data.ok && /SMOKE-READY/.test(r.data.content))
       await new Promise((s) => setTimeout(s, 4500)) // watcher: 2 ticks quietos -> activity
       r = await j('GET', '/api/state'); ok('state: activity do watcher', ['idle', 'busy', 'prompt', 'off'].includes(r.data.projects[0].activity), JSON.stringify(r.data.projects[0]))
+
+      // Ctrl+A ("\x01") e TECLADO, nao frame de controle: vai pro inicio da linha no bash
+      const ctrlA = await new Promise((resolve) => {
+        const ws = new WSLib(`ws://127.0.0.1:${PORT}/ws/term?name=demo&cols=100&rows=30`, { headers: { cookie, origin: BASE } })
+        let data = ''
+        ws.on('message', (m) => { const s = m.toString(); if (s.charCodeAt(0) !== 1 || s.charCodeAt(1) !== 123) data += s })
+        ws.on('open', () => setTimeout(() => { ws.send('echo Z'); ws.send('\x01'); ws.send('echo CTRLA-$((1+1)); '); ws.send('\r') }, 600))
+        setTimeout(() => ws.close(), 2200)
+        ws.on('close', () => resolve(data)); ws.on('error', () => resolve(data))
+      })
+      ok('ws: Ctrl+A chega ao terminal', /CTRLA-2/.test(ctrlA), ctrlA.slice(-300))
+
+      // ciclo de vida: DESLIGAR persiste (boot/watchdog nao recriam), LIGAR volta
+      const has = () => spawnSync('tmux', ['has-session', '-t', '=claude-demo'], { env }).status === 0
+      const watchdog = () => spawnSync('bash', [SESSION_SCRIPT, '--all'], { env, stdio: 'ignore', timeout: 15000 })
+      r = await j('POST', '/api/power', { name: 'demo', on: false }); ok('power off', r.data.ok && !has(), r.data.msg)
+      ok('panel.json: enabled=false', JSON.parse(fs.readFileSync(path.join(ROOT, '.claude', 'panel.json'), 'utf8')).projects.demo.enabled === false)
+      watchdog(); ok('watchdog/boot NAO recria projeto desligado', !has())
+      const offWs = await wsOpen(`ws://127.0.0.1:${PORT}/ws/term?name=demo`, { cookie, origin: BASE })
+      ok('ws em projeto desligado -> 4006', offWs.code === 4006, JSON.stringify({ code: offWs.code, reason: offWs.reason }))
+      ok('ws em projeto desligado nao recria a sessao', !has())
+      await new Promise((s) => setTimeout(s, 2500)) // estado vem do watcher (tick de 2s)
+      r = await j('GET', '/api/state'); ok('state: enabled=false', r.data.projects[0].enabled === false && r.data.projects[0].up === false)
+      r = await j('POST', '/api/power', { name: 'demo', on: true }); ok('power on', r.data.ok && has(), r.data.msg)
+      spawnSync('tmux', ['kill-session', '-t', '=claude-demo'], { env, stdio: 'ignore' }); watchdog(); ok('watchdog recria projeto ligado', has())
+      r = await j('POST', '/api/config', { name: 'demo', key: 'autoStartClaude', value: false }); ok('Claude OFF aplica na hora', r.data.ok && has(), r.data.msg)
+      await new Promise((s) => setTimeout(s, 600))
+      r = await j('GET', '/api/term/capture?name=demo'); ok('Claude OFF: sessao so com shell', r.data.ok && /Claude DESLIGADO/.test(r.data.content) && !/SMOKE-READY/.test(r.data.content), r.data.content?.slice(0, 200))
+      r = await j('POST', '/api/restart', { name: 'demo' }); ok('restart com Claude OFF', r.data.ok && /so shell/.test(r.data.msg), r.data.msg)
+
+      // login guiado (com o `claude` falso): tema e metodo avancam sozinhos, link sai INTEIRO
+      r = await j('GET', '/api/claude/login/status'); ok('login status idle', r.data.ok && r.data.phase === 'idle' && r.data.logged === false)
+      r = await j('POST', '/api/claude/login/start', {}); ok('login start', r.data.ok && r.data.phase === 'starting', JSON.stringify(r.data))
+      const waitPhase = async (want, ms) => { const t0 = Date.now(); let d; while (Date.now() - t0 < ms) { d = (await j('GET', '/api/claude/login/status')).data; if (want.includes(d.phase)) break; await new Promise((s) => setTimeout(s, 400)) } return d }
+      let ls = await waitPhase(['url'], 15000)
+      ok('login: avancou tema + "Claude account with subscription" ate o link', ls.phase === 'url', JSON.stringify({ phase: ls.phase, screen: ls.screen?.slice(-200) }))
+      ok('login: link OAuth completo (nao cortado)', ls.url === `https://claude.ai/oauth/authorize?code=true&client_id=abc&state=${LONG}`, `len=${(ls.url || '').length}`)
+      r = await j('POST', '/api/claude/login/code', { code: 'bad\u0007' }); ok('login: codigo com controle recusado', r.data.ok === false)
+      r = await j('POST', '/api/claude/login/code', { code: 'good-code' }); ok('login: codigo enviado', r.data.ok, r.data.msg)
+      ls = await waitPhase(['success', 'error'], 10000)
+      ok('login: sucesso', ls.phase === 'success' && ls.logged === true, JSON.stringify({ phase: ls.phase, msg: ls.msg }))
+      r = await j('POST', '/api/claude/login/cancel', {}); ok('login cancel', r.data.ok)
+      const auditTxt = fs.readFileSync(path.join(ROOT, '.claude', 'logs', 'audit.log'), 'utf8')
+      ok('audit nao grava o codigo de login', /login\.code/.test(auditTxt) && !/good-code/.test(auditTxt))
     } else {
       const o = await wsOpen(`ws://127.0.0.1:${PORT}/ws/term?name=demo&cols=100&rows=30`, { cookie, origin: BASE })
       ok('ws com cookie -> upgrade OK, fecha 4003/4004 (sem pty/tmux aqui)', o.code === 4003 || o.code === 4004, JSON.stringify({ code: o.code, reason: o.reason }))

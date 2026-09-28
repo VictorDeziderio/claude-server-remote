@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   SquareTerminal, Cpu, Maximize2, Minimize2, RefreshCw, ClipboardPaste, Eraser, ZoomIn, ZoomOut, Keyboard,
   Wifi, WifiOff, Loader2, AlertTriangle, Search, ChevronUp, ChevronDown, X, PanelRightOpen, PanelRightClose,
-  Plus, AppWindow, Users, LogIn,
+  Plus, AppWindow, Users, LogIn, Power,
 } from 'lucide-react'
 import XTerm from '../components/XTerm.jsx'
 import Files from '../components/Files.jsx'
@@ -53,6 +53,14 @@ export default function TerminalPage({ data, activity, onFlash }) {
   useEffect(() => { setSidePath(target === 'shell' ? '' : 'projects/' + target); setDetach(false) }, [target])
 
   const onStatus = useCallback((s, msg) => { setStatus(s); setStatusMsg(msg || '') }, [])
+  const onCopy = useCallback((ok, text) => onFlash?.(ok
+    ? { ok: true, msg: `copiado (${text.length} caractere${text.length === 1 ? '' : 's'})` }
+    : { ok: false, msg: 'o navegador bloqueou a cópia — use Ctrl+Shift+C' }), [onFlash])
+  const powerOn = async () => {
+    const r = await api.setPower(target, true).catch((e) => ({ ok: false, msg: e.message }))
+    onFlash?.(r)
+    if (r.ok) setTimeout(() => termRef.current?.reconnect(), 400)
+  }
   const setFontSafe = (n) => { const v = Math.min(22, Math.max(10, n)); setFont(v); writeLS(LS_FONT, v) }
   const toggleKeys = () => setKeys((k) => { writeLS(LS_KEYS, !k); return !k })
   const toggleSide = () => setSide((s) => { writeLS(LS_SIDE, !s); return !s })
@@ -103,7 +111,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
           </button>
           {projects.map((p) => (
             <button key={p.name} type="button" onClick={() => navigate('/terminal/' + encodeURIComponent(p.name))} className={tabCls(target === p.name)} title={`sessão ${p.session} — ${p.claudeRunning ? actOf(p) : 'Claude parado'}`}>
-              {p.claudeRunning ? <ActivityDot state={actOf(p)} /> : <Dot on={false} color="bg-slate-600" />} {p.name}
+              {p.claudeRunning ? <ActivityDot state={actOf(p)} /> : <Dot on={false} color="bg-slate-600" />} <span className={p.enabled === false ? 'line-through opacity-60' : ''}>{p.name}</span>
             </button>
           ))}
         </div>
@@ -157,10 +165,13 @@ export default function TerminalPage({ data, activity, onFlash }) {
       {/* Terminal (+ arquivos ao lado) */}
       <div className="flex min-h-0 flex-1">
         <div className="relative min-h-0 min-w-0 flex-1 p-1">
-          <XTerm ref={termRef} target={target} fontSize={font} detach={detach} onStatus={onStatus} onSearchToggle={toggleSearch} className="rounded-lg" />
+          <XTerm ref={termRef} target={target} fontSize={font} detach={detach} onStatus={onStatus} onSearchToggle={toggleSearch} onCopy={onCopy} className="rounded-lg" />
           {status === 'error' && (
-            <div className="absolute inset-x-0 bottom-3 mx-auto w-fit rounded-lg bg-rose-950/90 px-3 py-2 text-xs text-rose-100 ring-1 ring-rose-500/30">
-              {statusMsg || 'erro'} — <button type="button" className="underline" onClick={() => termRef.current?.reconnect()}>tentar de novo</button>
+            <div className="absolute inset-x-0 bottom-3 mx-auto flex w-fit items-center gap-2 rounded-lg bg-rose-950/90 px-3 py-2 text-xs text-rose-100 ring-1 ring-rose-500/30">
+              {statusMsg || 'erro'} —
+              {proj && proj.enabled === false
+                ? <button type="button" className="inline-flex items-center gap-1 rounded-md bg-emerald-500/20 px-2 py-0.5 text-emerald-200 ring-1 ring-emerald-500/30 hover:bg-emerald-500/30" onClick={powerOn}><Power className="h-3 w-3" /> ligar o projeto</button>
+                : <button type="button" className="underline" onClick={() => termRef.current?.reconnect()}>tentar de novo</button>}
             </div>
           )}
         </div>
@@ -190,7 +201,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/5 px-3 py-1.5 text-[11px] text-slate-500">
           <span className="inline-flex items-center gap-1"><Cpu className="h-3 w-3" /> {proj ? `sessão ${proj.session} em ${proj.dir}` : 'bash em /root (sessão cr-shell)'}</span>
           <span>· fechar a aba não encerra a sessão</span>
-          <span>· botão direito cola (ou copia a seleção) · Ctrl+Shift+C/V copia/cola · Ctrl+Shift+F busca · roda do mouse rola</span>
+          <span>· selecionar com o mouse já copia · Ctrl+C copia a seleção (sem seleção = interromper) · Ctrl+V / botão direito cola · Ctrl+Shift+F busca · roda do mouse rola</span>
           {target === 'shell' && <span>· para o Claude: <code className="text-slate-400">claude</code> ou <code className="text-slate-400">tmux attach -t claude-&lt;projeto&gt;</code></span>}
         </p>
       )}

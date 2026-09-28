@@ -8,6 +8,7 @@ const FILES = {
   panel: { file: 'panel.log', label: 'Painel (server.js)' },
   backup: { file: 'backup.log', label: 'Backup dos projetos' },
   audit: { file: 'audit.log', label: 'Auditoria (quem fez o que)' },
+  sessions: { file: 'sessions.log', label: 'Sessões (supervisor do Claude / remote)' },
 };
 
 function listLogs() {

@@ -46,6 +46,9 @@ const truthy = (v) => v === true || v === 'true' || v === 'on' || v === '1';
 const validName = (n) => typeof n === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(n) && n !== '.' && n !== '..';
 // nome da sessao tmux do projeto (mesma sanitizacao do claude-session.sh: tr -c 'A-Za-z0-9_-' '_')
 const sessionName = (name) => 'claude-' + String(name).replace(/[^A-Za-z0-9_-]/g, '_');
+// alvo EXATO de pane do tmux ("=sessao:"). Sem o "=" o tmux casa por PREFIXO: com "claude-api"
+// fora do ar, um send-keys iria parar em "claude-api2".
+const paneOf = (sess) => '=' + sess + ':';
 const clampInt = (v, min, max, def) => {
   const n = parseInt(v, 10);
   if (!Number.isFinite(n)) return def;
@@ -57,4 +60,4 @@ function log(level, msg, extra) {
   (level === 'error' ? console.error : console.log)(JSON.stringify(line));
 }
 
-module.exports = { sh, readJson, readRaw, sendJson, truthy, validName, sessionName, clampInt, log };
+module.exports = { sh, readJson, readRaw, sendJson, truthy, validName, sessionName, paneOf, clampInt, log };

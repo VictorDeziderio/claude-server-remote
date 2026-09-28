@@ -1,56 +1,37 @@
 #!/usr/bin/env bash
-# Supervisor do Claude para UMA sessao tmux (modelo multi-tmux: 1 sessao por projeto).
-# Roda o Claude em loop: se ele sair (exit/crash), reabre em 3s. A CADA (re)inicio, apos o
-# Claude carregar, envia (se logado):
-#   1) o remote-control (se autoRemote)  2) a "primeira linha" do projeto (panel.json -> initLine)
-# `claude` sobe conversa nova e NAO reconecta sozinho, por isso reenviamos a cada inicio.
-# Para cair no shell: Ctrl-C na janela de 3s.
+# Supervisor do Claude de UMA sessao tmux (modelo multi-tmux: 1 sessao por projeto).
 #
-# Mantem um FLAG FILE por sessao (~/.claude/run/<sessao>.running) enquanto o Claude roda
-# (o painel le esse flag em vez de adivinhar pelo pane_current_command, que da falso-negativo).
+# Roda o Claude em loop: se ele sair (exit/crash), reabre em 3s. A config do projeto
+# (panel.json) e RELIDA a cada inicio, entao o que mudou no painel vale sem recriar a sessao:
+#   - enabled=false ou autoStartClaude=false -> nao reabre: cai num shell na pasta
+#   - autoRemote=true -> apos a TUI ficar pronta, envia /remote-control <nome> (se logado)
+#   - initLine        -> vai como prompt inicial (`claude "<linha>"`)
+#   - <sessao>.resume -> `claude --resume <id>` (Historico -> "Continuar" no painel)
+# Ctrl-C na janela de 3s entre um Claude e outro tambem cai no shell.
 #
-# Args:  $1 = nome da sessao tmux (ex.: claude-pilot)
-#        $2 = comando do remote-control (ex.: "/remote-control pilot"; vazio desativa)
-#        $3 = segundos de espera antes de enviar (Claude carregar)
-#        $4 = nome do projeto (p/ ler a "primeira linha" no panel.json)
+# Flag ~/.claude/run/<sessao>.running existe enquanto o Claude roda (o painel le esse flag).
+# Log do supervisor (envio do remote etc.): ~/.claude/logs/sessions.log (painel -> Logs).
+#
+# Uso: claude-loop.sh <sessao> <projeto>
 set -uo pipefail
-SESS="${1:?uso: claude-loop.sh <sessao> [remote_cmd] [delay] [projeto]}"
-FULL_AUTOCMD="${2:-}"
-DELAY="${3:-15}"
-PROJ_NAME="${4:-}"
 
-# Garante node/claude no PATH mesmo quando iniciado como COMANDO DIRETO da sessao tmux
-# (nesse caso o PATH herdado pode ser minimo e nao conter o node -> read_initline falhava).
-export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin${PATH:+:$PATH}"
-NODE_BIN="$(command -v node 2>/dev/null || echo /usr/bin/node)"
+LIB="${DEVBOX_LIB:-/usr/local/lib/devbox/lib.sh}"
+# shellcheck source=devbox-lib.sh
+. "$LIB"
 
-H="${HOME:-/root}"
-RUN_DIR="$H/.claude/run"
+SESS="${1:?uso: claude-loop.sh <sessao> <projeto>}"
+PROJ_NAME="${2:?uso: claude-loop.sh <sessao> <projeto>}"
+DELAY="${CLAUDE_AUTOCMD_DELAY:-15}"
 RUN_FLAG="$RUN_DIR/$SESS.running"
-mkdir -p "$RUN_DIR"
+RESUME_FLAG="$RUN_DIR/$SESS.resume"
+mkdir -p "$RUN_DIR" "$LOG_DIR"
 
-# verdadeiro se o Claude ja estiver logado (/login feito)
-is_logged_in() {
-  [ -n "${ANTHROPIC_API_KEY:-}" ] && return 0
-  [ -s "$H/.claude/.credentials.json" ] && return 0
-  grep -qE '"oauthAccount"|"accessToken"|"apiKey"|"primaryApiKey"' "$H/.claude.json" 2>/dev/null && return 0
-  return 1
-}
+gray() { printf '\033[90m%s\033[0m\n' "$*"; }
+# log em arquivo (NUNCA no terminal enquanto o Claude esta na tela: sujaria a TUI)
+slog() { printf '[%s] %s: %s\n' "$(date '+%F %T')" "$SESS" "$*" >> "$LOG_DIR/sessions.log"; }
 
-# le a "primeira linha" do projeto no panel.json (vazio se nao definida). Usa node (sempre presente).
-read_initline() {
-  [ -n "$PROJ_NAME" ] || return 0
-  "$NODE_BIN" -e '
-    const fs = require("fs");
-    const [,, file, proj] = process.argv;
-    let c = {}; try { c = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
-    const o = (c.projects && c.projects[proj]) || {};
-    process.stdout.write(typeof o.initLine === "string" ? o.initLine : "");
-  ' "$H/.claude/panel.json" "$PROJ_NAME" 2>/dev/null
-}
-
-# tela atual da sessao (ultimas 80 linhas)
-screen() { tmux capture-pane -t "$SESS" -p -S -80 2>/dev/null; }
+# ---------- leitura da tela (tmux) ----------
+screen() { tmux capture-pane -t "=$SESS:" -p -S -80 2>/dev/null; }
 # TUI do Claude pronta p/ receber comando? (rodape/prompt visiveis)
 tui_ready() { screen | grep -qE '(\? for shortcuts|bypass permissions|shift\+tab to cycle|^[[:space:]]*[>❯][[:space:]]*$)'; }
 # remote ja ativo? (link do controle remoto ou status na tela)
@@ -59,80 +40,89 @@ remote_up() { screen | grep -qE '(claude\.ai/code/|[Rr]emote[- ]control (is )?(o
 # "Enter to select · Esc to continue") que trava o prompt ate alguem apertar Enter/Esc.
 dialog_open() { screen | grep -qE '(Esc to continue|Disconnect this session|Show QR code)'; }
 dismiss_dialog() {
-  local i=0
-  while [ "$i" -lt 5 ]; do
+  for _ in 1 2 3 4 5; do
     dialog_open || return 0
-    tmux send-keys -t "$SESS" Escape
-    sleep 1; i=$((i + 1))
+    tmux send-keys -t "=$SESS:" Escape
+    sleep 1
   done
 }
 
-send_remote_when_ready() {
-  local waited=0 attempt=0
+# Espera a TUI ficar pronta (le a tela em vez de um sleep fixo), envia o /remote-control
+# (texto e Enter em dois passos: a TUI precisa processar o texto antes do Enter), confirma
+# pelo link na tela e tenta ate 3x. Sem login, nao envia.
+send_remote_when_ready() {  # $1 = comando
+  local cmd="$1" waited=0 attempt
   sleep "$DELAY"
-  is_logged_in || { echo "[remote] sem login — nao enviei $FULL_AUTOCMD"; return 0; }
-  # espera a TUI (ate 120s)
-  while ! tui_ready; do
+  is_logged_in || { slog "remote: Claude sem login — nao enviei $cmd"; return 0; }
+  until tui_ready; do
     sleep 3; waited=$((waited + 3))
-    [ "$waited" -ge 120 ] && { echo "[remote] TUI nao ficou pronta em 120s — envio mesmo assim"; break; }
+    [ "$waited" -ge 120 ] && { slog "remote: TUI nao ficou pronta em 120s — envio mesmo assim"; break; }
   done
-  while [ "$attempt" -lt 3 ]; do
-    attempt=$((attempt + 1))
-    remote_up && { echo "[remote] ja ativo"; dismiss_dialog; return 0; }
-    tmux send-keys -t "$SESS" -l "$FULL_AUTOCMD"
+  for attempt in 1 2 3; do
+    remote_up && { slog "remote: ja ativo"; dismiss_dialog; return 0; }
+    tmux send-keys -t "=$SESS:" -l "$cmd"
     sleep 0.8
-    tmux send-keys -t "$SESS" C-m
+    tmux send-keys -t "=$SESS:" C-m
     sleep 12
-    if remote_up; then
-      echo "[remote] ativo (tentativa $attempt)"
-      dismiss_dialog          # fecha o dialogo de confirmacao -> volta ao prompt
-      return 0
-    fi
-    # se a linha ficou digitada sem enviar, limpa antes de tentar de novo
-    tmux send-keys -t "$SESS" C-u 2>/dev/null || true
+    if remote_up; then slog "remote: ativo (tentativa $attempt)"; dismiss_dialog; return 0; fi
+    tmux send-keys -t "=$SESS:" C-u 2>/dev/null || true   # linha ficou digitada? limpa e tenta de novo
     sleep 5
   done
-  echo "[remote] nao confirmei o remote apos $attempt tentativas (use 'Religar remote' no painel)"
+  slog "remote: nao confirmei apos $attempt tentativas (use 'Religar remote' no painel)"
 }
 
-# garante que o flag suma se o supervisor for encerrado (kill-session, etc.)
-cleanup() { rm -f "$RUN_FLAG"; }
-trap cleanup EXIT INT TERM
+# cai num shell interativo na pasta (a sessao tmux continua viva)
+drop_to_shell() {
+  rm -f "$RUN_FLAG"
+  gray "$*"
+  exec bash -l
+}
+
+REMOTE_PID=""
+cleanup() {
+  rm -f "$RUN_FLAG"
+  [ -n "$REMOTE_PID" ] && kill "$REMOTE_PID" 2>/dev/null
+  return 0
+}
+trap cleanup EXIT
+trap 'exit 0' TERM HUP
 
 while true; do
-  # PRIMEIRA LINHA: passada como PROMPT INICIAL do `claude` (forma documentada `claude "query"`,
-  # que mantem a sessao interativa). Executa de forma 100% confiavel, sem send-keys fragil
-  # (o send-keys falhava com a TUI do Claude por causa do bracketed paste).
-  IL="$(read_initline)"
-
-  # REMOTE-CONTROL: em paralelo ao `claude`, ESPERA A TUI FICAR PRONTA (le a tela em vez de
-  # um sleep fixo — em container lento 15s nao bastavam), manda o texto e o Enter em dois
-  # passos (a TUI precisa processar o texto antes do Enter), VERIFICA se o remote subiu
-  # (link claude.ai/code na tela) e tenta de novo ate 3x. Sem login, nao envia.
-  if [ -n "$FULL_AUTOCMD" ]; then
-    ( send_remote_when_ready ) &
+  load_proj_config "$PROJ_NAME"
+  if [ "$CFG_ENABLED" != "true" ] || [ "$CFG_AUTOSTART" != "true" ]; then
+    drop_to_shell "[dev-box] Claude DESLIGADO para \"$PROJ_NAME\" no painel — shell livre. Rode  claude  quando quiser."
   fi
 
-  # CONTINUAR CONVERSA: o painel (Historico -> "Continuar") grava <sessao>.resume com o id da
-  # conversa e derruba o Claude; aqui reabrimos com `claude --resume <id>` (uma vez) e apagamos o flag.
-  RESUME_FLAG="$RUN_DIR/$SESS.resume"
+  # remote-control em paralelo ao claude (espera a TUI ficar pronta)
+  REMOTE_PID=""
+  if [ "$CFG_REMOTE" = "true" ]; then
+    send_remote_when_ready "$(remote_cmd "$PROJ_NAME")" &
+    REMOTE_PID=$!
+  fi
+
   RESUME_ID=""
   if [ -s "$RESUME_FLAG" ]; then
     RESUME_ID="$(head -c 100 "$RESUME_FLAG" | tr -cd 'A-Za-z0-9_-')"
     rm -f "$RESUME_FLAG"
   fi
 
-  : > "$RUN_FLAG"               # marca: Claude rodando
+  : > "$RUN_FLAG"
+  slog "claude iniciado${RESUME_ID:+ (resume $RESUME_ID)}"
   if [ -n "$RESUME_ID" ]; then
-    echo "[continuando a conversa $RESUME_ID]"
+    gray "[continuando a conversa $RESUME_ID]"
     claude --resume "$RESUME_ID"
-  elif [ -n "$IL" ]; then
-    claude "$IL"                # inicia interativo JA executando a primeira linha
+  elif [ -n "$CFG_INITLINE" ]; then
+    claude "$CFG_INITLINE"          # interativo, ja executando a primeira linha
   else
     claude
   fi
-  rm -f "$RUN_FLAG"             # marca: Claude parado (caiu no shell ou crashou)
+  rm -f "$RUN_FLAG"
+  # o envio do remote pertence a ESTE Claude: se ele ja saiu, nao pode digitar no proximo
+  if [ -n "$REMOTE_PID" ]; then kill "$REMOTE_PID" 2>/dev/null; wait "$REMOTE_PID" 2>/dev/null; REMOTE_PID=""; fi
 
-  echo "[claude saiu — reabrindo em 3s | Ctrl-C cancela]"
-  sleep 3
+  gray "[claude saiu — reabrindo em 3s | Ctrl-C = ficar no shell]"
+  # Ctrl-C aqui interrompe o sleep -> cai no shell (em vez de reabrir)
+  if ! (trap 'exit 130' INT; sleep 3); then
+    drop_to_shell "[dev-box] supervisor pausado — shell livre. Para voltar: 'Reiniciar' no painel."
+  fi
 done

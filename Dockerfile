@@ -126,9 +126,10 @@ ENV \
     GATEWAY_PORT=8080 \
     PROJECTS_DIR=/root/projects \
     # AUTH: painel via PANEL_LOGIN+PANEL_PASSWORD (+ 2FA opcional ativado no painel).
-    # TROQUE no Environment do EasyPanel.
+    # Defina PANEL_PASSWORD no Environment do EasyPanel. Vazio -> o start.sh gera uma senha
+    # forte, guarda em /root/.claude/.panel-password e mostra no log do boot.
     PANEL_LOGIN=admin \
-    PANEL_PASSWORD=senha-antiga-removida \
+    PANEL_PASSWORD= \
     PANEL_SESSION_DAYS=30
 
 # Politica GLOBAL do Claude Code (managed settings) — permissao para TUDO em todo o
@@ -137,7 +138,8 @@ ENV \
 RUN mkdir -p /etc/claude-code
 COPY managed-settings.json /etc/claude-code/managed-settings.json
 
-# entrypoint + supervisor + sessao + backup
+# entrypoint + supervisor + sessao + backup (+ biblioteca comum dos scripts)
+COPY devbox-lib.sh /usr/local/lib/devbox/lib.sh
 COPY start.sh /usr/local/bin/start.sh
 COPY claude-loop.sh /usr/local/bin/claude-loop.sh
 COPY claude-session.sh /usr/local/bin/claude-session.sh

@@ -17,6 +17,7 @@ const auth = require('./server/auth');
 const totp = require('./server/totp');
 const { audit, summarize } = require('./server/audit');
 const claude = require('./server/claude');
+const claudeLogin = require('./server/login');
 const usage = require('./server/usage');
 const projects = require('./server/projects');
 const files = require('./server/files');
@@ -63,6 +64,7 @@ const GET = {
   '/api/settings': async () => settings.getSettings(),
   '/api/sessions': async (q, req) => auth.listSessions(req),
   '/api/totp/status': async () => ({ ok: true, ...totp.status() }),
+  '/api/claude/login/status': async () => claudeLogin.status(),
 };
 // rotas POST (JSON; todas exigem auth + mesma origem). (body, req)
 const POST = {
@@ -72,6 +74,7 @@ const POST = {
   '/api/config': (b) => projects.setConfig(b.name, b.key, b.value),
   '/api/initline': (b) => projects.setInitLine(b.name, b.text),
   '/api/restart': (b) => projects.restartProject(b.name),
+  '/api/power': (b) => projects.setPower(b.name, b.on),
   '/api/remote': (b) => projects.sendRemote(b.name),
   '/api/fs/save': (b) => files.fsSave(b.path, b.content),
   '/api/fs/create': (b) => files.fsCreate(b.path, b.kind),
@@ -82,6 +85,10 @@ const POST = {
   '/api/term/window': (b) => term.windowAction(b.name, b.action, b.index),
   '/api/claude/logout': () => claude.claudeLogout(),
   '/api/claude/update': () => health.updateClaude(),
+  '/api/claude/login/start': () => claudeLogin.start(),
+  '/api/claude/login/code': (b) => claudeLogin.sendCode(b.code),
+  '/api/claude/login/key': (b) => claudeLogin.sendKey(b.key),
+  '/api/claude/login/cancel': () => claudeLogin.cancel(),
   '/api/history/resume': async (b) => {
     const st = await events.currentState();
     const p = st && st.projects.find((x) => x.name === b.name);
@@ -98,9 +105,9 @@ const POST = {
   '/api/totp/disable': (b) => totp.disable(b.code),
 };
 // acoes que entram no audit log (as de leitura nao)
-const AUDITED = new Set(['/api/create', '/api/rename', '/api/delete', '/api/config', '/api/initline', '/api/restart', '/api/remote',
+const AUDITED = new Set(['/api/create', '/api/rename', '/api/delete', '/api/config', '/api/initline', '/api/restart', '/api/power', '/api/remote',
   '/api/fs/save', '/api/fs/create', '/api/fs/delete', '/api/fs/rename', '/api/term/exit', '/api/term/window', '/api/claude/logout',
-  '/api/claude/update', '/api/history/resume', '/api/backup/run', '/api/backup/config', '/api/settings/defaults', '/api/settings',
+  '/api/claude/update', '/api/claude/login/start', '/api/claude/login/code', '/api/claude/login/cancel', '/api/history/resume', '/api/backup/run', '/api/backup/config', '/api/settings/defaults', '/api/settings',
   '/api/sessions/revoke', '/api/sessions/revoke-others', '/api/totp/enable', '/api/totp/disable']);
 
 const server = http.createServer(async (req, res) => {

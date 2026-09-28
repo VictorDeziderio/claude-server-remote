@@ -1,20 +1,21 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   UserRound, LogOut, LogIn, Check, ExternalLink, SquareTerminal, ShieldCheck, ShieldOff, Smartphone, Monitor, Trash2,
-  Tag, ArrowUpCircle, CheckCircle2, AlertTriangle, RefreshCw, Loader2,
+  Tag, ArrowUpCircle, CheckCircle2, AlertTriangle, RefreshCw, Loader2, Copy, Link2,
 } from 'lucide-react'
 import QRCode from 'qrcode'
-import XTerm from '../components/XTerm.jsx'
+import { copyText } from '../lib/clipboard.js'
 import { Btn, Modal, Card, inputCls, Skeleton, InlineConfirm } from '../components/ui.jsx'
 import { fmtAgo, fmtDate } from '../lib/format.js'
 import * as api from '../api.js'
 
-const findUrls = (txt) => [...new Set((txt.match(/https?:\/\/[^\s'"()\]]+/g) || []))].filter((u) => !/claude\.ai\/code\/session/.test(u)).slice(0, 2)
-
 export default function Account({ data, onFlash, refresh }) {
   const login = data.login || { logged: false, account: '', org: '', method: '' }
-  const [showLogin, setShowLogin] = useState(false)
+  // /account?login=1 (link "deslogado — clique p/ logar" do Dashboard) ja abre o login
+  const [params, setParams] = useSearchParams()
+  const [showLogin, setShowLogin] = useState(() => params.get('login') === '1')
+  useEffect(() => { if (params.get('login')) setParams({}, { replace: true }) }, [params, setParams])
   const [busy, setBusy] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
 
@@ -44,13 +45,16 @@ export default function Account({ data, onFlash, refresh }) {
           {login.logged ? (
             confirmLogout
               ? <InlineConfirm text="Deslogar a conta do Claude neste servidor? Você precisará logar de novo." onYes={doLogout} onNo={() => setConfirmLogout(false)} busy={busy} />
-              : <Btn variant="danger" onClick={() => setConfirmLogout(true)} className="px-4 py-2 text-sm"><LogOut className="h-4 w-4" /> Deslogar do Claude</Btn>
+              : <>
+                <Btn variant="danger" onClick={() => setConfirmLogout(true)} className="px-4 py-2 text-sm"><LogOut className="h-4 w-4" /> Deslogar do Claude</Btn>
+                <Btn onClick={() => setShowLogin(true)} className="px-4 py-2 text-sm"><LogIn className="h-4 w-4" /> Trocar de conta</Btn>
+              </>
           ) : (
             <Btn variant="accent" onClick={() => setShowLogin(true)} className="px-4 py-2 text-sm"><LogIn className="h-4 w-4" /> Logar no Claude</Btn>
           )}
           <Link to="/terminal/shell" className="inline-flex items-center gap-2 rounded-lg bg-ink-500 px-4 py-2 text-sm font-medium text-slate-100 transition hover:bg-ink-500/70"><SquareTerminal className="h-4 w-4" /> Abrir terminal</Link>
         </div>
-        <p className="mt-3 text-xs text-slate-500">O login do Claude é por conta (OAuth): você abre um link, autoriza e cola o código gerado. As credenciais ficam em <code>~/.claude</code> (volume) e persistem entre deploys.</p>
+        <p className="mt-3 text-xs text-slate-500">O login é por conta (OAuth): o painel já escolhe “Claude account with subscription”, você abre o link, autoriza, cola o código e clica em Conectar. As credenciais ficam em <code>~/.claude</code> (volume) e persistem entre deploys.</p>
       </section>
 
       <ClaudeVersionCard onFlash={onFlash} refresh={refresh} />
@@ -207,52 +211,109 @@ function SessionsCard({ onFlash }) {
   )
 }
 
-// Login do Claude dentro de um terminal REAL (sessao shell): dispara `claude`, detecta o link
-// OAuth na tela e permite colar o codigo. Tudo interativo — setas/Enter funcionam direto.
+// Login do Claude GUIADO: o servidor roda o `claude` numa sessao tmux larga (cr-login), avanca
+// sozinho as telas (tema, "Claude account with subscription") e devolve o link OAuth INTEIRO.
+// Aqui: abrir/copiar o link, colar o codigo e Conectar. Telas inesperadas aparecem com teclas.
+const STEP_TEXT = {
+  idle: 'iniciando…',
+  starting: 'abrindo o Claude Code…',
+  method: 'selecionando “Claude account with subscription”…',
+  url: 'autorize no link abaixo e cole o código',
+  'code-sent': 'validando o código…',
+  success: 'conta conectada!',
+  error: 'não deu certo',
+  attention: 'o Claude está pedindo uma decisão sua',
+}
 function LoginModal({ onClose, onFlash }) {
-  const termRef = useRef(null)
-  const [urls, setUrls] = useState([])
+  const [st, setSt] = useState({ phase: 'idle', url: '', msg: '', screen: '' })
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
+  const [showScreen, setShowScreen] = useState(false)
+  const doneRef = useRef(false)
 
-  const scan = useCallback(async () => {
-    try { const r = await api.termCapture('shell'); if (r.ok) setUrls(findUrls(r.content)) } catch { /* */ }
+  const begin = useCallback(async () => {
+    setBusy(true); setCode('')
+    const r = await api.loginStart().catch((e) => ({ ok: false, phase: 'error', msg: e.message }))
+    setBusy(false)
+    setSt(r)
   }, [])
-  useEffect(() => { scan(); const t = setInterval(scan, 1500); return () => clearInterval(t) }, [scan])
+  useEffect(() => { begin() }, [begin])
+  useEffect(() => {
+    const t = setInterval(() => { api.loginStatus().then((r) => { if (r?.ok) setSt(r) }).catch(() => {}) }, 1000)
+    return () => clearInterval(t)
+  }, [])
+  useEffect(() => {
+    if (st.phase === 'success' && !doneRef.current) { doneRef.current = true; onFlash?.({ ok: true, msg: 'Claude conectado — projetos parados na tela de login foram reiniciados' }) }
+    if (st.phase === 'attention') setShowScreen(true)
+  }, [st.phase, onFlash])
 
-  const start = async () => {
-    setBusy(true)
-    termRef.current?.send('\x03')
-    setTimeout(() => { termRef.current?.send('claude\r'); setBusy(false); termRef.current?.focus() }, 150)
-  }
-  const sendCode = () => {
+  const close = () => { if (st.phase !== 'success') api.loginCancel().catch(() => {}); onClose() }
+  const connect = async () => {
     if (!code.trim()) return
-    termRef.current?.send(code.trim() + '\r')
-    setCode('')
-    onFlash?.({ ok: true, msg: 'código enviado ao Claude — acompanhe no terminal' })
+    setBusy(true)
+    const r = await api.loginCode(code.trim()).catch((e) => ({ ok: false, msg: e.message }))
+    setBusy(false)
+    if (!r.ok) onFlash?.(r); else setCode('')
   }
+  const copyUrl = async () => onFlash?.((await copyText(st.url)) ? { ok: true, msg: 'link copiado' } : { ok: false, msg: 'não consegui copiar — selecione o link e copie' })
+  const key = (k) => api.loginKey(k).catch(() => {})
 
+  const phase = st.phase || 'idle'
+  const working = ['idle', 'starting', 'method', 'code-sent'].includes(phase)
   return (
-    <Modal title="Logar no Claude" icon={LogIn} onClose={onClose} wide>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Btn variant="accent" busy={busy} onClick={start}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <SquareTerminal className="h-4 w-4" />} Iniciar login (roda <code>claude</code>)</Btn>
-        <span className="text-xs text-slate-500">use ↑ ↓ Enter direto no terminal</span>
+    <Modal title="Conectar conta do Claude" icon={LogIn} onClose={close} wide>
+      <div className="mb-4 flex items-center gap-2 text-sm">
+        {working && <Loader2 className="h-4 w-4 animate-spin text-claude" />}
+        {phase === 'success' && <CheckCircle2 className="h-4 w-4 text-emerald-300" />}
+        {(phase === 'error' || phase === 'attention') && <AlertTriangle className="h-4 w-4 text-amber-300" />}
+        <span className={phase === 'success' ? 'text-emerald-300' : phase === 'error' ? 'text-rose-300' : 'text-slate-200'}>{STEP_TEXT[phase] || phase}</span>
+        {st.msg && phase !== 'success' && <span className="text-xs text-slate-500">— {st.msg}</span>}
       </div>
-      {urls.length > 0 && (
-        <div className="mb-3 rounded-lg bg-claude/5 p-2.5 ring-1 ring-claude/20">
-          <div className="mb-1 inline-flex items-center gap-1.5 text-xs font-medium text-claude"><ExternalLink className="h-3.5 w-3.5" /> abra para autorizar:</div>
-          {urls.map((u) => <a key={u} href={u} target="_blank" rel="noreferrer" className="block truncate text-xs text-sky-300 hover:underline">{u}</a>)}
+
+      {st.url && phase !== 'success' && (
+        <div className="space-y-3">
+          <div className="rounded-xl bg-claude/5 p-3 ring-1 ring-claude/20">
+            <div className="mb-2 text-xs font-medium text-claude">1. Abra o link e autorize com a sua conta Claude (Pro/Max/Team/Enterprise)</div>
+            <div className="flex flex-wrap gap-2">
+              <a href={st.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-claude px-3 py-2 text-sm font-medium text-white hover:bg-claude/90"><ExternalLink className="h-4 w-4" /> Abrir link de autorização</a>
+              <Btn onClick={copyUrl}><Copy className="h-4 w-4" /> Copiar link</Btn>
+            </div>
+            <code className="mt-2 block max-h-24 select-all overflow-auto break-all rounded-lg bg-ink-900 px-2.5 py-2 font-mono text-[11px] text-sky-300">{st.url}</code>
+          </div>
+          <div className="rounded-xl bg-ink-900/60 p-3 ring-1 ring-white/5">
+            <div className="mb-2 text-xs font-medium text-slate-300">2. Cole o código que aparece depois de autorizar</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') connect() }} autoFocus
+                placeholder="código de autorização" className={`min-w-0 flex-1 font-mono ${inputCls} px-3 py-2`} />
+              <Btn variant="accent" busy={busy || phase === 'code-sent'} disabled={!code.trim()} onClick={connect}><Link2 className="h-4 w-4" /> Conectar</Btn>
+            </div>
+          </div>
         </div>
       )}
-      <div className="h-[45vh] overflow-hidden rounded-lg ring-1 ring-white/10">
-        <XTerm ref={termRef} target="shell" fontSize={12} />
-      </div>
-      <div className="mt-3 flex items-center gap-2">
-        <input value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendCode() }} placeholder="cole aqui o código gerado pelo Claude (ou cole direto no terminal)"
-          className={`flex-1 font-mono ${inputCls} px-3 py-2`} />
-        <Btn variant="accent" disabled={!code.trim()} onClick={sendCode}><Check className="h-4 w-4" /> Enviar código</Btn>
-      </div>
-      <p className="mt-2 text-xs text-slate-500">1) "Iniciar login" → 2) escolha o login com a conta (↑ ↓ Enter) → 3) abra o link e autorize → 4) cole o código. Depois feche — a página atualiza.</p>
+
+      {phase === 'success' && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl bg-emerald-500/10 p-4 text-sm text-emerald-100 ring-1 ring-emerald-500/25">
+          <CheckCircle2 className="h-5 w-5 text-emerald-300" /> Login salvo em <code>~/.claude</code> — vale para todos os projetos e persiste entre deploys.
+          <Btn variant="accent" className="ml-auto" onClick={onClose}>Fechar</Btn>
+        </div>
+      )}
+      {phase === 'error' && <Btn variant="accent" busy={busy} onClick={begin}><RefreshCw className="h-4 w-4" /> Tentar de novo</Btn>}
+
+      {phase !== 'success' && (
+        <div className="mt-4">
+          <button type="button" onClick={() => setShowScreen((v) => !v)} className="text-xs text-slate-500 hover:text-slate-300">{showScreen ? '▾ esconder' : '▸ ver'} a tela do Claude</button>
+          {showScreen && (
+            <>
+              <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-ink-900 p-2.5 font-mono text-[11px] leading-snug text-slate-300">{st.screen || '…'}</pre>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {[['↑', 'Up'], ['↓', 'Down'], ['Enter', 'Enter'], ['Esc', 'Escape'], ['1', '1'], ['2', '2']].map(([l, k]) => (
+                  <button key={k} type="button" onClick={() => key(k)} className="rounded-md bg-ink-700/60 px-2.5 py-1 font-mono text-xs text-slate-300 ring-1 ring-white/5 hover:bg-ink-500 hover:text-white">{l}</button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </Modal>
   )
 }
