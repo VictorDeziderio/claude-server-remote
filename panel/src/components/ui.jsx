@@ -79,7 +79,7 @@ export function Modal({ title, icon: Icon, onClose, children, wide }) {
   }, [onClose])
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className={cn('max-h-[92vh] w-full animate-fade-up overflow-auto rounded-xl bg-popover p-4 text-popover-foreground ring-1 ring-foreground/10', wide ? 'max-w-3xl' : 'max-w-sm')}
+      <div className={cn('max-h-[92vh] w-full animate-fade-up overflow-auto rounded-xl border border-border bg-popover p-4 text-popover-foreground', wide ? 'max-w-3xl' : 'max-w-sm')}
         onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2 text-base font-medium">{Icon && <Icon className="size-4 text-primary" />} {title}</div>
@@ -133,7 +133,9 @@ export function Toast({ flash, onClose, position = 'bottom' }) {
 // props) pra nenhuma pagina precisar recompor CardHeader/CardContent manualmente.
 export function Card({ title, subtitle, children, className = '', actions }) {
   return (
-    <SCard className={className}>
+    // sobrescreve o ring padrao do shadcn (ring-foreground/10 -- quase invisivel no tema escuro
+    // atual: baixo contraste entre o ring e o bg-card) pela cor de borda real do tema
+    <SCard className={cn('ring-border', className)}>
       {(title || subtitle || actions) && (
         <CardHeader>
           <CardTitle className={subtitle ? 'self-center' : ''}>{title}</CardTitle>
