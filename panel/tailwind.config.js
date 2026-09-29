@@ -1,62 +1,44 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: ['class'],
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
       colors: {
-        // laranja/cobre da marca — acao primaria/alerta ("Signal Deck")
-        claude: {
-          300: '#F3B999',
-          400: '#F0985F',
-          DEFAULT: '#E37D45',
-          500: '#E37D45',
-          600: '#C4602D',
-          700: '#8F4520',
+        border: 'rgb(var(--border) / <alpha-value>)',
+        input: 'rgb(var(--input) / <alpha-value>)',
+        ring: 'rgb(var(--ring) / <alpha-value>)',
+        background: 'rgb(var(--background) / <alpha-value>)',
+        foreground: 'rgb(var(--foreground) / <alpha-value>)',
+        primary: { DEFAULT: 'rgb(var(--primary) / <alpha-value>)', foreground: 'rgb(var(--primary-foreground) / <alpha-value>)' },
+        secondary: { DEFAULT: 'rgb(var(--secondary) / <alpha-value>)', foreground: 'rgb(var(--secondary-foreground) / <alpha-value>)' },
+        destructive: { DEFAULT: 'rgb(var(--destructive) / <alpha-value>)', foreground: 'rgb(var(--destructive-foreground) / <alpha-value>)' },
+        muted: { DEFAULT: 'rgb(var(--muted) / <alpha-value>)', foreground: 'rgb(var(--muted-foreground) / <alpha-value>)' },
+        accent: { DEFAULT: 'rgb(var(--accent) / <alpha-value>)', foreground: 'rgb(var(--accent-foreground) / <alpha-value>)' },
+        popover: { DEFAULT: 'rgb(var(--popover) / <alpha-value>)', foreground: 'rgb(var(--popover-foreground) / <alpha-value>)' },
+        card: { DEFAULT: 'rgb(var(--card) / <alpha-value>)', foreground: 'rgb(var(--card-foreground) / <alpha-value>)' },
+        success: 'rgb(var(--success) / <alpha-value>)',
+        sidebar: {
+          DEFAULT: 'rgb(var(--sidebar) / <alpha-value>)',
+          foreground: 'rgb(var(--sidebar-foreground) / <alpha-value>)',
+          primary: 'rgb(var(--sidebar-primary) / <alpha-value>)',
+          'primary-foreground': 'rgb(var(--sidebar-primary-foreground) / <alpha-value>)',
+          accent: 'rgb(var(--sidebar-accent) / <alpha-value>)',
+          'accent-foreground': 'rgb(var(--sidebar-accent-foreground) / <alpha-value>)',
+          border: 'rgb(var(--sidebar-border) / <alpha-value>)',
+          ring: 'rgb(var(--sidebar-ring) / <alpha-value>)',
         },
-        // superficies — azul-ardosia quase preto
-        ink: {
-          950: '#080B11',
-          900: '#0B0F17',
-          800: '#121826',
-          700: '#182238',
-          600: '#1E2A45',
-          500: '#28375A',
-        },
-        // "sistema vivo": SSE conectado, remote ON, sessao ociosa-mas-rodando (idle deixa de
-        // ser emerald -- emerald fica reservado p/ confirmacao de acao bem-sucedida)
-        live: {
-          300: '#8CF2E3',
-          400: '#4FE0CB',
-          DEFAULT: '#22B8A3',
-          500: '#22B8A3',
-          600: '#1A8F7E',
-        },
+      },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
-        // interface (titulos, nav, botoes, corpo de texto)
-        sans: ['"Plus Jakarta Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        // dados de UI (metricas, IDs de sessao, comandos, badges) -- NAO e o terminal
-        mono: ['"IBM Plex Mono"', '"JetBrains Mono"', 'Menlo', 'Consolas', 'monospace'],
+        sans: ['"Geist Mono Variable"', '"JetBrains Mono"', 'ui-monospace', 'monospace'],
+        mono: ['"Geist Mono Variable"', '"JetBrains Mono"', 'ui-monospace', 'monospace'],
         // terminal (xterm) e CodeMirror -- cobertura de box-drawing p/ TUIs (tmux etc.)
         term: ['"JetBrains Mono"', '"Cascadia Code"', 'Menlo', 'Consolas', '"DejaVu Sans Mono"', 'monospace'],
-      },
-      fontSize: {
-        display: ['1.75rem', { lineHeight: '2.1rem', fontWeight: '700' }],
-        title: ['1.125rem', { lineHeight: '1.5rem', fontWeight: '600' }],
-        heading: ['0.9375rem', { lineHeight: '1.35rem', fontWeight: '600' }],
-        caption: ['0.6875rem', { lineHeight: '1rem', fontWeight: '600', letterSpacing: '0.06em' }],
-        'mono-lg': ['1.125rem', { lineHeight: '1.5rem', fontWeight: '600' }],
-        'mono-md': ['0.8125rem', { lineHeight: '1.2rem', fontWeight: '500' }],
-        'mono-sm': ['0.6875rem', { lineHeight: '1rem', fontWeight: '400' }],
-      },
-      boxShadow: {
-        card: '0 1px 2px rgba(0,0,0,.4), 0 12px 24px -12px rgba(0,0,0,.5)',
-        elevated: '0 8px 16px rgba(0,0,0,.5), 0 24px 48px -16px rgba(0,0,0,.6)',
-        'glow-accent': '0 0 0 1px rgba(227,125,69,.4), 0 0 24px rgba(227,125,69,.25)',
-        'glow-live': '0 0 0 1px rgba(34,184,163,.35), 0 0 16px rgba(34,184,163,.25)',
-      },
-      transitionTimingFunction: {
-        'out-expo': 'cubic-bezier(0.16, 1, 0.3, 1)',
       },
       keyframes: {
         'fade-up': {
@@ -69,5 +51,7 @@ module.exports = {
       },
     },
   },
+  // animacoes de data-state (Radix) vem do "tw-animate-css" importado em index.css --
+  // nao precisa do plugin JS tailwindcss-animate
   plugins: [],
 }

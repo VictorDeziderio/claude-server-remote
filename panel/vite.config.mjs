@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // identidade do build embutida no bundle: o app compara com a que o servidor anuncia (state.
 // panelVersion/buildTime) e, se diferirem (aba aberta antes de um deploy), pede p/ recarregar.
@@ -12,6 +16,9 @@ const pkgVersion = JSON.parse(fs.readFileSync(new URL('./package.json', import.m
 // Em dev (`npm run dev`), API e WebSocket sao encaminhados p/ um server.js local na 7001.
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: { '@': path.resolve(__dirname, './src') },
+  },
   define: {
     __PANEL_VERSION__: JSON.stringify(pkgVersion),
     __PANEL_BUILD__: JSON.stringify(readBuild()),

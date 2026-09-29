@@ -17,7 +17,7 @@ const LogsPage = lazy(() => import('./pages/Logs.jsx'))
 const BackupPage = lazy(() => import('./pages/Backup.jsx'))
 const SettingsPage = lazy(() => import('./pages/Settings.jsx'))
 
-const Loading = () => <div className="flex h-40 items-center justify-center text-slate-400"><Loader2 className="mr-2 h-5 w-5 animate-spin text-claude" /> carregando…</div>
+const Loading = () => <div className="flex h-40 items-center justify-center text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin text-primary" /> carregando…</div>
 function DashboardSkeleton() {
   return (
     <div className="space-y-5">

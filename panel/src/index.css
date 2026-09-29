@@ -1,54 +1,85 @@
-@import '@fontsource/plus-jakarta-sans/400.css';
-@import '@fontsource/plus-jakarta-sans/500.css';
-@import '@fontsource/plus-jakarta-sans/600.css';
-@import '@fontsource/plus-jakarta-sans/700.css';
-@import '@fontsource/ibm-plex-mono/400.css';
-@import '@fontsource/ibm-plex-mono/500.css';
-@import '@fontsource/ibm-plex-mono/600.css';
+@import '@fontsource-variable/geist-mono';
 @import '@fontsource/jetbrains-mono/400.css';
 @import '@fontsource/jetbrains-mono/500.css';
 @import '@fontsource/jetbrains-mono/700.css';
+@import "tw-animate-css";
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
+/*
+ * "Terminal Deck" — voce esta operando uma maquina, nao lendo um relatorio de SaaS. Uma unica
+ * familia (Geist Mono) carrega TUDO: titulo, corpo, dado. Hierarquia vem de peso/tamanho, nao
+ * de uma segunda fonte. Fundo quase-preto neutro (nao azulado), bordas retas e duras (nao
+ * sombra suave), acento ambar de fosforo de CRT (deliberadamente NAO o laranja padrao do
+ * Claude, pra nao parecer o default de qualquer projeto Anthropic).
+ */
+/* Canais RGB "R G B" (sem hsl/oklch): permite os modificadores de opacidade do Tailwind
+   (bg-primary/10 etc.) via rgb(var(--x) / <alpha>) no tailwind.config.js */
+:root {
+  color-scheme: dark;
+  --background: 10 10 11;        /* #0A0A0B */
+  --foreground: 232 230 225;     /* #E8E6E1 */
+  --card: 19 19 19;              /* #131313 */
+  --card-foreground: 232 230 225;
+  --popover: 19 19 19;
+  --popover-foreground: 232 230 225;
+  --primary: 240 168 60;         /* #F0A83C -- ambar de fosforo, deliberadamente != laranja do Claude */
+  --primary-foreground: 10 10 11;
+  --secondary: 28 28 30;         /* #1C1C1E */
+  --secondary-foreground: 232 230 225;
+  --muted: 28 28 30;
+  --muted-foreground: 138 138 133; /* #8A8A85 */
+  --accent: 28 28 30;
+  --accent-foreground: 232 230 225;
+  --destructive: 229 72 77;      /* #E5484D */
+  --destructive-foreground: 251 234 234;
+  --success: 95 191 119;         /* #5FBF77 */
+  --border: 35 35 36;            /* #232324 */
+  --input: 35 35 36;
+  --ring: 240 168 60;
+  --radius: 0.375rem;
+  --sidebar: 14 14 15;           /* #0E0E0F */
+  --sidebar-foreground: 232 230 225;
+  --sidebar-primary: 240 168 60;
+  --sidebar-primary-foreground: 10 10 11;
+  --sidebar-accent: 28 28 30;
+  --sidebar-accent-foreground: 232 230 225;
+  --sidebar-border: 35 35 36;
+  --sidebar-ring: 240 168 60;
+}
+
+* { @apply border-border outline-ring/50; }
+body { @apply bg-background text-foreground; }
+html { font-family: "Geist Mono Variable", "JetBrains Mono", ui-monospace, monospace; }
 
 html, body, #root { height: 100%; }
 body {
   margin: 0;
-  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-  background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(227, 125, 69, 0.10), transparent 60%),
-    #080B11;
-  color: #ECF1F8;
   overflow: hidden; /* cada pagina rola no seu proprio container (o terminal precisa de altura fixa) */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 /* scrollbar discreta */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-thumb { background: #1E2A45; border-radius: 8px; }
+*::-webkit-scrollbar-thumb { background: rgb(var(--border)); border-radius: 3px; }
 *::-webkit-scrollbar-track { background: transparent; }
-
-/* cartoes/listas entrando na tela (Dashboard etc.) */
-@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
 /* xterm.js: fonte dedicada (JetBrains Mono -- cobertura de box-drawing p/ TUIs como tmux),
    ocupa o container inteiro, sem borda branca; scrollbar no tema */
 .xterm { height: 100%; padding: 6px 8px; font-family: "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace; }
 .xterm .xterm-viewport { background-color: transparent !important; }
-.xterm .xterm-viewport::-webkit-scrollbar-thumb { background: #1E2A45; }
+.xterm .xterm-viewport::-webkit-scrollbar-thumb { background: rgb(var(--border)); }
 .xterm .xterm-screen { outline: none; }
 
 /* CodeMirror (editor de arquivos) */
 .cm-editor { height: 100%; font-size: 13px; }
 .cm-editor .cm-scroller { font-family: "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace; line-height: 1.55; }
 .cm-editor.cm-focused { outline: none; }
-.cm-editor .cm-gutters { background: #080B11; border-right: 1px solid rgba(255,255,255,.05); color: #57668A; }
-.cm-editor .cm-activeLineGutter { background: rgba(255,255,255,.04); }
-.cm-editor .cm-content { background: #080B11; }
+.cm-editor .cm-gutters { background: rgb(var(--background)); border-right: 1px solid rgb(var(--border)); color: rgb(var(--muted-foreground)); }
+.cm-editor .cm-activeLineGutter { background: rgb(var(--accent)); }
+.cm-editor .cm-content { background: rgb(var(--background)); }
 .cm-editor .cm-activeLine { background: rgba(255,255,255,.03); }
-.cm-editor .cm-selectionBackground, .cm-editor.cm-focused .cm-selectionBackground { background: rgba(227,125,69,.28) !important; }
-.cm-editor .cm-cursor { border-left-color: #E37D45; }
+.cm-editor .cm-selectionBackground, .cm-editor.cm-focused .cm-selectionBackground { background: rgba(240,168,60,.25) !important; }
+.cm-editor .cm-cursor { border-left-color: var(--primary); }
