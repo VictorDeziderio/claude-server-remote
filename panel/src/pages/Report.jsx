@@ -53,7 +53,7 @@ const PERIODS = [
 function Kpi({ icon: Icon, label, value, hint, hero }) {
   return (
     <div className="rounded-lg bg-card p-4 border">
-      <div className="flex items-center gap-2 text-[11px] text-muted-foreground text-slate-400">
+      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
         <Icon className="h-3.5 w-3.5 text-primary" /> {label}
       </div>
       <div className={`mt-1.5 font-mono text-white ${hero ? 'text-2xl font-semibold' : 'text-lg'}`}>{value}</div>
@@ -243,7 +243,7 @@ export default function Report({ data }) {
           <>
             <div className="overflow-x-auto rounded-xl border">
               <table className="w-full text-sm">
-                <thead className="bg-accent text-[11px] text-muted-foreground text-slate-400">
+                <thead className="bg-accent text-[11px] text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2 text-left font-medium">Modelo</th>
                     <th className="px-3 py-2 text-right font-medium">Entrada</th>
@@ -313,7 +313,7 @@ export default function Report({ data }) {
         ) : (
           <div className="overflow-x-auto rounded-xl border">
             <table className="w-full text-sm">
-              <thead className="bg-accent text-[11px] text-muted-foreground text-slate-400">
+              <thead className="bg-accent text-[11px] text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Projeto</th>
                   <th className="px-3 py-2 text-right font-medium">Entrada</th>

@@ -136,8 +136,8 @@ export function Card({ title, subtitle, children, className = '', actions }) {
     <SCard className={className}>
       {(title || subtitle || actions) && (
         <CardHeader>
-          <CardTitle>{title}</CardTitle>
-          {subtitle && <CardAction className="col-start-2 row-start-1 text-xs text-muted-foreground">{subtitle}</CardAction>}
+          <CardTitle className={subtitle ? 'self-center' : ''}>{title}</CardTitle>
+          {subtitle && <CardAction className="col-start-2 row-start-1 row-span-1 self-center text-xs text-muted-foreground">{subtitle}</CardAction>}
           {actions && <CardAction className={subtitle ? 'row-start-2' : ''}>{actions}</CardAction>}
         </CardHeader>
       )}

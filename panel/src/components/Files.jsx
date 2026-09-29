@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
 import { Folder, FileText, RefreshCw, Save, Trash2, FilePlus, FolderPlus, Home, Loader2, ChevronRight, Pencil, ArrowLeft, Download, Upload, FileCode2, FileImage, FileArchive } from 'lucide-react'
 import { Btn, IconBtn, Empty, InlineConfirm, InlineInput, Skeleton } from './ui.jsx'
+import { Button } from './ui/button.jsx'
 import { fmtSize, fmtDate, joinPath, parentOf } from '../lib/format.js'
 import * as api from '../api.js'
 
@@ -171,13 +172,13 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
   if (kind === 'file' && file) {
     return (
       <div className={`flex h-full min-h-0 flex-col rounded-lg bg-card border ${embedded ? '' : 'min-h-[60vh]'}`}>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/6 px-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
             <Btn size="sm" onClick={() => go(parentOf(cur))}>
               <ArrowLeft className="h-3.5 w-3.5" /> {!embedded && 'Voltar'}
             </Btn>
             <Crumbs />
-            {dirty && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-mono text-xs text-amber-300">não salvo</span>}
+            {dirty && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">não salvo</span>}
             {!embedded && (
               <span className="font-mono text-xs text-slate-500">
                 {fmtSize(file.size)} · {fmtDate(file.mtime)}
@@ -185,9 +186,11 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
             )}
           </div>
           <div className="flex items-center gap-1.5">
-            <a href={api.fsDownloadUrl(file.path)} title="baixar" className="rounded-lg bg-accent p-2 text-slate-300 border transition duration-150 hover:bg-accent hover:text-white">
-              <Download className="h-3.5 w-3.5" />
-            </a>
+            <Button asChild variant="secondary" size="icon-sm" title="baixar">
+              <a href={api.fsDownloadUrl(file.path)}>
+                <Download className="h-3.5 w-3.5" />
+              </a>
+            </Button>
             <Btn size="sm" variant="accent" busy={busy === 'save'} disabled={!dirty} onClick={save} title="Ctrl+S">
               <Save className="h-3.5 w-3.5" /> Salvar
             </Btn>
@@ -204,7 +207,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
 
   return (
     <div className={`flex min-h-0 flex-col rounded-lg bg-card border ${embedded ? 'h-full' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
         <Crumbs />
         <div className="flex items-center gap-1">
           <input
@@ -279,7 +282,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
               name={e.name}
               right={
                 e.outside ? (
-                  <span className="font-mono text-xs text-amber-300" title="symlink que aponta para fora de /root — o painel não abre; você pode renomear ou excluir o link">
+                  <span className="text-xs text-amber-300" title="symlink que aponta para fora de /root — o painel não abre; você pode renomear ou excluir o link">
                     link p/ fora de /root
                   </span>
                 ) : (
@@ -293,10 +296,14 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
               }
               actions={
                 <>
-                  {e.type === 'file' && !e.outside && (
+                  {e.type === 'file' && !e.outside ? (
                     <a href={api.fsDownloadUrl(full)} onClick={(ev) => ev.stopPropagation()} title="baixar" className="rounded p-1 text-slate-500 hover:bg-accent hover:text-slate-200">
                       <Download className="h-3.5 w-3.5" />
                     </a>
+                  ) : (
+                    <span aria-hidden="true" className="pointer-events-none rounded p-1 opacity-0">
+                      <Download className="h-3.5 w-3.5" />
+                    </span>
                   )}
                   <button
                     type="button"

@@ -37,7 +37,7 @@ export default function Account({ data, onFlash, refresh }) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <Dot on={login.logged} />
-              <span className="truncate font-mono text-sm text-slate-200">{login.logged ? login.account || 'Conta conectada' : 'Nenhuma conta conectada'}</span>
+              <span className={`min-w-0 truncate text-sm text-slate-200 ${login.logged && login.account ? 'font-mono' : ''}`}>{login.logged ? login.account || 'Conta conectada' : 'Nenhuma conta conectada'}</span>
             </div>
             {login.org && <div className="mt-1.5 text-sm text-slate-400">organização: {login.org}</div>}
             <div className="mt-1.5 font-mono text-xs text-slate-500">
@@ -121,6 +121,7 @@ function ClaudeVersionCard({ onFlash, refresh }) {
   const c = (h && h.claude) || {}
   return (
     <Card
+      className="p-5"
       title="Claude Code"
       subtitle={h ? `node ${h.node}` : ''}
       actions={
@@ -247,7 +248,7 @@ function TwoFactorCard({ onFlash }) {
   )
 
   return (
-    <Card title="Autenticação em dois fatores (2FA)" subtitle={st?.enabled ? `ativo desde ${fmtDate(st.enabledAt)}` : 'desativado'}>
+    <Card className="p-5" title="Autenticação em dois fatores (2FA)" subtitle={st?.enabled ? `ativo desde ${fmtDate(st.enabledAt)}` : 'desativado'}>
       {!st ? (
         <Skeleton className="h-16" />
       ) : st.enabled ? (
@@ -360,6 +361,7 @@ function SessionsCard({ onFlash }) {
   }
   return (
     <Card
+      className="p-5"
       title="Sessões do painel"
       subtitle={list ? `${list.length} ativa(s)` : ''}
       actions={

@@ -70,8 +70,8 @@ export default function LogsPage() {
             </button>
           ))}
         </div>
-        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="filtrar…" className={`${inputCls} w-44 py-1`} />
-        <select value={lines} onChange={(e) => setLines(parseInt(e.target.value, 10))} className={`${inputCls} py-1`}>
+        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="filtrar…" className={`${inputCls} w-44`} />
+        <select value={lines} onChange={(e) => setLines(parseInt(e.target.value, 10))} className={inputCls}>
           {[100, 300, 1000, 3000].map((n) => (
             <option key={n} value={n}>
               {n} linhas

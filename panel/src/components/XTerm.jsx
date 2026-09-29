@@ -19,12 +19,14 @@ import { copyText, readClipboard, decodeOsc52 } from '../lib/clipboard.js'
 //  - Ctrl+C: com selecao -> copia; sem selecao -> ^C (interrompe) no terminal.
 //  - Ctrl+V / Cmd+V / Ctrl+Shift+V / botao direito / botao do meio -> cola.
 
+// preto puro (nao o #0A0A0B do resto do app): a area do terminal fica visualmente
+// distinta do "chrome" do painel ao redor -- e' a tela, nao a interface.
 const THEME = {
-  background: '#080B11', foreground: '#ECF1F8', cursor: '#E37D45', cursorAccent: '#080B11',
-  selectionBackground: 'rgba(227,125,69,0.28)', selectionInactiveBackground: 'rgba(227,125,69,0.18)',
-  black: '#171b24', red: '#f87171', green: '#34d399', yellow: '#fbbf24', blue: '#60a5fa',
-  magenta: '#c084fc', cyan: '#22d3ee', white: '#e7e9ee',
-  brightBlack: '#5b6478', brightRed: '#fca5a5', brightGreen: '#6ee7b7', brightYellow: '#fde68a',
+  background: '#000000', foreground: '#E8E6E1', cursor: '#F0A83C', cursorAccent: '#000000',
+  selectionBackground: 'rgba(240,168,60,0.28)', selectionInactiveBackground: 'rgba(240,168,60,0.18)',
+  black: '#1c1c1e', red: '#f87171', green: '#5fbf77', yellow: '#f0a83c', blue: '#60a5fa',
+  magenta: '#c084fc', cyan: '#22d3ee', white: '#e8e6e1',
+  brightBlack: '#8a8a85', brightRed: '#fca5a5', brightGreen: '#8cd99e', brightYellow: '#f7c878',
   brightBlue: '#93c5fd', brightMagenta: '#d8b4fe', brightCyan: '#67e8f9', brightWhite: '#ffffff',
 }
 const FONT = '"JetBrains Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, "DejaVu Sans Mono", monospace'

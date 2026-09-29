@@ -135,8 +135,11 @@ export default function SettingsPage({ onFlash, refresh, notif, onToggleNotif })
         )}
         <div className="mt-3 grid gap-1 text-xs text-slate-500 sm:grid-cols-2">
           {Object.entries(s.paths).map(([k, v]) => (
-            <div key={k}>
-              <FolderCog className="mr-1 inline h-3 w-3" /> {k}: <code className="font-mono text-xs text-slate-400">{v}</code>
+            <div key={k} className="flex items-center gap-1">
+              <FolderCog className="h-3 w-3 shrink-0" />
+              <span>
+                {k}: <code className="font-mono text-xs text-slate-400">{v}</code>
+              </span>
             </div>
           ))}
         </div>

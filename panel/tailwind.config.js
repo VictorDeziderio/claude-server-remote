@@ -35,7 +35,9 @@ module.exports = {
         sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
-        sans: ['"Geist Mono Variable"', '"JetBrains Mono"', 'ui-monospace', 'monospace'],
+        // interface (titulos, nav, botoes, corpo de texto) -- legivel, nao mono
+        sans: ['"Geist Variable"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        // dados de UI (metricas, IDs, caminhos, comandos) -- so onde a className diz "font-mono"
         mono: ['"Geist Mono Variable"', '"JetBrains Mono"', 'ui-monospace', 'monospace'],
         // terminal (xterm) e CodeMirror -- cobertura de box-drawing p/ TUIs (tmux etc.)
         term: ['"JetBrains Mono"', '"Cascadia Code"', 'Menlo', 'Consolas', '"DejaVu Sans Mono"', 'monospace'],

@@ -44,14 +44,14 @@ export default function BackupPage({ onFlash }) {
         title="Projetos (git commit + push)"
         subtitle={st ? `${st.enabled ? 'automático a cada ' + fmtUptime(st.interval) : 'automático DESLIGADO (BACKUP_ENABLED=false)'}${st.lastRun ? ' · última execução ' + st.lastRun : ''}` : ''}
         actions={
-          <>
+          <div className="flex flex-wrap items-center gap-2">
             <Btn size="sm" variant="ghost" onClick={load}>
               <RefreshCw className="h-3.5 w-3.5" />
             </Btn>
             <Btn size="sm" variant="accent" busy={busy === 'all'} onClick={() => run('')}>
               <DatabaseBackup className="h-3.5 w-3.5" /> Backup de todos agora
             </Btn>
-          </>
+          </div>
         }
       >
         {!st ? (
@@ -99,17 +99,17 @@ export default function BackupPage({ onFlash }) {
         title="Config do Claude (~/.claude + ~/.claude.json)"
         subtitle="login, panel.json, segredos do painel, settings"
         actions={
-          <>
+          <div className="flex flex-wrap items-center gap-2">
             <Btn size="sm" variant="ghost" busy={busy === 'config'} onClick={runConfig}>
               <Archive className="h-3.5 w-3.5" /> Gerar snapshot agora
             </Btn>
-            <a href={api.backupDownloadUrl('', false)} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[13px] font-medium text-white transition duration-150 hover:bg-primary-600 hover:">
+            <a href={api.backupDownloadUrl('', false)} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[13px] font-medium text-white transition duration-150 hover:bg-primary/80">
               <Download className="h-3.5 w-3.5" /> Baixar agora (leve)
             </a>
             <a href={api.backupDownloadUrl('', true)} className="inline-flex items-center gap-1.5 rounded-lg bg-transparent px-3 py-1.5 text-[13px] font-medium text-slate-300 border transition duration-150 hover:bg-accent" title="inclui o histórico de conversas (pode ser grande)">
               <Download className="h-3.5 w-3.5" /> Baixar completo
             </a>
-          </>
+          </div>
         }
       >
         <p className="mb-3 text-sm text-slate-300">

@@ -164,8 +164,8 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
             {waiting ? <span className="text-rose-300"> · {waiting} aguardando você</span> : ''}
           </StatItem>
           <StatItem icon={BarChart3} label="Hoje">
-            <Link to="/report" className="font-mono text-sm hover:underline">
-              {fmtTok((u.today?.in || 0) + (u.today?.out || 0))} tokens · {fmtUsd(u.today?.cost)} · {fmtInt(u.today?.messages)} msgs
+            <Link to="/report" className="text-sm hover:underline">
+              <span className="font-mono">{fmtTok((u.today?.in || 0) + (u.today?.out || 0))}</span> tokens · <span className="font-mono">{fmtUsd(u.today?.cost)}</span> · <span className="font-mono">{fmtInt(u.today?.messages)}</span> msgs
             </Link>
           </StatItem>
         </div>

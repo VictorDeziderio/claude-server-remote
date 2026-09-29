@@ -176,7 +176,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
   const S = STATUS[status] || STATUS.connecting
   const proj = projects.find((p) => p.name === target)
   const actOf = (p) => (activity && activity[p.session] && activity[p.session].state) || p.activity || 'off'
-  const tabCls = (active) => `relative flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${active ? 'bg-primary/15 text-primary ring-1 ring-primary/25 after:absolute after:-bottom-2 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-primary after:content-[""]' : 'bg-accent text-slate-400 border hover:bg-secondary hover:text-slate-200'}`
+  const tabCls = (active) => `relative flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${active ? 'border border-transparent bg-primary/15 text-primary ring-1 ring-primary/25 after:absolute after:-bottom-2 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-primary after:content-[""]' : 'bg-accent text-slate-400 border hover:bg-secondary hover:text-slate-200'}`
 
   return (
     <div className={`flex min-h-0 flex-1 flex-col rounded-lg bg-card border ${full ? 'fixed inset-0 z-50 rounded-none' : ''}`}>
@@ -234,7 +234,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
       <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-1.5 text-[11px]">
         <AppWindow className="h-3.5 w-3.5 text-slate-500" />
         {win.windows.map((w) => (
-          <span key={w.index} className={`inline-flex items-center overflow-hidden rounded-md ${w.active ? 'ring-1 ring-primary/25 bg-primary/15 text-primary' : 'border border-border bg-accent text-slate-400'}`}>
+          <span key={w.index} className={`inline-flex items-center overflow-hidden rounded-md ${w.active ? 'border border-transparent ring-1 ring-primary/25 bg-primary/15 text-primary' : 'border border-border bg-accent text-slate-400'}`}>
             <button type="button" onClick={() => winAction('select', w.index)} className="px-2 py-0.5 hover:text-white" title={`janela ${w.index} · ${w.cmd}`}>
               {w.index}:{w.name}
             </button>
@@ -343,15 +343,15 @@ export default function TerminalPage({ data, activity, onFlash }) {
       )}
 
       {!full && (
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-1.5 font-mono text-xs text-slate-500">
-          <span className="inline-flex items-center gap-1">
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-1.5 text-xs text-slate-500">
+          <span className="inline-flex items-center gap-1 font-mono">
             <Cpu className="h-3 w-3" /> {proj ? `sessão ${proj.session} em ${proj.dir}` : 'bash em /root (sessão cr-shell)'}
           </span>
           <span>· fechar a aba não encerra a sessão</span>
           <span>· selecionar com o mouse já copia · Ctrl+C copia a seleção (sem seleção = interromper) · Ctrl+V / botão direito cola · Ctrl+Shift+F busca · roda do mouse rola</span>
           {target === 'shell' && (
             <span>
-              · para o Claude: <code className="text-slate-400">claude</code> ou <code className="text-slate-400">tmux attach -t claude-&lt;projeto&gt;</code>
+              · para o Claude: <code className="font-mono text-slate-400">claude</code> ou <code className="font-mono text-slate-400">tmux attach -t claude-&lt;projeto&gt;</code>
             </span>
           )}
         </p>

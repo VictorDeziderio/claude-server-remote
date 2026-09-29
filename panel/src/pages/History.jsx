@@ -60,7 +60,7 @@ export default function HistoryPage({ data, onFlash }) {
         ) : (
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map((p) => (
-              <Link key={p.name} to={'/history/' + encodeURIComponent(p.name)} className="flex items-center gap-3 rounded-xl bg-accent p-3 border transition hover:bg-accent hover:ring-primary/40">
+              <Link key={p.name} to={'/history/' + encodeURIComponent(p.name)} className="flex items-center gap-3 rounded-xl bg-accent p-3 border transition hover:border-primary/30">
                 <History className="h-5 w-5 shrink-0 text-primary" />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium text-white">{p.name}</div>
@@ -121,14 +121,14 @@ export default function HistoryPage({ data, onFlash }) {
       title={`Conversas de “${name}”`}
       subtitle={list ? `${list.length} conversa(s)` : ''}
       actions={
-        <>
+        <div className="flex flex-wrap items-center gap-3">
           <Link to="/history" className="text-xs text-slate-500 hover:text-slate-300">
             outro projeto
           </Link>
           <Btn size="sm" variant="ghost" onClick={load}>
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           </Btn>
-        </>
+        </div>
       }
     >
       {!list ? (
