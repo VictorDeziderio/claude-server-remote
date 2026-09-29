@@ -135,7 +135,7 @@ Todas têm default no Dockerfile — o serviço sobe sem definir nada. Referênc
 
 | Variável | Default | O quê |
 |----------|---------|-------|
-| `PROJECT_FOLDER` | `projects` | projeto default (criado se o container subir sem nenhum) |
+| `PROJECT_FOLDER` | `claude` | projeto default (criado se o container subir sem nenhum) |
 | `REMOTE_CONTROL_NAME` | (vazio) | vazio → remote usa o **nome do projeto**; defina p/ forçar um fixo |
 | `CLAUDE_AUTOCMD_DELAY` | `15` | segundos mínimos antes de tentar o remote-control |
 | `GH_TOKEN` | (vazio) | token GitHub (escopo `repo`) → auto-login do `gh` + push do backup |
