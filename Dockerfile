@@ -135,7 +135,7 @@ ENV \
     # Multi-tmux: cada projeto tem sua sessao "claude-<nome>" e seu remote-control.
     # PROJECT_FOLDER = nome do projeto default (criado se o container subir sem nenhum).
     # REMOTE_CONTROL_NAME vazio -> o remote usa o NOME DO PROJETO (ex.: /remote-control pilot).
-    PROJECT_FOLDER=projects \
+    PROJECT_FOLDER=claude \
     REMOTE_CONTROL_NAME= \
     CLAUDE_AUTOCMD_DELAY=15 \
     # GitHub: token (escopo repo) p/ auto-login do gh e push do backup. Defina no Environment.

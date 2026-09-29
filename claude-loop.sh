@@ -50,6 +50,30 @@ dismiss_dialog() {
   done
 }
 
+# Workspace novo (achado @qa 2026-09-29, ao vivo): a 1a vez que o Claude abre uma pasta ele
+# pede "Is this project you created or one you trust?" com um menu SEM numeros onde o item
+# default (cursor "❯") e' "No, exit" -- sem essa automacao, TODA sessao nova trava esperando
+# alguem clicar "Yes, I trust this folder" manualmente no terminal web (o painel nao roda
+# nada — nem o /remote-control — enquanto esse dialogo estiver na tela). Automatiza: manda
+# Down (move o cursor pra "Yes, I trust this folder") + Enter.
+trust_prompt_open() { screen | grep -qE 'Is this project you created or one you trust|trust this folder'; }
+accept_trust_prompt() {
+  local waited=0
+  until trust_prompt_open; do
+    tui_ready && return 0                    # workspace ja confiavel -> nunca apareceu
+    sleep 1; waited=$((waited + 1))
+    [ "$waited" -ge 60 ] && return 0          # nao apareceu em 60s -> nao insiste
+  done
+  for _ in 1 2 3 4 5; do
+    trust_prompt_open || { slog "trust: workspace confiado, TUI liberada"; return 0; }
+    tmux send-keys -t "=$SESS:" Down
+    sleep 0.3
+    tmux send-keys -t "=$SESS:" Enter
+    sleep 1
+  done
+  slog "trust: dialogo de confianca nao sumiu apos 5 tentativas — confira manualmente"
+}
+
 # Espera a TUI ficar pronta (le a tela em vez de um sleep fixo), envia o /remote-control
 # (texto e Enter em dois passos: a TUI precisa processar o texto antes do Enter), confirma
 # pelo link na tela e tenta ate 3x. Sem login, nao envia.
@@ -87,9 +111,11 @@ drop_to_shell() {
 }
 
 REMOTE_PID=""
+TRUST_PID=""
 cleanup() {
   rm -f "$RUN_FLAG"
   [ -n "$REMOTE_PID" ] && kill "$REMOTE_PID" 2>/dev/null
+  [ -n "$TRUST_PID" ] && kill "$TRUST_PID" 2>/dev/null
   return 0
 }
 trap cleanup EXIT
@@ -100,6 +126,11 @@ while true; do
   if [ "$CFG_ENABLED" != "true" ] || [ "$CFG_AUTOSTART" != "true" ]; then
     drop_to_shell "[dev-box] Claude DESLIGADO para \"$PROJ_NAME\" no painel — shell livre. Rode  claude  quando quiser."
   fi
+
+  # aceita o "trust this folder" sozinho (roda sempre, mesmo sem remote): sem isso nada mais
+  # nesta sessao avanca -- nem a TUI fica pronta, nem o /remote-control abaixo consegue rodar
+  accept_trust_prompt &
+  TRUST_PID=$!
 
   # remote-control em paralelo ao claude (espera a TUI ficar pronta)
   REMOTE_PID=""
@@ -133,8 +164,9 @@ while true; do
     claude
   fi
   rm -f "$RUN_FLAG"
-  # o envio do remote pertence a ESTE Claude: se ele ja saiu, nao pode digitar no proximo
+  # o envio do remote/trust pertence a ESTE Claude: se ele ja saiu, nao pode digitar no proximo
   if [ -n "$REMOTE_PID" ]; then kill "$REMOTE_PID" 2>/dev/null; wait "$REMOTE_PID" 2>/dev/null; REMOTE_PID=""; fi
+  if [ -n "$TRUST_PID" ]; then kill "$TRUST_PID" 2>/dev/null; wait "$TRUST_PID" 2>/dev/null; TRUST_PID=""; fi
 
   gray "[claude saiu — reabrindo em 3s | Ctrl-C = ficar no shell]"
   # Ctrl-C aqui interrompe o sleep -> cai no shell (em vez de reabrir)

@@ -63,6 +63,31 @@ echo '{"projects":{"p1":{"enabled":false}}}' > "$T/.claude/panel.json"
 start
 tmux has-session -t '=claude-p1' 2>/dev/null; ok "nao cria a sessao" "$([ $? -ne 0 ] && echo 0 || echo 1)"
 
+echo "== workspace novo pede 'trust this folder' -> supervisor aceita sozinho"
+cat > "$T/bin/claude" <<'EOF'
+#!/usr/bin/env bash
+echo "Quick safety check: Is this project you created or one you trust?"
+echo " ❯ No, exit"
+echo "   Yes, I trust this folder"
+echo "Enter to confirm · Esc to cancel"
+trusted=0
+while IFS= read -rsn1 k; do
+  if [ "$trusted" = "0" ]; then
+    # Down (setas chegam como sequencia ESC [ B) move o cursor p/ "Yes"; qualquer outra tecla
+    # antes disso e' ignorada pra simular o menu (o "fake" so entende essa sequencia exata)
+    if [ "$k" = $'\x1b' ]; then IFS= read -rsn2 rest; [ "$rest" = "[B" ] && trusted=1; fi
+  elif [ -z "$k" ]; then   # Enter com o cursor ja em "Yes" -> confirma
+    echo "? for shortcuts"
+    trusted=2
+  fi
+done
+EOF
+chmod +x "$T/bin/claude"
+rm -f "$T/.claude/panel.json"
+echo '{"ok":1}' > "$T/.claude/.credentials.json"
+start
+wait_for '\? for shortcuts' 15; ok "aceita 'trust this folder' sozinho e a TUI libera" "$?" "$(screen | tail -6 | tr '\n' '|')"
+
 echo
 echo "$pass PASS, $fail FAIL"
 [ "$fail" = "0" ]
