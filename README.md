@@ -146,7 +146,7 @@ Todas têm default no Dockerfile — o serviço sobe sem definir nada. Referênc
 | `PANEL_ENABLED` | `true` | liga/desliga o painel |
 | `GATEWAY_PORT` | `8080` | **porta pública** do gateway (aponte o domínio pra ela) |
 | `PROJECTS_DIR` | `/root/projects` | diretório com as pastas de projeto |
-| **`PANEL_LOGIN`** | `admin` | **usuário do login do painel** |
+| **`PANEL_LOGIN`** | `admin` | **usuário do login do painel** — troque do default (achado @security 2026-09-28: `admin` é previsível e reduz o espaço de brute-force à senha; o rate-limit de login é por IP e em memória, não substitui um usuário não-óbvio) |
 | **`PANEL_PASSWORD`** | (vazio) | **senha do login do painel — obrigatória**. Vazia ou igual ao antigo default público → o painel **recusa subir** (fail-closed) |
 | `PANEL_SESSION_DAYS` | `30` | validade da sessão do painel (dias) |
 

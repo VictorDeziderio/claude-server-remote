@@ -26,6 +26,11 @@ ensure_one() {  # $1 = projeto
   proj="$PROJECTS_DIR/$name"
 
   tmux has-session -t "=$sess" 2>/dev/null && return 0   # ja existe -> nada a fazer
+  # o painel acabou de matar essa sessao e esta prestes a recria-la (recreateSession) --
+  # nao interfere nesse instante (evita corrida com o watchdog, achado @qa 2026-09-28).
+  # O lock so existe durante o kill; o proprio ensureSession do painel roda DEPOIS dele
+  # ser liberado, entao nao ha deadlock aqui.
+  [ -f "$RUN_DIR/$sess.lock" ] && return 0
 
   load_proj_config "$name"
   [ "$CFG_ENABLED" = "true" ] || return 0              # desligado -> continua desligado

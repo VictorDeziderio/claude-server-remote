@@ -78,7 +78,9 @@ function downloadConfig(res, file, full) {
     res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': st.size, 'Content-Disposition': `attachment; filename="${file}"`, 'Cache-Control': 'no-store' });
     return fs.createReadStream(p).pipe(res);
   }
-  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  // +PID: mesma razao do backup.sh (achado @qa 2026-09-28) -- evita colisao de nome se
+  // duas gerações caírem no mesmo segundo
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '-' + process.pid;
   const name = `config-${ts}${full ? '-full' : ''}.tgz`;
   const args = ['czf', '-', '-C', cfg.HOME, '--ignore-failed-read'];
   if (!full) args.push('--exclude=.claude/projects', '--exclude=.claude/logs', '--exclude=.claude/run', '--exclude=.claude/todos', '--exclude=.claude/shell-snapshots');

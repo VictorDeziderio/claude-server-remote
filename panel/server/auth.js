@@ -165,14 +165,20 @@ function revokeOthers(req) {
 }
 
 // CSRF: request mutante/WS precisa vir do mesmo site. Navegadores modernos mandam
-// Sec-Fetch-Site; senao comparamos Origin com o Host. Sem nenhum dos dois (curl) -> aceita
-// (o cookie HttpOnly ja nao e enviado por ferramentas externas).
+// Sec-Fetch-Site; senao comparamos Origin com o Host.
+//
+// SEGURANCA (achado @security 2026-09-28): sem NENHUM dos dois sinais, a versao antiga
+// aceitava a requisicao (raciocinio: "e' curl, e curl nao manda o cookie HttpOnly"). Isso
+// protege contra CSRF classico (navegador sempre manda um dos dois), mas NAO protege
+// contra um cookie de sessao ja vazado (log de proxy, extensao maliciosa) sendo reenviado
+// via curl/script fora do navegador -- nesse caso a ausencia de ambos os headers deveria
+// ser tratada como "origem nao comprovada", nao como "aceitar por omissao".
 function sameOrigin(req) {
   const sfs = req.headers['sec-fetch-site'];
   if (sfs) return sfs === 'same-origin' || sfs === 'none';
   const origin = req.headers.origin;
-  if (!origin) return true;
-  try { return new URL(origin).host === hostOf(req); } catch { return false; }
+  if (origin) { try { return new URL(origin).host === hostOf(req); } catch { return false; } }
+  return false; // sem nenhum sinal: nao assume mesma origem
 }
 
 module.exports = { isAuthed, doLogin, doLogout, sameOrigin, clientIp, hostOf, listSessions, revokeSession, revokeOthers, COOKIE };

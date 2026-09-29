@@ -95,8 +95,11 @@ RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
     && rm -rf /var/lib/apt/lists/*
 
 # 7) tmux + gosu + usuario nao-root.
-# O Claude Code se recusa a rodar como root com --dangerously-skip-permissions, entao
-# rodamos como o usuario "ubuntu" (uid 1000), usando /root (o volume) como home dele.
+# O Claude Code se recusa a rodar como root com --dangerously-skip-permissions, entao os
+# PROCESSOS (claude, painel, git, gh, sessoes tmux) rodam como o usuario "ubuntu" (uid 1000),
+# usando /root (o volume) como home dele. O CONTAINER em si sobe como root (PID 1 = tini ->
+# start.sh): so root pode consertar a ownership do volume a cada boot antes de rebaixar via
+# gosu (ver start.sh). Nao ha `USER ubuntu` neste Dockerfile de proposito.
 RUN apt-get update && apt-get install -y --no-install-recommends tmux gosu \
     && rm -rf /var/lib/apt/lists/* \
     && (id ubuntu >/dev/null 2>&1 || useradd -m -s /bin/bash -u 1000 ubuntu) \

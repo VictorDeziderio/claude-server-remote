@@ -30,7 +30,12 @@ export default function useEvents({ enabled, onState, onUnauth, onNotify }) {
     es.addEventListener('activity', (e) => {
       try {
         const d = JSON.parse(e.data)
-        if (d && d.session) setActivity((a) => ({ ...a, [d.session]: { state: d.state, since: d.since } }))
+        // merge (nao substitui) com a entrada anterior: um update incremental que nao traga
+        // busySince/remoteUrl nao pode apagar o que ja estava (achado @qa 2026-09-28)
+        if (d && d.session) {
+          const { session, name, ...fields } = d
+          setActivity((a) => ({ ...a, [session]: { ...(a[session] || {}), ...fields } }))
+        }
         else if (d && typeof d === 'object') setActivity(d) // snapshot inicial
       } catch { /* */ }
     })

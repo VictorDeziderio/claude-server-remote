@@ -62,9 +62,22 @@ async function killSession(name) {
   await sh('tmux', ['kill-session', '-t', '=' + sess]);
   try { fs.rmSync(path.join(cfg.RUN_DIR, sess + '.running'), { force: true }); } catch { /* */ }
 }
-// recria a sessao do zero (fecha remote + Claude) com a config atual
+// recria a sessao do zero (fecha remote + Claude) com a config atual.
+// Trava com um sentinel em RUN_DIR (achado @qa 2026-09-28) so durante o kill: sem ele, o
+// watchdog do start.sh (claude-session.sh --all, a cada 10s) podia enxergar a sessao ja
+// morta e recria-la ANTES do ensureSession daqui rodar (corrida). O lock e' liberado ANTES
+// do ensureSession (nao envolve a chamada inteira): ensureSession chama o MESMO
+// claude-session.sh que respeita o lock, entao segura-lo durante o proprio ensureSession
+// bloquearia o painel de recriar a sua propria sessao (deadlock — pego pelo smoke test).
 async function recreateSession(name) {
-  await killSession(name);
+  const sess = sessionName(name);
+  const lock = path.join(cfg.RUN_DIR, sess + '.lock');
+  try { fs.mkdirSync(cfg.RUN_DIR, { recursive: true }); fs.writeFileSync(lock, String(process.pid)); } catch { /* */ }
+  try {
+    await killSession(name);
+  } finally {
+    try { fs.rmSync(lock, { force: true }); } catch { /* */ }
+  }
   await ensureSession(name);
 }
 const projectExists = (name) => validName(name) && fs.existsSync(path.join(cfg.PROJECTS_DIR, name));

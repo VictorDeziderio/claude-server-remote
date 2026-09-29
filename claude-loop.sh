@@ -110,8 +110,16 @@ while true; do
 
   RESUME_ID=""
   if [ -s "$RESUME_FLAG" ]; then
-    RESUME_ID="$(head -c 100 "$RESUME_FLAG" | tr -cd 'A-Za-z0-9_-')"
+    # so a 1a linha (head -c truncava por BYTES, nao por linha: sobra de escrita concorrente
+    # ou lixo apos o id virava parte do id e o --resume falhava calado com um id invalido)
+    RESUME_ID="$(head -n1 "$RESUME_FLAG" | tr -cd 'A-Za-z0-9_-')"
     rm -f "$RESUME_FLAG"
+    # formato esperado (history.js): ^[A-Za-z0-9_-]{6,80}$ — fora disso, ignora em vez de
+    # tentar um --resume com id quebrado
+    [[ "$RESUME_ID" =~ ^[A-Za-z0-9_-]{6,80}$ ]] || {
+      [ -n "$RESUME_ID" ] && slog "resume: flag com formato invalido, ignorando ($RESUME_ID)"
+      RESUME_ID=""
+    }
   fi
 
   : > "$RUN_FLAG"

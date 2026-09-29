@@ -28,18 +28,31 @@ valid_name() { [[ "$1" =~ ^[A-Za-z0-9._-]{1,64}$ ]] && [ "$1" != "." ] && [ "$1"
 #   autoStartClaude  true  -> a sessao roda o Claude (senao, so um shell)
 #   autoRemote       true  -> religa o /remote-control a cada inicio do Claude
 proj_config() {  # $1 = projeto
+  # FAIL-CLOSED (achado @qa 2026-09-28): panel.json AUSENTE e' normal (projeto novo, 1a
+  # subida) -> usa os defaults (enabled=true etc). Ja panel.json PRESENTE mas com JSON
+  # CORROMPIDO e' uma falha real -> reportar enabled=false, e NAO os defaults, senao um
+  # projeto explicitamente desligado (enabled=false) "renasce" sozinho sempre que o
+  # arquivo falhar em parsear (ex.: leitura no meio de uma escrita nao-atomica externa).
   "$NODE_BIN" -e '
     const fs = require("fs");
     const [, file, proj] = process.argv; // com -e, argv[1] ja e o 1o argumento
-    let c = {}; try { c = JSON.parse(fs.readFileSync(file, "utf8")) || {}; } catch {}
-    const d = c.defaults || {}, p = (c.projects && c.projects[proj]) || {};
-    const pick = (k) => (k in p ? p[k] !== false : (k in d ? d[k] !== false : true));
-    const il = typeof p.initLine === "string" ? p.initLine : "";
-    process.stdout.write(
-      "enabled=" + pick("enabled") + "\nautoStartClaude=" + pick("autoStartClaude") +
-      "\nautoRemote=" + pick("autoRemote") + "\ninitLine=" + Buffer.from(il).toString("base64") + "\n");
+    let c = {}, corrupt = false;
+    try {
+      const raw = fs.readFileSync(file, "utf8");
+      try { c = JSON.parse(raw) || {}; } catch { c = {}; corrupt = true; }
+    } catch { /* arquivo ausente: normal, cai nos defaults abaixo */ }
+    if (corrupt) {
+      process.stdout.write("enabled=false\nautoStartClaude=false\nautoRemote=false\ninitLine=\n");
+    } else {
+      const d = c.defaults || {}, p = (c.projects && c.projects[proj]) || {};
+      const pick = (k) => (k in p ? p[k] !== false : (k in d ? d[k] !== false : true));
+      const il = typeof p.initLine === "string" ? p.initLine : "";
+      process.stdout.write(
+        "enabled=" + pick("enabled") + "\nautoStartClaude=" + pick("autoStartClaude") +
+        "\nautoRemote=" + pick("autoRemote") + "\ninitLine=" + Buffer.from(il).toString("base64") + "\n");
+    }
   ' "$PANEL_CONFIG" "$1" 2>/dev/null \
-    || printf 'enabled=true\nautoStartClaude=true\nautoRemote=true\ninitLine=\n'
+    || printf 'enabled=false\nautoStartClaude=false\nautoRemote=false\ninitLine=\n'
 }
 
 # carrega a config do projeto em variaveis CFG_* (CFG_ENABLED, CFG_AUTOSTART, CFG_REMOTE, CFG_INITLINE)

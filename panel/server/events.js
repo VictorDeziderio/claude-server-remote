@@ -63,7 +63,7 @@ async function tickSession(name, running) {
   const prevState = a.state;
   if (!running) {
     a.state = 'off'; a.busySince = 0;
-    if (prevState !== 'off') { a.changedAt = Date.now(); broadcast('activity', { name, session: sess, state: 'off', since: a.changedAt }); }
+    if (prevState !== 'off') { a.changedAt = Date.now(); broadcast('activity', { name, session: sess, state: 'off', since: a.changedAt, busySince: 0, remoteUrl: a.remoteUrl || '' }); }
     return;
   }
   // -J: junta as linhas quebradas pela largura (o link do remote sai inteiro)
@@ -89,7 +89,10 @@ async function tickSession(name, running) {
   if (next !== prevState) {
     const busyFor = a.busySince ? now - a.busySince : 0;
     a.state = next; a.changedAt = now;
-    broadcast('activity', { name, session: sess, state: next, since: now });
+    // manda busySince/remoteUrl junto (achado @qa 2026-09-28): o reducer do cliente
+    // (useEvents.js) faz merge, mas o payload precisa trazer o valor certo — 0 quando
+    // sai de 'busy' (o reset de a.busySince abaixo so acontece DEPOIS deste broadcast)
+    broadcast('activity', { name, session: sess, state: next, since: now, busySince: next === 'busy' ? a.busySince : 0, remoteUrl: a.remoteUrl || '' });
     if (next === 'prompt') {
       broadcast('notify', { kind: 'prompt', name, title: `Claude está esperando você — ${name}`, body: 'Há uma pergunta/permissão pendente no terminal.' });
     } else if (next === 'idle' && prevState === 'busy' && busyFor >= 5000) {
