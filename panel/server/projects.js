@@ -163,7 +163,15 @@ async function sendRemote(name) {
   await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', cmd]);
   await new Promise((r) => setTimeout(r, 800));
   await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-m']);
-  // o /remote-control abre um dialogo ("> Continue · Esc to continue") que trava o prompt:
+  // Claude Code 2.1.28x+: pede confirmacao ("❯ 1. Enable Remote Control") -> Enter aceita
+  // (Esc seria "Never mind"). Olha por ate ~8s.
+  for (let i = 0; i < 8; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const c = await sh('tmux', ['capture-pane', '-t', paneOf(sess), '-p', '-S', '-40']);
+    if (c.ok && /❯\s*1\.\s*Enable Remote Control/.test(c.stdout)) { await sh('tmux', ['send-keys', '-t', paneOf(sess), 'Enter']); break; }
+    if (c.ok && /claude\.ai\/code\//.test(c.stdout)) break;
+  }
+  // versoes anteriores abriam um dialogo ("> Continue · Esc to continue") que trava o prompt:
   // em ~10s, se ele estiver na tela, manda Esc p/ voltar ao prompt (o link continua valido)
   setTimeout(async () => {
     for (let i = 0; i < 5; i++) {

@@ -1,7 +1,7 @@
 {
   "name": "claude-remote-panel",
   "private": true,
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "Claude Remote — painel do dev-box (React + Tailwind + xterm.js + CodeMirror, servido pelo server.js com terminal via WebSocket/PTY, SSE, 2FA)",
   "scripts": {
     "dev": "vite",
@@ -21,6 +21,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.15.0",
+    "@xterm/addon-unicode11": "^0.8.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/addon-webgl": "^0.18.0",
     "@xterm/xterm": "^5.5.0",

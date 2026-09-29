@@ -39,6 +39,9 @@ remote_up() { screen | grep -qE '(claude\.ai/code/|[Rr]emote[- ]control (is )?(o
 # o /remote-control abre um dialogo ("Disconnect this session / Show QR code / > Continue",
 # "Enter to select · Esc to continue") que trava o prompt ate alguem apertar Enter/Esc.
 dialog_open() { screen | grep -qE '(Esc to continue|Disconnect this session|Show QR code)'; }
+# Claude Code 2.1.28x+: /remote-control pede CONFIRMACAO ("❯ 1. Enable Remote Control / 2. Never
+# mind"). Enter aceita a opcao 1 (a default); Esc aqui seria "Never mind".
+confirm_open() { screen | grep -qE '❯[[:space:]]*1\.[[:space:]]*Enable Remote Control'; }
 dismiss_dialog() {
   for _ in 1 2 3 4 5; do
     dialog_open || return 0
@@ -63,7 +66,12 @@ send_remote_when_ready() {  # $1 = comando
     tmux send-keys -t "=$SESS:" -l "$cmd"
     sleep 0.8
     tmux send-keys -t "=$SESS:" C-m
-    sleep 12
+    # ate 12s: confirma o dialogo novo (se aparecer) e espera o link
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+      sleep 1
+      if confirm_open; then slog "remote: confirmando 'Enable Remote Control'"; tmux send-keys -t "=$SESS:" Enter; fi
+      remote_up && break
+    done
     if remote_up; then slog "remote: ativo (tentativa $attempt)"; dismiss_dialog; return 0; fi
     tmux send-keys -t "=$SESS:" C-u 2>/dev/null || true   # linha ficou digitada? limpa e tenta de novo
     sleep 5

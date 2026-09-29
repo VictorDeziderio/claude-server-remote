@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { Loader2, Plus } from 'lucide-react'
+import { Loader2, Plus, RefreshCw } from 'lucide-react'
 import Layout from './components/Layout.jsx'
 import Login from './components/Login.jsx'
 import { Btn, Toast, Skeleton } from './components/ui.jsx'
@@ -71,12 +71,24 @@ export default function App() {
   if (authed === false) return <Login onSuccess={() => { setAuthed(true); refresh() }} />
 
   const isTerm = pathname.startsWith('/terminal')
+  // aba aberta antes de um deploy: o servidor ja e outro build, mas este JS e o antigo
+  // (modal de login velho, sem copiar-ao-selecionar...) -> avisa e oferece recarregar
+  /* global __PANEL_VERSION__, __PANEL_BUILD__ */
+  const stale = !!data && ((data.panelVersion && data.panelVersion !== __PANEL_VERSION__)
+    || (__PANEL_BUILD__ && data.buildTime && data.buildTime !== __PANEL_BUILD__))
   const actions = pathname.startsWith('/dashboard')
     ? <Btn variant="accent" onClick={() => setShowNew(true)}><Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline"> Novo projeto</span></Btn>
     : null
 
   return (
     <Layout data={data} live={live} onLogout={doLogout} onRefresh={refresh} actions={actions} notif={notifPerm} onToggleNotif={toggleNotif}>
+      {stale && (
+        <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-sky-500/10 px-4 py-2.5 text-sm text-sky-100 ring-1 ring-sky-500/30">
+          <RefreshCw className="h-4 w-4 text-sky-300" />
+          <span>O painel foi atualizado no servidor (v{data.panelVersion}). Esta aba ainda roda a versão anterior.</span>
+          <Btn variant="accent" className="ml-auto" onClick={() => window.location.reload()}><RefreshCw className="h-3.5 w-3.5" /> Recarregar agora</Btn>
+        </div>
+      )}
       {!data ? <DashboardSkeleton /> : (
         <Suspense fallback={<Loading />}>
           <Routes>

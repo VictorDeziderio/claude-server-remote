@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebglAddon } from '@xterm/addon-webgl'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import { termWsUrl } from '../api.js'
 import { copyText, readClipboard, decodeOsc52 } from '../lib/clipboard.js'
@@ -128,6 +129,11 @@ const XTerm = forwardRef(function XTerm({ target, fontSize = 13, detach = false,
     term.loadAddon(fit)
     term.loadAddon(search)
     term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank', 'noopener,noreferrer')))
+    // Larguras Unicode 11 (as do tmux/glibc). Com a tabela padrao (Unicode 6) xterm e tmux
+    // discordam da largura de simbolos (✻ ❯ ⏺ emojis...) -> o cursor desalinha e sobram
+    // "quadradinhos"/restos da animacao do Claude na tela.
+    term.loadAddon(new Unicode11Addon())
+    term.unicode.activeVersion = '11'
     term.open(boxRef.current)
     termRef.current = term; fitRef.current = fit; searchRef.current = search
     // Renderizador WebGL: MUITO mais rapido que o DOM (a TUI do Claude redesenha a tela toda).

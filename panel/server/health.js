@@ -67,6 +67,11 @@ async function updateClaude() {
     claude.resetVersionCache();
     latestCache = { t: 0, v: '' };
     const v = await claude.claudeVersion();
+    // desde a 2.1.28x o `claude` e um binario nativo (dependencia opcional): se o download dele
+    // falhou, o npm "passa" mas o claude nao roda -> reprova em vez de dizer "atualizado"
+    if (r.ok && !/\d+\.\d+\.\d+/.test(v)) {
+      return { ok: false, msg: 'npm instalou, mas o binario nativo do Claude Code nao veio (download falhou) — clique em Atualizar de novo', output: (r.stdout + r.stderr).slice(-2000) };
+    }
     return r.ok
       ? { ok: true, msg: `Claude Code atualizado: ${v}. As sessoes em execucao continuam na versao antiga ate reiniciar.`, output: (r.stdout + r.stderr).slice(-2000) }
       : { ok: false, msg: 'falha ao atualizar: ' + (r.stderr || '').slice(-500), output: (r.stdout + r.stderr).slice(-2000) };

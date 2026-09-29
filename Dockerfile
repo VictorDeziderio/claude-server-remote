@@ -8,7 +8,10 @@
 # Monte um Volume do EasyPanel em /root para o trabalho + login do Claude (~/.claude)
 # nao sumirem no redeploy.
 
-ARG CLAUDE_CODE_VERSION=2.1.258
+# Claude Code: "latest" (default) instala a versao MAIS RECENTE do npm em cada build — o ADD do
+# manifesto do registry (etapa 8) invalida o cache do Docker quando sai versao nova. Para pinar,
+# passe uma versao exata (ex.: --build-arg CLAUDE_CODE_VERSION=2.1.284).
+ARG CLAUDE_CODE_VERSION=latest
 ARG PLAYWRIGHT_VERSION=1.62.1
 # quais browsers instalar no Playwright: "chromium chrome" (default) | "chrome" (so o Google Chrome,
 # ~300MB a menos; scripts sem channel:'chrome' deixam de funcionar) | "chromium"
@@ -73,8 +76,8 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
-# 4) Claude Code + Playwright (versoes pinadas) + gerenciadores JS (global)
-RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "playwright@${PLAYWRIGHT_VERSION}" pnpm yarn bun \
+# 4) Playwright (versao pinada) + gerenciadores JS (global). O Claude Code vem na etapa 8.
+RUN npm install -g "playwright@${PLAYWRIGHT_VERSION}" pnpm yarn bun \
     && npm cache clean --force
 
 # 5) Browsers do Playwright + dependencias de SO (ver ARG PLAYWRIGHT_BROWSERS).
@@ -103,6 +106,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends tmux gosu \
 # Config global do tmux (truecolor, mouse, window-size latest p/ varios clientes, status
 # com o tema do painel). Em /etc para nao ser ocultada pelo volume montado em /root.
 COPY tmux.conf /etc/tmux.conf
+
+# 8) Claude Code — por ultimo entre as ferramentas: quando sai versao nova, so esta camada (e as
+#    seguintes) e refeita; Playwright/Chrome/apt ficam no cache.
+#    O ADD de uma URL remota e comparado a cada build: mudou o "latest" no npm -> cache invalidado.
+ADD https://registry.npmjs.org/@anthropic-ai/claude-code/latest /tmp/claude-code-latest.json
+#    Desde a 2.1.28x o `claude` e um BINARIO NATIVO numa dependencia opcional por plataforma; se o
+#    download dele falha o npm so avisa e a imagem sairia com o Claude quebrado. Por isso: ate 3
+#    tentativas e o build REPROVA se `claude --version` nao rodar no fim.
+RUN set -e; V="${CLAUDE_CODE_VERSION}"; \
+    if [ "$V" = "latest" ]; then V="$(jq -r .version /tmp/claude-code-latest.json)"; fi; \
+    for i in 1 2 3; do \
+      npm install -g --include=optional "@anthropic-ai/claude-code@${V}" \
+        && claude --version >/dev/null 2>&1 && break; \
+      echo ">> tentativa $i: binario nativo do Claude Code ausente — reinstalando"; sleep 5; \
+    done; \
+    claude --version || { echo ">> ERRO: Claude Code ${V} sem binario nativo"; exit 1; }; \
+    npm cache clean --force; rm -f /tmp/claude-code-latest.json
 
 # ============================================================================
 # Runtime: ENV + scripts (o que muda no dia a dia)

@@ -153,7 +153,7 @@ Todas têm default no Dockerfile — o serviço sobe sem definir nada. Referênc
 ---
 
 ## 🛠️ Toolchain incluído
-`claude-code` (versão pinada: `CLAUDE_CODE_VERSION`) · `playwright` (`PLAYWRIGHT_VERSION`; browsers
+`claude-code` (**sempre a mais recente do npm a cada build**; `CLAUDE_CODE_VERSION=<x.y.z>` pina) · `playwright` (`PLAYWRIGHT_VERSION`; browsers
 em `PLAYWRIGHT_BROWSERS`, default `chromium chrome`) · node 22 · npm/pnpm/yarn/bun · git · `gh` ·
 ripgrep · fd · jq · tree · build-essential · python3/pip/venv · `psql` · tmux · caddy.
 
@@ -166,9 +166,10 @@ No Playwright, use o Chrome real com `channel: 'chrome'`. Mais browsers: `playwr
   `main`, **build path `/claude`**, Dockerfile) · **Armazenamento → Volume** `claude-data` →
   `/root` · **Domínios** → porta **`8080`** · Deploy.
 - **Imagem self-contained, multi-stage:** o painel é buildado numa stage Node (`npm ci && npm run
-  build && npm prune --omit=dev`, compila o `node-pty`) e só o resultado entra na imagem final. Versões
-  do Claude Code/Playwright são **pinadas por `ARG`** — para subir, mude o `ARG` no Dockerfile e faça
-  redeploy (ou use **Atualizar** no painel para a instalação viva, até o próximo redeploy).
+  build && npm prune --omit=dev`, compila o `node-pty`) e só o resultado entra na imagem final.
+  **Claude Code: a mais recente do npm em cada build** (o manifesto `latest` do registry invalida o cache
+  do Docker quando sai versão nova; pine com `CLAUDE_CODE_VERSION=x.y.z`). Playwright é pinado por `ARG`.
+  Entre deploys, **Atualizar** no painel atualiza a instalação viva.
 - **Dev local do painel:** `cd claude/panel && npm install && npm run dev` (Vite na 5173 com proxy
   de `/api` e `/ws` para um `node server.js` na 7001 — precisa de tmux, i.e. Linux/WSL).
   Testes: `npm test` (smoke test do servidor; com tmux instalado testa o PTY real).
@@ -218,7 +219,7 @@ O filtro de IP **não** fica no container (o proxy do EasyPanel mascara o IP rea
 ## 🗂️ Arquivos (em `claude/`)
 | Arquivo | Papel |
 |---------|-------|
-| `Dockerfile` | imagem self-contained multi-stage (toolchain + painel), versões pinadas por `ARG` |
+| `Dockerfile` | imagem self-contained multi-stage (toolchain + painel); Claude Code sempre o mais recente, Playwright pinado |
 | `start.sh` | entrypoint: settings, sessões tmux, watchdog, backups, gateway Caddy |
 | `devbox-lib.sh` | biblioteca comum dos scripts (`/usr/local/lib/devbox/lib.sh`): leitura do `panel.json`, nome da sessão, login |
 | `claude-session.sh` | garante a sessão tmux de um projeto (`--all` = todos os ligados), honrando o `panel.json` |
