@@ -29,7 +29,7 @@ export default function Account({ data, onFlash, refresh }) {
 
   return (
     <div className="space-y-6">
-      <Card className="p-5">
+      <Card>
         <div className="flex items-start gap-4">
           <div className="grid h-14 w-14 shrink-0 place-items-center rounded-lg bg-accent ring-1 ring-primary/30">
             <UserRound className="h-7 w-7 text-primary" />
@@ -121,7 +121,6 @@ function ClaudeVersionCard({ onFlash, refresh }) {
   const c = (h && h.claude) || {}
   return (
     <Card
-      className="p-5"
       title="Claude Code"
       subtitle={h ? `node ${h.node}` : ''}
       actions={
@@ -248,7 +247,7 @@ function TwoFactorCard({ onFlash }) {
   )
 
   return (
-    <Card className="p-5" title="Autenticação em dois fatores (2FA)" subtitle={st?.enabled ? `ativo desde ${fmtDate(st.enabledAt)}` : 'desativado'}>
+    <Card title="Autenticação em dois fatores (2FA)" subtitle={st?.enabled ? `ativo desde ${fmtDate(st.enabledAt)}` : 'desativado'}>
       {!st ? (
         <Skeleton className="h-16" />
       ) : st.enabled ? (
@@ -361,7 +360,6 @@ function SessionsCard({ onFlash }) {
   }
   return (
     <Card
-      className="p-5"
       title="Sessões do painel"
       subtitle={list ? `${list.length} ativa(s)` : ''}
       actions={
