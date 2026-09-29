@@ -22,7 +22,7 @@ const KEYS = [
 ]
 const STATUS = {
   connecting: { label: 'conectando…', Icon: Loader2, cls: 'text-amber-300', spin: true },
-  open: { label: 'conectado', Icon: Wifi, cls: 'text-emerald-300' },
+  open: { label: 'conectado', Icon: Wifi, cls: 'text-live-400 drop-shadow-[0_0_6px_rgba(79,224,203,.5)]' },
   closed: { label: 'reconectando…', Icon: WifiOff, cls: 'text-amber-300' },
   error: { label: 'erro', Icon: AlertTriangle, cls: 'text-rose-300' },
 }
@@ -98,8 +98,10 @@ export default function TerminalPage({ data, activity, onFlash }) {
   const S = STATUS[status] || STATUS.connecting
   const proj = projects.find((p) => p.name === target)
   const actOf = (p) => (activity && activity[p.session] && activity[p.session].state) || p.activity || 'off'
-  const tabCls = (active) => `flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-claude/60 ${
-    active ? 'bg-claude/15 text-claude ring-1 ring-claude/25' : 'bg-ink-700/60 text-slate-400 ring-1 ring-white/5 hover:bg-ink-500 hover:text-slate-200'}`
+  const tabCls = (active) => `relative flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-claude/60 ${
+    active
+      ? 'bg-claude/15 text-claude ring-1 ring-claude/25 after:absolute after:-bottom-2 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-claude after:content-[""]'
+      : 'bg-ink-700/60 text-slate-400 ring-1 ring-white/5 hover:bg-ink-500 hover:text-slate-200'}`
 
   return (
     <div className={`flex min-h-0 flex-1 flex-col rounded-2xl bg-ink-800 ring-1 ring-white/5 ${full ? 'fixed inset-0 z-50 rounded-none' : ''}`}>
@@ -198,7 +200,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
       )}
 
       {!full && (
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/5 px-3 py-1.5 text-[11px] text-slate-500">
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/5 px-3 py-1.5 font-mono text-mono-sm text-slate-500">
           <span className="inline-flex items-center gap-1"><Cpu className="h-3 w-3" /> {proj ? `sessão ${proj.session} em ${proj.dir}` : 'bash em /root (sessão cr-shell)'}</span>
           <span>· fechar a aba não encerra a sessão</span>
           <span>· selecionar com o mouse já copia · Ctrl+C copia a seleção (sem seleção = interromper) · Ctrl+V / botão direito cola · Ctrl+Shift+F busca · roda do mouse rola</span>

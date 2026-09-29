@@ -115,14 +115,17 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
 
   const parts = cur ? cur.split('/') : []
   const Crumbs = () => (
-    <div className="flex min-w-0 flex-wrap items-center gap-0.5 text-sm text-slate-300">
-      <button type="button" onClick={() => go('')} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/5" title="/root"><Home className="h-3.5 w-3.5 text-claude" /> {!embedded && 'root'}</button>
+    <div className="flex min-w-0 flex-wrap items-center gap-0.5 text-sm">
+      <button type="button" onClick={() => go('')} title="/root"
+        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition hover:bg-white/5 ${parts.length === 0 ? 'text-slate-200 font-medium' : 'text-slate-500 hover:text-slate-300'}`}>
+        <Home className="h-3.5 w-3.5 text-claude" /> {!embedded && 'root'}
+      </button>
       {parts.map((seg, i) => (
         <span key={i} className="inline-flex items-center gap-0.5">
-          <ChevronRight className="h-3.5 w-3.5 text-slate-600" />
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-700" />
           {i === parts.length - 1
-            ? <span className="max-w-[12rem] truncate px-1.5 py-0.5 text-slate-100">{seg}</span>
-            : <button type="button" onClick={() => go(parts.slice(0, i + 1).join('/'))} className="max-w-[10rem] truncate rounded px-1.5 py-0.5 hover:bg-white/5">{seg}</button>}
+            ? <span className="max-w-[12rem] truncate px-1.5 py-0.5 font-medium text-slate-200">{seg}</span>
+            : <button type="button" onClick={() => go(parts.slice(0, i + 1).join('/'))} className="max-w-[10rem] truncate rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-white/5 hover:text-slate-300">{seg}</button>}
         </span>
       ))}
     </div>
@@ -130,16 +133,17 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
 
   if (kind === 'file' && file) {
     return (
-      <div className={`flex h-full min-h-0 flex-col rounded-2xl bg-ink-800 ring-1 ring-white/5 ${embedded ? '' : 'min-h-[60vh]'}`}>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 px-3 py-2">
+      <div className={`flex h-full min-h-0 flex-col rounded-2xl bg-ink-800 ring-1 ring-white/6 ${embedded ? '' : 'min-h-[60vh]'}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/6 px-3 py-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
             <Btn size="sm" onClick={() => go(parentOf(cur))}><ArrowLeft className="h-3.5 w-3.5" /> {!embedded && 'Voltar'}</Btn>
             <Crumbs />
-            {dirty && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-300">não salvo</span>}
-            {!embedded && <span className="text-[11px] text-slate-500">{fmtSize(file.size)} · {fmtDate(file.mtime)}</span>}
+            {dirty && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-mono text-mono-sm text-amber-300">não salvo</span>}
+            {!embedded && <span className="font-mono text-mono-sm text-slate-500">{fmtSize(file.size)} · {fmtDate(file.mtime)}</span>}
           </div>
           <div className="flex items-center gap-1.5">
-            <a href={api.fsDownloadUrl(file.path)} className="inline-flex items-center gap-1.5 rounded-lg bg-ink-500 px-2.5 py-1.5 text-xs font-medium text-slate-100 transition hover:bg-ink-500/70" title="baixar"><Download className="h-3.5 w-3.5" /></a>
+            <a href={api.fsDownloadUrl(file.path)} title="baixar"
+              className="rounded-lg bg-ink-700/60 p-2 text-slate-300 ring-1 ring-white/6 transition duration-150 hover:bg-ink-600 hover:text-white"><Download className="h-3.5 w-3.5" /></a>
             <Btn size="sm" variant="accent" busy={busy === 'save'} disabled={!dirty} onClick={save} title="Ctrl+S"><Save className="h-3.5 w-3.5" /> Salvar</Btn>
           </div>
         </div>
@@ -174,7 +178,11 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
         )}
         {cur !== '' && <Row onOpen={() => go(parentOf(cur))} icon={<Folder className="h-4 w-4 text-slate-400" />} name=".." muted />}
         {loading && entries.length === 0 && <div className="space-y-1 p-2"><Skeleton className="h-8" /><Skeleton className="h-8" /><Skeleton className="h-8" /></div>}
-        {entries.length === 0 && !loading && !creating && <Empty>pasta vazia — arraste arquivos aqui para enviar</Empty>}
+        {entries.length === 0 && !loading && !creating && (
+          <div className="m-1.5 rounded-xl ring-1 ring-dashed ring-white/15">
+            <Empty>pasta vazia — arraste arquivos aqui para enviar</Empty>
+          </div>
+        )}
         {entries.map((e) => {
           const Ic = e.type === 'dir' ? Folder : iconFor(e.name)
           const full = joinPath(cur, e.name)
@@ -199,8 +207,8 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
               icon={<Ic className={`h-4 w-4 ${e.type === 'dir' ? 'text-claude' : 'text-slate-400'}`} />}
               name={e.name}
               right={e.outside
-                ? <span className="text-[11px] text-amber-300" title="symlink que aponta para fora de /root — o painel não abre; você pode renomear ou excluir o link">link p/ fora de /root</span>
-                : !embedded && <span className="hidden text-[11px] text-slate-500 sm:inline">{e.type === 'file' ? fmtSize(e.size) + ' · ' : ''}{fmtDate(e.mtime)}</span>}
+                ? <span className="font-mono text-mono-sm text-amber-300" title="symlink que aponta para fora de /root — o painel não abre; você pode renomear ou excluir o link">link p/ fora de /root</span>
+                : !embedded && <span className="hidden font-mono text-mono-sm text-slate-500 sm:inline">{e.type === 'file' ? fmtSize(e.size) + ' · ' : ''}{fmtDate(e.mtime)}</span>}
               actions={
                 <>
                   {e.type === 'file' && !e.outside && <a href={api.fsDownloadUrl(full)} onClick={(ev) => ev.stopPropagation()} title="baixar" className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-slate-200"><Download className="h-3.5 w-3.5" /></a>}

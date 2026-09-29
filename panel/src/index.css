@@ -1,3 +1,10 @@
+@import '@fontsource/plus-jakarta-sans/400.css';
+@import '@fontsource/plus-jakarta-sans/500.css';
+@import '@fontsource/plus-jakarta-sans/600.css';
+@import '@fontsource/plus-jakarta-sans/700.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
 @import '@fontsource/jetbrains-mono/400.css';
 @import '@fontsource/jetbrains-mono/500.css';
 @import '@fontsource/jetbrains-mono/700.css';
@@ -11,32 +18,37 @@
 html, body, #root { height: 100%; }
 body {
   margin: 0;
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(217, 119, 87, 0.10), transparent 60%),
-    #0b0d12;
-  color: #e7e9ee;
+    radial-gradient(1200px 600px at 80% -10%, rgba(227, 125, 69, 0.10), transparent 60%),
+    #080B11;
+  color: #ECF1F8;
   overflow: hidden; /* cada pagina rola no seu proprio container (o terminal precisa de altura fixa) */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 /* scrollbar discreta */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-thumb { background: #2a3140; border-radius: 8px; }
+*::-webkit-scrollbar-thumb { background: #1E2A45; border-radius: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
 
-/* xterm.js: ocupa o container inteiro, sem borda branca; scrollbar no tema */
-.xterm { height: 100%; padding: 6px 8px; }
+/* cartoes/listas entrando na tela (Dashboard etc.) */
+@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* xterm.js: fonte dedicada (JetBrains Mono -- cobertura de box-drawing p/ TUIs como tmux),
+   ocupa o container inteiro, sem borda branca; scrollbar no tema */
+.xterm { height: 100%; padding: 6px 8px; font-family: "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace; }
 .xterm .xterm-viewport { background-color: transparent !important; }
-.xterm .xterm-viewport::-webkit-scrollbar-thumb { background: #2a3140; }
+.xterm .xterm-viewport::-webkit-scrollbar-thumb { background: #1E2A45; }
 .xterm .xterm-screen { outline: none; }
 
 /* CodeMirror (editor de arquivos) */
 .cm-editor { height: 100%; font-size: 13px; }
 .cm-editor .cm-scroller { font-family: "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace; line-height: 1.55; }
 .cm-editor.cm-focused { outline: none; }
-.cm-editor .cm-gutters { background: #0b0d12; border-right: 1px solid rgba(255,255,255,.05); color: #5b6478; }
+.cm-editor .cm-gutters { background: #080B11; border-right: 1px solid rgba(255,255,255,.05); color: #57668A; }
 .cm-editor .cm-activeLineGutter { background: rgba(255,255,255,.04); }
-.cm-editor .cm-content { background: #0b0d12; }
+.cm-editor .cm-content { background: #080B11; }
 .cm-editor .cm-activeLine { background: rgba(255,255,255,.03); }
-.cm-editor .cm-selectionBackground, .cm-editor.cm-focused .cm-selectionBackground { background: rgba(217,119,87,.28) !important; }
-.cm-editor .cm-cursor { border-left-color: #D97757; }
+.cm-editor .cm-selectionBackground, .cm-editor.cm-focused .cm-selectionBackground { background: rgba(227,125,69,.28) !important; }
+.cm-editor .cm-cursor { border-left-color: #E37D45; }

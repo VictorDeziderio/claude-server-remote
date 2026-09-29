@@ -33,18 +33,24 @@ export default function BackupPage({ onFlash }) {
               <li key={p.name} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
                 <GitBranch className={`h-4 w-4 ${p.git && p.origin ? 'text-claude' : 'text-slate-600'}`} />
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2 text-slate-100">
-                    {p.name}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-slate-200">{p.name}</span>
                     {!p.git && <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-[10px] text-slate-400">não é repo git</span>}
                     {p.git && !p.origin && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-300">sem origin — ignorado pelo backup</span>}
                     {p.dirty ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-300">{p.dirty} alteração(ões) sem commit</span> : null}
                   </div>
                   <div className="truncate text-xs text-slate-500">
                     {p.origin ? <code>{p.origin}</code> : p.git ? 'configure: git remote add origin <url>' : ''}
-                    {p.last && <span className="ml-2 inline-flex items-center gap-1">{levelIcon(p.last.level)} {p.last.ts} — {p.last.msg}</span>}
+                    {p.last && (
+                      <span className="ml-2 inline-flex items-center gap-1">
+                        {levelIcon(p.last.level)}
+                        <span className="font-mono text-mono-sm text-slate-500">{p.last.ts}</span>
+                        <span className="text-slate-500">— {p.last.msg}</span>
+                      </span>
+                    )}
                   </div>
                 </div>
-                {p.git && p.origin && <Btn size="sm" busy={busy === p.name} onClick={() => run(p.name)}><DatabaseBackup className="h-3.5 w-3.5" /> agora</Btn>}
+                {p.git && p.origin && <Btn size="sm" variant="ghost" busy={busy === p.name} onClick={() => run(p.name)}><DatabaseBackup className="h-3.5 w-3.5" /> agora</Btn>}
               </li>
             ))}
           </ul>
@@ -53,7 +59,11 @@ export default function BackupPage({ onFlash }) {
       </Card>
 
       <Card title="Config do Claude (~/.claude + ~/.claude.json)" subtitle="login, panel.json, segredos do painel, settings"
-        actions={<><Btn size="sm" busy={busy === 'config'} onClick={runConfig}><Archive className="h-3.5 w-3.5" /> Gerar snapshot agora</Btn><a href={api.backupDownloadUrl('', false)} className="inline-flex items-center gap-1.5 rounded-lg bg-claude/90 px-2 py-1 text-xs font-medium text-white hover:bg-claude"><Download className="h-3.5 w-3.5" /> Baixar agora (leve)</a><a href={api.backupDownloadUrl('', true)} className="inline-flex items-center gap-1.5 rounded-lg bg-ink-500 px-2 py-1 text-xs font-medium text-slate-100 hover:bg-ink-500/70" title="inclui o histórico de conversas (pode ser grande)"><Download className="h-3.5 w-3.5" /> Baixar completo</a></>}>
+        actions={<>
+          <Btn size="sm" variant="ghost" busy={busy === 'config'} onClick={runConfig}><Archive className="h-3.5 w-3.5" /> Gerar snapshot agora</Btn>
+          <a href={api.backupDownloadUrl('', false)} className="inline-flex items-center gap-1.5 rounded-lg bg-claude px-3 py-1.5 text-[13px] font-medium text-white transition duration-150 hover:bg-claude-600 hover:shadow-glow-accent"><Download className="h-3.5 w-3.5" /> Baixar agora (leve)</a>
+          <a href={api.backupDownloadUrl('', true)} className="inline-flex items-center gap-1.5 rounded-lg bg-transparent px-3 py-1.5 text-[13px] font-medium text-slate-300 ring-1 ring-white/10 transition duration-150 hover:bg-white/5" title="inclui o histórico de conversas (pode ser grande)"><Download className="h-3.5 w-3.5" /> Baixar completo</a>
+        </>}>
         <p className="mb-3 text-sm text-slate-300">Se o volume <code>/root</code> sumir, o login do Claude, o <code>panel.json</code>, o 2FA e as sessões vão junto. Um snapshot é gerado <b>1×/dia</b> em <code>/root/.claude-backups</code> (mantém 7) — mas isso está <b>no mesmo volume</b>: baixe de tempos em tempos.</p>
         {!st ? <Skeleton className="h-16" /> : (st.configBackups || []).length === 0 ? <Empty>nenhum snapshot ainda — gere um acima</Empty> : (
           <ul className="divide-y divide-white/5">
@@ -61,8 +71,8 @@ export default function BackupPage({ onFlash }) {
               <li key={b.file} className="flex flex-wrap items-center gap-3 py-2 text-sm">
                 <Archive className="h-4 w-4 text-slate-500" />
                 <code className="min-w-0 flex-1 truncate text-slate-200">{b.file}</code>
-                <span className="text-xs text-slate-500">{fmtSize(b.size)} · {fmtDate(b.mtime)}</span>
-                <a href={api.backupDownloadUrl(b.file)} className="inline-flex items-center gap-1.5 rounded-lg bg-ink-500 px-2.5 py-1 text-xs font-medium text-slate-100 hover:bg-ink-500/70"><Download className="h-3.5 w-3.5" /> baixar</a>
+                <span className="font-mono text-mono-sm text-slate-500">{fmtSize(b.size)} · {fmtDate(b.mtime)}</span>
+                <a href={api.backupDownloadUrl(b.file)} className="inline-flex items-center gap-1.5 rounded-lg bg-transparent px-2.5 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10 transition duration-150 hover:bg-white/5"><Download className="h-3.5 w-3.5" /> baixar</a>
               </li>
             ))}
           </ul>

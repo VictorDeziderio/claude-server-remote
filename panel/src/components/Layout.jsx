@@ -45,14 +45,14 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
   }, [ready])
 
   const navCls = ({ isActive }) =>
-    `flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-claude/60 ${collapsed ? 'justify-center' : ''} ${
+    `flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-claude/60 ${collapsed ? 'justify-center' : ''} ${
       isActive ? 'bg-claude/15 text-claude ring-1 ring-claude/25' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`
   const NotifIcon = notif === 'granted' ? BellRing : notif === 'denied' ? BellOff : Bell
 
   return (
     <div className="flex h-full">
       {/* Sidebar (desktop) */}
-      <aside className={`hidden h-full shrink-0 flex-col border-r border-white/5 bg-ink-900/40 sm:flex ${collapsed ? 'w-16 p-2' : 'w-56 p-4'}`}>
+      <aside className={`hidden h-full shrink-0 flex-col border-r border-white/6 bg-ink-900/60 sm:flex ${collapsed ? 'w-16 p-2' : 'w-56 p-4'}`}>
         <NavLink to="/dashboard" className={`mb-6 flex items-center gap-2.5 ${collapsed ? 'justify-center' : ''}`} title="Claude Remote">
           <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-ink-700 ring-1 ring-claude/30"><Logo size={22} /></div>
           {!collapsed && <div className="text-sm font-semibold text-white">Claude <span className="text-claude">Remote</span></div>}
@@ -64,17 +64,17 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
         </nav>
         <div className="mt-auto space-y-2 pt-4">
           {!collapsed && (
-            <NavLink to="/account" className="block rounded-xl bg-ink-800 p-3 ring-1 ring-white/5 transition hover:ring-claude/30">
-              <div className="text-[11px] uppercase tracking-wide text-slate-500">conta Claude</div>
+            <NavLink to="/account" className="block rounded-xl bg-ink-800 p-3 ring-1 ring-white/6 transition duration-150 hover:ring-claude/30">
+              <div className="text-caption text-slate-500">conta claude</div>
               <div className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-slate-300"><Dot on={login.logged} /> {login.logged ? (login.account || 'logado') : 'deslogado'}</div>
             </NavLink>
           )}
-          <button type="button" onClick={onLogout} title="sair do painel" className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400 transition hover:bg-white/5 hover:text-slate-200 ${collapsed ? 'justify-center' : ''}`}><LogOut className="h-4 w-4" /> {!collapsed && 'sair do painel'}</button>
-          <button type="button" onClick={toggle} title={collapsed ? 'expandir menu' : 'recolher menu'} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-500 transition hover:bg-white/5 hover:text-slate-300 ${collapsed ? 'justify-center' : ''}`}>
+          <button type="button" onClick={onLogout} title="sair do painel" className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400 transition duration-150 hover:bg-white/5 hover:text-slate-200 ${collapsed ? 'justify-center' : ''}`}><LogOut className="h-4 w-4" /> {!collapsed && 'sair do painel'}</button>
+          <button type="button" onClick={toggle} title={collapsed ? 'expandir menu' : 'recolher menu'} className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-500 transition duration-150 hover:bg-white/5 hover:text-slate-300 ${collapsed ? 'justify-center' : ''}`}>
             {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <><PanelLeftClose className="h-4 w-4" /> recolher</>}
           </button>
           {!collapsed && data?.panelVersion && (
-            <div className="px-3 text-[10px] text-slate-600" title={data.buildTime ? 'build ' + data.buildTime : 'build local'}>
+            <div className="px-3 font-mono text-mono-sm text-slate-600" title={data.buildTime ? 'build ' + data.buildTime : 'build local'}>
               painel v{data.panelVersion}{data.buildTime ? ` · ${data.buildTime.slice(0, 10)} ${data.buildTime.slice(11, 16)}` : ''}
             </div>
           )}
@@ -84,10 +84,10 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
       {/* Conteudo */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Nav mobile */}
-        <div className="flex gap-2 overflow-x-auto border-b border-white/5 px-3 py-2 sm:hidden">
+        <div className="flex gap-2 overflow-x-auto border-b border-white/6 px-3 py-2 sm:hidden">
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to}
-              className={({ isActive }) => `flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium ${isActive ? 'bg-claude/15 text-claude ring-1 ring-claude/25' : 'bg-ink-800 text-slate-400'}`}>
+              className={({ isActive }) => `flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition duration-150 ${isActive ? 'bg-claude/15 text-claude ring-1 ring-claude/25' : 'bg-ink-800 text-slate-400'}`}>
               <n.icon className="h-4 w-4" /> {n.label}
             </NavLink>
           ))}
@@ -95,14 +95,14 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
 
         <div className={`flex items-center justify-between gap-2 px-4 pt-4 sm:px-6 ${isTerm ? 'pb-3' : 'pb-4'}`}>
           <div className="flex min-w-0 items-center gap-3">
-            <h1 className="truncate text-lg font-semibold text-white">{titleOf(pathname)}</h1>
-            <span className={`hidden items-center gap-1 text-[11px] sm:inline-flex ${live ? 'text-emerald-400' : 'text-slate-500'}`} title={live ? 'tempo real conectado (SSE)' : 'tempo real desconectado — usando polling'}>
-              <Radio className="h-3 w-3" /> {live ? 'ao vivo' : 'polling'}
+            <h1 className="truncate text-title text-white">{titleOf(pathname)}</h1>
+            <span className={`hidden items-center gap-1 text-caption sm:inline-flex ${live ? 'text-live-400' : 'text-slate-500'}`} title={live ? 'tempo real conectado (SSE)' : 'tempo real desconectado — usando polling'}>
+              <Radio className={`h-3 w-3 ${live ? 'animate-pulse' : ''}`} /> {live ? 'ao vivo' : 'polling'}
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {health && (
-              <Link to={health.claude?.updateAvailable ? '/account' : '/dashboard'} className={`hidden items-center gap-3 rounded-lg bg-ink-800 px-2.5 py-1.5 text-[11px] ring-1 lg:flex ${health.claude?.updateAvailable ? 'ring-amber-500/40' : 'ring-white/5'}`} title={health.claude?.updateAvailable ? `Claude Code ${health.claude.latest} disponível (instalado ${health.claude.currentNum}) — clique p/ atualizar` : 'saúde do host — clique p/ detalhes'}>
+              <Link to={health.claude?.updateAvailable ? '/account' : '/dashboard'} className={`hidden items-center gap-3 rounded-lg bg-ink-800 px-2.5 py-1.5 font-mono text-mono-sm ring-1 lg:flex ${health.claude?.updateAvailable ? 'ring-amber-500/40' : 'ring-white/6'}`} title={health.claude?.updateAvailable ? `Claude Code ${health.claude.latest} disponível (instalado ${health.claude.currentNum}) — clique p/ atualizar` : 'saúde do host — clique p/ detalhes'}>
                 <span className={`inline-flex items-center gap-1 ${pctCls(health.disk?.pct || 0)}`}><HardDrive className="h-3 w-3" /> {health.disk?.pct ?? '?'}%</span>
                 <span className={`inline-flex items-center gap-1 ${pctCls(health.mem?.pct || 0)}`}><MemoryStick className="h-3 w-3" /> {health.mem?.pct ?? '?'}%</span>
                 <span className="inline-flex items-center gap-1 text-slate-300"><Gauge className="h-3 w-3" /> {health.load?.[0] ?? '?'}</span>
@@ -111,7 +111,7 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
             )}
             {actions}
             <Btn variant="ghost" onClick={onToggleNotif} title={notif === 'granted' ? 'notificações do navegador ativas' : notif === 'denied' ? 'notificações bloqueadas no navegador' : 'ativar notificações do navegador'}>
-              <NotifIcon className={`h-3.5 w-3.5 ${notif === 'granted' ? 'text-emerald-300' : ''}`} />
+              <NotifIcon className={`h-3.5 w-3.5 ${notif === 'granted' ? 'text-live-400' : ''}`} />
             </Btn>
             <Btn variant="ghost" onClick={onRefresh} title="recarregar estado"><RefreshCw className="h-3.5 w-3.5" /></Btn>
           </div>

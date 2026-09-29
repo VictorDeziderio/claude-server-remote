@@ -10,10 +10,10 @@ import * as api from '../api.js'
 
 function StatItem({ icon: Icon, label, children, warn }) {
   return (
-    <div className={`flex items-start gap-3 rounded-xl bg-ink-700/60 p-3 ring-1 ${warn ? 'ring-amber-500/40' : 'ring-white/5'}`}>
+    <div className={`flex items-start gap-3 rounded-xl bg-ink-700/60 p-3 ring-1 ${warn ? 'ring-amber-500/40' : 'ring-white/6'}`}>
       <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${warn ? 'text-amber-300' : 'text-claude'}`} />
       <div className="min-w-0 flex-1">
-        <div className="text-[11px] uppercase tracking-wide text-slate-400">{label}</div>
+        <div className="text-caption uppercase text-slate-400">{label}</div>
         <div className="truncate text-sm text-slate-100">{children}</div>
       </div>
     </div>
@@ -22,8 +22,8 @@ function StatItem({ icon: Icon, label, children, warn }) {
 const pct = (p) => (p >= 90 ? 'bg-rose-400' : p >= 75 ? 'bg-amber-400' : 'bg-emerald-400')
 function Meter({ icon: Icon, label, value, hint }) {
   return (
-    <div className="rounded-xl bg-ink-700/60 p-3 ring-1 ring-white/5">
-      <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-400"><span className="inline-flex items-center gap-1.5"><Icon className="h-3.5 w-3.5 text-claude" /> {label}</span><span className="text-slate-300">{value}%</span></div>
+    <div className="rounded-xl bg-ink-700/60 p-3 ring-1 ring-white/6">
+      <div className="flex items-center justify-between text-caption uppercase text-slate-400"><span className="inline-flex items-center gap-1.5"><Icon className="h-3.5 w-3.5 text-claude" /> {label}</span><span className="font-mono text-mono-md text-slate-300">{value}%</span></div>
       <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-ink-900"><div className={`h-full rounded-full ${pct(value)}`} style={{ width: Math.min(100, value) + '%' }} /></div>
       {hint && <div className="mt-1 text-[11px] text-slate-500">{hint}</div>}
     </div>
@@ -47,14 +47,14 @@ export function HealthCard({ onFlash, compact }) {
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Meter icon={HardDrive} label="Disco (/root)" value={h.disk?.pct ?? 0} hint={h.disk ? `${fmtSize(h.disk.used)} de ${fmtSize(h.disk.total)} · livre ${fmtSize(h.disk.avail)}` : ''} />
       <Meter icon={MemoryStick} label="Memória" value={h.mem?.pct ?? 0} hint={h.mem ? `${fmtSize(h.mem.used)} de ${fmtSize(h.mem.total)}` : ''} />
-      <div className="rounded-xl bg-ink-700/60 p-3 ring-1 ring-white/5">
-        <div className="text-[11px] uppercase tracking-wide text-slate-400"><span className="inline-flex items-center gap-1.5"><Gauge className="h-3.5 w-3.5 text-claude" /> Load / CPUs</span></div>
-        <div className="mt-1 text-sm text-slate-100">{(h.load || []).join(' · ')} <span className="text-slate-500">/ {h.cpus}</span></div>
+      <div className="rounded-xl bg-ink-700/60 p-3 ring-1 ring-white/6">
+        <div className="text-caption uppercase text-slate-400"><span className="inline-flex items-center gap-1.5"><Gauge className="h-3.5 w-3.5 text-claude" /> Load / CPUs</span></div>
+        <div className="mt-1 font-mono text-mono-md text-slate-100">{(h.load || []).join(' · ')} <span className="text-slate-500">/ {h.cpus}</span></div>
         <div className="mt-1 text-[11px] text-slate-500"><Clock className="mr-1 inline h-3 w-3" />host há {fmtUptime(h.uptime)} · painel há {fmtUptime(h.panel?.uptime)}</div>
       </div>
-      <div className={`rounded-xl bg-ink-700/60 p-3 ring-1 ${c.updateAvailable ? 'ring-amber-500/40' : 'ring-white/5'}`}>
-        <div className="text-[11px] uppercase tracking-wide text-slate-400"><span className="inline-flex items-center gap-1.5"><Tag className="h-3.5 w-3.5 text-claude" /> Claude Code</span></div>
-        <div className="mt-1 truncate text-sm text-slate-100" title={c.current}>{c.currentNum || c.current || '?'}{c.latest && <span className="text-slate-500"> · npm {c.latest}</span>}</div>
+      <div className={`rounded-xl bg-ink-700/60 p-3 ring-1 ${c.updateAvailable ? 'ring-amber-500/40' : 'ring-white/6'}`}>
+        <div className="text-caption uppercase text-slate-400"><span className="inline-flex items-center gap-1.5"><Tag className="h-3.5 w-3.5 text-claude" /> Claude Code</span></div>
+        <div className="mt-1 truncate font-mono text-mono-md text-slate-100" title={c.current}>{c.currentNum || c.current || '?'}{c.latest && <span className="text-slate-500"> · npm {c.latest}</span>}</div>
         <div className="mt-1.5 flex items-center gap-2">
           {c.updateAvailable
             ? <Btn size="sm" variant="accent" busy={busy} onClick={update} title="npm i -g @anthropic-ai/claude-code@latest"><ArrowUpCircle className="h-3.5 w-3.5" /> Atualizar p/ {c.latest}</Btn>
@@ -95,19 +95,19 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
   return (
     <>
       {/* Resumo */}
-      <section className="mb-5 rounded-2xl bg-ink-800 p-4 ring-1 ring-white/5">
+      <section className="mb-5 rounded-2xl bg-ink-800 p-5 shadow-card ring-1 ring-white/6">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <StatItem icon={UserRound} label="Conta Claude" warn={!login.logged}>
             <Link to={login.logged ? '/account' : '/account?login=1'} className="inline-flex items-center gap-2 hover:underline"><Dot on={login.logged} /> {login.logged ? (login.account || 'logado') : 'deslogado — clique p/ logar'}</Link>
           </StatItem>
           <StatItem icon={Cpu} label="Sessões">
-            {running}/{projects.length} com Claude rodando{off ? <span className="text-slate-500"> · {off} desligado(s)</span> : ''}{waiting ? <span className="text-rose-300"> · {waiting} aguardando você</span> : ''}
+            <span className="font-mono text-mono-md text-slate-100">{running}/{projects.length}</span> com Claude rodando{off ? <span className="text-slate-500"> · {off} desligado(s)</span> : ''}{waiting ? <span className="text-rose-300"> · {waiting} aguardando você</span> : ''}
           </StatItem>
           <StatItem icon={BarChart3} label="Hoje">
-            <Link to="/report" className="hover:underline">{fmtTok((u.today?.in || 0) + (u.today?.out || 0))} tokens · {fmtUsd(u.today?.cost)} · {fmtInt(u.today?.messages)} msgs</Link>
+            <Link to="/report" className="font-mono text-mono-md hover:underline">{fmtTok((u.today?.in || 0) + (u.today?.out || 0))} tokens · {fmtUsd(u.today?.cost)} · {fmtInt(u.today?.messages)} msgs</Link>
           </StatItem>
         </div>
-        <div className="mt-4 border-t border-white/5 pt-4">
+        <div className="mt-4 border-t border-white/6 pt-4">
           <HealthCard onFlash={onFlash} />
         </div>
       </section>
@@ -115,21 +115,31 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
       {/* Projetos */}
       <section className="space-y-3">
         <div className="flex items-center justify-between px-1">
-          <h2 className="text-sm font-semibold text-slate-300">Projetos <span className="text-slate-500">({projects.length})</span></h2>
+          <h2 className="text-heading text-slate-200">Projetos <span className="font-mono text-mono-sm text-slate-500">({projects.length})</span></h2>
           {data.remoteNameForced
-            ? <span className="text-[11px] text-slate-500">remote fixo: <code>/remote-control {data.remoteNameForced}</code></span>
+            ? <span className="text-[11px] text-slate-500">remote fixo: <code className="font-mono text-mono-sm">/remote-control {data.remoteNameForced}</code></span>
             : <span className="text-[11px] text-slate-500">remote = nome do projeto</span>}
         </div>
         {projects.length === 0 && (
-          <div className="rounded-2xl bg-ink-800 p-8 text-center text-sm text-slate-500 ring-1 ring-white/5">
+          <div className="rounded-2xl bg-ink-800 p-8 text-center text-sm text-slate-500 ring-1 ring-white/6">
             Nenhum projeto ainda. <button type="button" className="text-claude hover:underline" onClick={() => setShowNew(true)}>Criar o primeiro</button>.
           </div>
         )}
-        {projects.map((p) => {
+        {projects.map((p, idx) => {
           const act = actOf(p)
           const on = p.enabled !== false
+          const accent = !on
+            ? 'bg-white/10'
+            : act === 'prompt'
+              ? 'bg-rose-400 animate-pulse'
+              : act === 'busy'
+                ? 'bg-amber-400 animate-pulse'
+                : p.claudeRunning
+                  ? 'bg-live-500/60'
+                  : 'bg-white/10'
           return (
-            <div key={p.name} className={`rounded-2xl bg-ink-800 p-4 ring-1 transition ${!on ? 'opacity-70 ring-white/5' : act === 'prompt' ? 'ring-rose-500/40' : p.claudeRunning ? 'ring-claude/30' : 'ring-white/5'}`}>
+            <div key={p.name} className={`relative animate-fade-up overflow-hidden rounded-2xl bg-ink-800 p-5 shadow-card ring-1 ring-white/6 transition duration-200 hover:-translate-y-px hover:ring-white/12 ${!on ? 'opacity-70' : ''}`} style={{ animationDelay: `${idx * 40}ms` }}>
+              <div className={`absolute inset-y-0 left-0 w-[3px] ${accent}`} />
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -140,7 +150,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
                     <span className="inline-flex items-center gap-1.5"><Activity className="h-3.5 w-3.5 text-slate-500" /> tmux <Dot on={p.up} /> {p.up ? 'de pé' : 'fora'}</span>
                     <span className="inline-flex items-center gap-1.5"><Cpu className="h-3.5 w-3.5 text-slate-500" /> Claude <Dot on={p.claudeRunning} /> {p.claudeRunning ? 'rodando' : 'parado'}</span>
-                    <span className="inline-flex items-center gap-1.5"><Radio className="h-3.5 w-3.5 text-slate-500" /> {p.autoRemote ? <code className="text-slate-300">{p.remoteCmd}</code> : <span className="text-slate-500">remote desligado</span>}</span>
+                    <span className="inline-flex items-center gap-1.5"><Radio className="h-3.5 w-3.5 text-slate-500" /> {p.autoRemote ? <code className="font-mono text-mono-sm text-slate-300">{p.remoteCmd}</code> : <span className="text-slate-500">remote desligado</span>}</span>
                     {p.initLine && <span className="truncate text-slate-500" title={p.initLine}>1ª linha: “{p.initLine.slice(0, 60)}{p.initLine.length > 60 ? '…' : ''}”</span>}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -217,7 +227,7 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
   return (
     <Drawer title={`Configurar “${p.name}”`} icon={Settings2} onClose={onClose}>
       <div className="space-y-4">
-        <div className="text-xs text-slate-500">{p.dir} · sessão <code>{p.session}</code></div>
+        <div className="text-xs text-slate-500">{p.dir} · sessão <code className="font-mono text-mono-sm">{p.session}</code></div>
 
         <Section title="Primeira linha" icon={Pencil}>
           <p className="mb-2 text-xs text-slate-500">Enviada ao Claude assim que ele fica pronto, em todo início (como prompt inicial).</p>
@@ -232,7 +242,7 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
           <div className="flex flex-wrap items-center gap-2">
             <Btn busy={busy === `remote:${p.name}`} onClick={() => run(`remote:${p.name}`, () => api.reconnectRemote(p.name))} title="re-emite o /remote-control sem reiniciar (preserva a conversa)"><Radio className="h-3.5 w-3.5" /> Religar remote</Btn>
             {p.remoteUrl && <a href={p.remoteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500/90 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-sky-500"><ExternalLink className="h-3.5 w-3.5" /> Abrir link</a>}
-            <span className="text-xs text-slate-500">comando: <code>{p.remoteCmd}</code></span>
+            <span className="text-xs text-slate-500">comando: <code className="font-mono text-mono-sm">{p.remoteCmd}</code></span>
           </div>
         </Section>
 
@@ -261,7 +271,7 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
         </Section>
 
         <Section title="Excluir projeto" icon={Trash2} danger>
-          <p className="mb-2 text-xs text-slate-400">Apaga <code className="text-slate-300">{data.projectsDir}/{p.name}</code> e mata a sessão. Sem volta (o histórico de conversas é mantido). Digite o nome para confirmar:</p>
+          <p className="mb-2 text-xs text-slate-400">Apaga <code className="font-mono text-mono-sm text-slate-300">{data.projectsDir}/{p.name}</code> e mata a sessão. Sem volta (o histórico de conversas é mantido). Digite o nome para confirmar:</p>
           <div className="flex flex-wrap items-center gap-2">
             <input value={delTyped} onChange={(e) => setDelTyped(e.target.value)} placeholder={p.name} className={`w-48 ${inputCls}`} />
             <Btn variant="danger" busy={busy === `delete:${p.name}`} disabled={delTyped !== p.name} onClick={() => run(`delete:${p.name}`, async () => { const r = await api.deleteProject(p.name); if (r.ok) onClose(); return r })}><Trash2 className="h-3.5 w-3.5" /> Excluir definitivamente</Btn>

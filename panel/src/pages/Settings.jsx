@@ -6,10 +6,10 @@ import * as api from '../api.js'
 
 function Toggle({ on, onChange, label, hint, icon: Icon, busy }) {
   return (
-    <button type="button" disabled={busy} onClick={() => onChange(!on)} className="flex w-full items-center gap-3 rounded-xl bg-ink-700/60 p-3 text-left ring-1 ring-white/5 transition hover:ring-white/10 disabled:opacity-50">
-      {Icon && <Icon className={`h-4 w-4 shrink-0 ${on ? 'text-claude' : 'text-slate-500'}`} />}
+    <button type="button" disabled={busy} onClick={() => onChange(!on)} className={`flex w-full items-center gap-3 rounded-xl bg-ink-700/60 p-3 text-left ring-1 transition hover:ring-white/10 disabled:opacity-50 ${on ? 'ring-live-500/20' : 'ring-white/5'}`}>
+      {Icon && <Icon className={`h-4 w-4 shrink-0 ${on ? 'text-live-300' : 'text-slate-500'}`} />}
       <div className="min-w-0 flex-1"><div className="text-sm text-slate-100">{label}</div>{hint && <div className="text-xs text-slate-500">{hint}</div>}</div>
-      <span className={`relative inline-block h-5 w-9 shrink-0 rounded-full transition ${on ? 'bg-claude' : 'bg-ink-500'}`}><span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition ${on ? 'translate-x-4' : ''}`} /></span>
+      <span className={`relative inline-block h-5 w-9 shrink-0 rounded-full transition ${on ? 'bg-live-500 shadow-glow-live' : 'bg-ink-500'}`}><span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition ${on ? 'translate-x-4' : ''}`} /></span>
     </button>
   )
 }
@@ -41,8 +41,8 @@ export default function SettingsPage({ onFlash, refresh, notif, onToggleNotif })
       <Card title="Notificações" subtitle="quando o Claude terminar ou perguntar algo">
         <div className="grid gap-2 sm:grid-cols-2">
           <Toggle icon={Bell} on={s.settings.notifications !== false} busy={busy === 'notifications'} onChange={(v) => setPref('notifications', v)} label="Avisos no painel" hint="toast na tela quando um projeto muda de estado" />
-          <button type="button" onClick={onToggleNotif} className="flex w-full items-center gap-3 rounded-xl bg-ink-700/60 p-3 text-left ring-1 ring-white/5 transition hover:ring-white/10">
-            <NotifIcon className={`h-4 w-4 shrink-0 ${notif === 'granted' ? 'text-emerald-300' : 'text-slate-500'}`} />
+          <button type="button" onClick={onToggleNotif} className={`flex w-full items-center gap-3 rounded-xl bg-ink-700/60 p-3 text-left ring-1 transition hover:ring-white/10 ${notif === 'granted' ? 'ring-live-500/20' : 'ring-white/5'}`}>
+            <NotifIcon className={`h-4 w-4 shrink-0 ${notif === 'granted' ? 'text-live-300' : 'text-slate-500'}`} />
             <div className="min-w-0 flex-1"><div className="text-sm text-slate-100">Notificações do navegador</div><div className="text-xs text-slate-500">{notif === 'granted' ? 'ativas — chegam mesmo com o painel em segundo plano' : notif === 'denied' ? 'bloqueadas nas permissões do site' : 'clique para permitir'}</div></div>
           </button>
           <Toggle icon={Cpu} on={s.settings.notifyDone !== false} busy={busy === 'notifyDone'} onChange={(v) => setPref('notifyDone', v)} label="“Claude terminou”" hint="quando fica ocioso após ≥5s trabalhando" />
@@ -72,9 +72,9 @@ export default function SettingsPage({ onFlash, refresh, notif, onToggleNotif })
             <table className="w-full text-sm">
               <tbody className="text-slate-200">
                 {s.env.map((e) => (
-                  <tr key={e.key} className="border-t border-white/5 first:border-0">
-                    <td className="px-3 py-1.5 font-mono text-xs text-slate-400">{e.key}</td>
-                    <td className="px-3 py-1.5 font-mono text-xs">{e.secret ? <span className="text-amber-300" title="valor sensível — mascarado">{e.value || '(vazio)'}</span> : (e.value || <span className="text-slate-600">(vazio)</span>)}</td>
+                  <tr key={e.key} className="border-t border-white/5 transition first:border-0 hover:bg-white/[.03]">
+                    <td className="px-3 py-1.5 font-mono text-mono-sm text-slate-400">{e.key}</td>
+                    <td className="px-3 py-1.5 font-mono text-mono-sm">{e.secret ? <span className="text-amber-300" title="valor sensível — mascarado">{e.value || '(vazio)'}</span> : (e.value || <span className="text-slate-600">(vazio)</span>)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -82,7 +82,7 @@ export default function SettingsPage({ onFlash, refresh, notif, onToggleNotif })
           </div>
         )}
         <div className="mt-3 grid gap-1 text-xs text-slate-500 sm:grid-cols-2">
-          {Object.entries(s.paths).map(([k, v]) => <div key={k}><FolderCog className="mr-1 inline h-3 w-3" /> {k}: <code className="text-slate-400">{v}</code></div>)}
+          {Object.entries(s.paths).map(([k, v]) => <div key={k}><FolderCog className="mr-1 inline h-3 w-3" /> {k}: <code className="font-mono text-mono-sm text-slate-400">{v}</code></div>)}
         </div>
         <p className="mt-2 flex items-start gap-1.5 text-[11px] text-slate-500"><Info className="mt-0.5 h-3 w-3 shrink-0" /> Valores sensíveis (<code>PANEL_PASSWORD</code>, <code>GH_TOKEN</code>) nunca saem do servidor por inteiro.</p>
       </Card>

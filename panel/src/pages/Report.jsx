@@ -28,12 +28,12 @@ const PERIODS = [
   ['year', 'Este ano'], ['lastyear', 'Ano passado'], ['all', 'Tudo'],
 ]
 
-function Kpi({ icon: Icon, label, value, hint }) {
+function Kpi({ icon: Icon, label, value, hint, hero }) {
   return (
-    <div className="rounded-2xl bg-ink-800 p-4 ring-1 ring-white/5">
-      <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-400"><Icon className="h-3.5 w-3.5 text-claude" /> {label}</div>
-      <div className="mt-1.5 text-2xl font-semibold text-white">{value}</div>
-      {hint && <div className="mt-0.5 text-xs text-slate-500">{hint}</div>}
+    <div className="rounded-2xl bg-ink-800 p-4 shadow-card ring-1 ring-white/6">
+      <div className="flex items-center gap-2 text-caption text-slate-400"><Icon className="h-3.5 w-3.5 text-claude" /> {label}</div>
+      <div className={`mt-1.5 font-mono text-white ${hero ? 'text-display' : 'text-mono-lg'}`}>{value}</div>
+      {hint && <div className="mt-0.5 font-mono text-mono-sm text-slate-500">{hint}</div>}
     </div>
   )
 }
@@ -49,7 +49,7 @@ function DailyChart({ daily, metric }) {
   return (
     <div className="relative">
       <div className="flex">
-        <div className="flex w-14 shrink-0 flex-col justify-between pr-2 text-right text-[10px] text-slate-600" style={{ height: 176 }}>
+        <div className="flex w-14 shrink-0 flex-col justify-between pr-2 text-right font-mono text-mono-sm text-slate-600" style={{ height: 176 }}>
           {ticks.map((t) => <span key={t}>{fmt(max * t)}</span>)}
         </div>
         <div className="relative flex-1">
@@ -65,17 +65,17 @@ function DailyChart({ daily, metric }) {
               )
             })}
           </div>
-          <div className="relative mt-1 h-4 text-[10px] text-slate-600">
+          <div className="relative mt-1 h-4 font-mono text-mono-sm text-slate-600">
             {xTicks.map((i) => daily[i] && <span key={i} className="absolute -translate-x-1/2" style={{ left: `${((i + 0.5) / daily.length) * 100}%` }}>{daily[i].date.slice(5)}</span>)}
           </div>
         </div>
       </div>
       {hover !== null && daily[hover] && (
-        <div className="pointer-events-none absolute right-2 top-0 rounded-lg bg-ink-900 px-3 py-2 text-xs text-slate-200 shadow-xl ring-1 ring-white/10">
-          <div className="font-semibold text-white">{daily[hover].date}</div>
-          <div>{fmtTok(daily[hover].in)} in · {fmtTok(daily[hover].out)} out</div>
-          <div className="text-slate-400">cache {fmtTok(daily[hover].cacheW)} esc · {fmtTok(daily[hover].cacheR)} leit</div>
-          <div className="text-claude">{fmtUsd(daily[hover].cost)} · {fmtInt(daily[hover].messages)} msgs</div>
+        <div className="pointer-events-none absolute right-2 top-0 rounded-lg bg-ink-900 px-3 py-2 shadow-xl ring-1 ring-white/10">
+          <div className="text-heading text-white">{daily[hover].date}</div>
+          <div className="font-mono text-mono-sm text-slate-200">{fmtTok(daily[hover].in)} in · {fmtTok(daily[hover].out)} out</div>
+          <div className="font-mono text-mono-sm text-slate-400">cache {fmtTok(daily[hover].cacheW)} esc · {fmtTok(daily[hover].cacheR)} leit</div>
+          <div className="font-mono text-mono-sm text-claude">{fmtUsd(daily[hover].cost)} · {fmtInt(daily[hover].messages)} msgs</div>
         </div>
       )}
     </div>
@@ -111,7 +111,7 @@ export default function Report({ data }) {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-2xl bg-ink-800 p-4 ring-1 ring-white/5">
+      <Card>
         <div className="flex flex-wrap gap-2">
           {PERIODS.map(([k, label]) => <button key={k} type="button" onClick={() => pick(k)} className={pill(period === k)}>{label}</button>)}
           <button type="button" onClick={() => setPeriod('custom')} className={`inline-flex items-center gap-1.5 ${pill(period === 'custom')}`}>
@@ -128,11 +128,11 @@ export default function Report({ data }) {
             <button type="button" onClick={applyCustom} disabled={!custom.from || !custom.to} className="rounded-lg bg-claude/90 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-claude disabled:opacity-40">Aplicar</button>
           </div>
         )}
-        <div className="mt-2 text-xs text-slate-500">período: <code className="text-slate-300">{range.from || 'início'}</code> → <code className="text-slate-300">{range.to || 'hoje'}</code></div>
-      </div>
+        <div className="mt-2 font-mono text-mono-sm text-slate-500">período: <code className="text-slate-300">{range.from || 'início'}</code> → <code className="text-slate-300">{range.to || 'hoje'}</code></div>
+      </Card>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Kpi icon={DollarSign} label="Custo estimado" value={fmtUsd(u.total?.cost)} hint="preço de API por modelo" />
+        <Kpi icon={DollarSign} label="Custo estimado" value={fmtUsd(u.total?.cost)} hint="preço de API por modelo" hero />
         <Kpi icon={BarChart3} label="Tokens (in+out)" value={fmtTok(totalTokens)} hint={`${fmtTok(u.total?.in)} in · ${fmtTok(u.total?.out)} out`} />
         <Kpi icon={Database} label="Cache (esc+leit)" value={fmtTok(totalCache)} hint={`${fmtTok(u.total?.cacheW)} esc · ${fmtTok(u.total?.cacheR)} leit`} />
         <Kpi icon={MessageSquare} label="Mensagens" value={fmtInt(u.messages)} />
@@ -149,16 +149,16 @@ export default function Report({ data }) {
           <>
             <div className="overflow-x-auto rounded-xl ring-1 ring-white/5">
               <table className="w-full text-sm">
-                <thead className="bg-ink-700/60 text-[11px] uppercase tracking-wide text-slate-400">
+                <thead className="bg-ink-700/60 text-caption text-slate-400">
                   <tr><th className="px-3 py-2 text-left font-medium">Modelo</th><th className="px-3 py-2 text-right font-medium">Entrada</th><th className="px-3 py-2 text-right font-medium">Saída</th><th className="px-3 py-2 text-right font-medium">Cache esc.</th><th className="px-3 py-2 text-right font-medium">Cache leit.</th><th className="px-3 py-2 text-right font-medium">Msgs</th><th className="px-3 py-2 text-right font-medium">Custo</th></tr>
                 </thead>
                 <tbody className="text-slate-200">
                   {byModel.map((m) => (
                     <tr key={m.model} className="border-t border-white/5">
-                      <td className="px-3 py-2"><span className="font-mono text-xs">{shortModel(m.model)}</span>{!m.known && <span className="ml-2 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300" title="modelo sem preço na tabela — usa o preço do Opus como estimativa">preço estimado</span>}</td>
-                      <td className="px-3 py-2 text-right">{fmtTok(m.in)}</td><td className="px-3 py-2 text-right">{fmtTok(m.out)}</td>
-                      <td className="px-3 py-2 text-right">{fmtTok(m.cacheW)}</td><td className="px-3 py-2 text-right">{fmtTok(m.cacheR)}</td>
-                      <td className="px-3 py-2 text-right">{fmtInt(m.messages)}</td><td className="px-3 py-2 text-right font-medium text-white">{fmtUsd(m.cost)}</td>
+                      <td className="px-3 py-2"><span className="font-mono text-mono-sm">{shortModel(m.model)}</span>{!m.known && <span className="ml-2 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300" title="modelo sem preço na tabela — usa o preço do Opus como estimativa">preço estimado</span>}</td>
+                      <td className="px-3 py-2 text-right font-mono text-mono-sm">{fmtTok(m.in)}</td><td className="px-3 py-2 text-right font-mono text-mono-sm">{fmtTok(m.out)}</td>
+                      <td className="px-3 py-2 text-right font-mono text-mono-sm">{fmtTok(m.cacheW)}</td><td className="px-3 py-2 text-right font-mono text-mono-sm">{fmtTok(m.cacheR)}</td>
+                      <td className="px-3 py-2 text-right font-mono text-mono-sm">{fmtInt(m.messages)}</td><td className="px-3 py-2 text-right font-mono text-mono-md font-medium text-white">{fmtUsd(m.cost)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -176,9 +176,9 @@ export default function Report({ data }) {
               <div key={p.name}>
                 <div className="mb-1 flex items-center justify-between text-sm">
                   <span className="inline-flex items-center gap-1.5 text-slate-200"><TrendingUp className="h-3.5 w-3.5 text-claude" /> {p.name}</span>
-                  <span className="text-slate-400">{fmtUsd(p.cost)} · {fmtTok(p.total)} · {fmtInt(p.messages)} msgs</span>
+                  <span className="font-mono text-mono-sm text-slate-400">{fmtUsd(p.cost)} · {fmtTok(p.total)} · {fmtInt(p.messages)} msgs</span>
                 </div>
-                <div className="h-2.5 w-full overflow-hidden rounded-full bg-ink-900 ring-1 ring-white/5"><div className="h-full rounded-full bg-gradient-to-r from-claude-700 to-claude" style={{ width: Math.round((p.cost / maxProj) * 100) + '%' }} /></div>
+                <div className="h-2.5 w-full overflow-hidden rounded-full bg-ink-900 ring-1 ring-white/5"><div className="h-full rounded-full bg-claude" style={{ width: Math.round((p.cost / maxProj) * 100) + '%' }} /></div>
               </div>
             ))}
           </div>
@@ -189,16 +189,16 @@ export default function Report({ data }) {
         {byProject.length === 0 ? <Empty>sem dados no período</Empty> : (
           <div className="overflow-x-auto rounded-xl ring-1 ring-white/5">
             <table className="w-full text-sm">
-              <thead className="bg-ink-700/60 text-[11px] uppercase tracking-wide text-slate-400">
+              <thead className="bg-ink-700/60 text-caption text-slate-400">
                 <tr><th className="px-3 py-2 text-left font-medium">Projeto</th><th className="px-3 py-2 text-right font-medium">Entrada</th><th className="px-3 py-2 text-right font-medium">Saída</th><th className="px-3 py-2 text-right font-medium">Cache esc.</th><th className="px-3 py-2 text-right font-medium">Cache leit.</th><th className="px-3 py-2 text-right font-medium">Msgs</th><th className="px-3 py-2 text-right font-medium">Custo</th></tr>
               </thead>
               <tbody className="text-slate-200">
                 {byProject.map((p) => (
                   <tr key={p.name} className="border-t border-white/5">
-                    <td className="px-3 py-2">{p.name}</td>
-                    <td className="px-3 py-2 text-right">{fmtTok(p.in)}</td><td className="px-3 py-2 text-right">{fmtTok(p.out)}</td>
-                    <td className="px-3 py-2 text-right">{fmtTok(p.cacheW)}</td><td className="px-3 py-2 text-right">{fmtTok(p.cacheR)}</td>
-                    <td className="px-3 py-2 text-right">{fmtInt(p.messages)}</td><td className="px-3 py-2 text-right font-medium text-white">{fmtUsd(p.cost)}</td>
+                    <td className="px-3 py-2 text-sm text-slate-200">{p.name}</td>
+                    <td className="px-3 py-2 text-right font-mono text-mono-sm">{fmtTok(p.in)}</td><td className="px-3 py-2 text-right font-mono text-mono-sm">{fmtTok(p.out)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-mono-sm">{fmtTok(p.cacheW)}</td><td className="px-3 py-2 text-right font-mono text-mono-sm">{fmtTok(p.cacheR)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-mono-sm">{fmtInt(p.messages)}</td><td className="px-3 py-2 text-right font-mono text-mono-md font-medium text-white">{fmtUsd(p.cost)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -20,8 +20,8 @@ import { copyText, readClipboard, decodeOsc52 } from '../lib/clipboard.js'
 //  - Ctrl+V / Cmd+V / Ctrl+Shift+V / botao direito / botao do meio -> cola.
 
 const THEME = {
-  background: '#0b0d12', foreground: '#e7e9ee', cursor: '#D97757', cursorAccent: '#0b0d12',
-  selectionBackground: 'rgba(217,119,87,0.35)', selectionInactiveBackground: 'rgba(217,119,87,0.2)',
+  background: '#080B11', foreground: '#ECF1F8', cursor: '#E37D45', cursorAccent: '#080B11',
+  selectionBackground: 'rgba(227,125,69,0.28)', selectionInactiveBackground: 'rgba(227,125,69,0.18)',
   black: '#171b24', red: '#f87171', green: '#34d399', yellow: '#fbbf24', blue: '#60a5fa',
   magenta: '#c084fc', cyan: '#22d3ee', white: '#e7e9ee',
   brightBlack: '#5b6478', brightRed: '#fca5a5', brightGreen: '#6ee7b7', brightYellow: '#fde68a',
@@ -226,7 +226,7 @@ const XTerm = forwardRef(function XTerm({ target, fontSize = 13, detach = false,
   }, [fontSize])
 
   return (
-    <div className={`relative h-full w-full overflow-hidden bg-[#0b0d12] ${className}`} data-status={status}>
+    <div className={`relative h-full w-full overflow-hidden bg-[#080B11] ${className}`} data-status={status}>
       <div ref={boxRef} className="h-full w-full" />
     </div>
   )

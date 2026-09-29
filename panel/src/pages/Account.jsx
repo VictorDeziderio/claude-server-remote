@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { copyText } from '../lib/clipboard.js'
-import { Btn, Modal, Card, inputCls, Skeleton, InlineConfirm } from '../components/ui.jsx'
+import { Btn, Modal, Card, Dot, inputCls, Skeleton, InlineConfirm } from '../components/ui.jsx'
 import { fmtAgo, fmtDate } from '../lib/format.js'
 import * as api from '../api.js'
 
@@ -28,17 +28,17 @@ export default function Account({ data, onFlash, refresh }) {
   }
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-2xl bg-ink-800 p-5 ring-1 ring-white/5">
+    <div className="space-y-6">
+      <Card className="p-5">
         <div className="flex items-start gap-4">
-          <div className="grid h-14 w-14 place-items-center rounded-2xl bg-ink-700 ring-1 ring-claude/30"><UserRound className="h-7 w-7 text-claude" /></div>
+          <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-ink-700 ring-1 ring-claude/30"><UserRound className="h-7 w-7 text-claude" /></div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className={`inline-block h-2.5 w-2.5 rounded-full ${login.logged ? 'bg-emerald-400 shadow-[0_0_8px_2px_rgba(52,211,153,.5)]' : 'bg-rose-500'}`} />
-              <span className="truncate text-lg font-semibold text-white">{login.logged ? (login.account || 'Conta conectada') : 'Nenhuma conta conectada'}</span>
+              <Dot on={login.logged} />
+              <span className="truncate font-mono text-mono-md text-slate-200">{login.logged ? (login.account || 'Conta conectada') : 'Nenhuma conta conectada'}</span>
             </div>
-            {login.org && <div className="mt-1 text-sm text-slate-400">organização: {login.org}</div>}
-            <div className="mt-1 text-sm text-slate-500">método: {login.method || '—'} · {data.version || '?'}</div>
+            {login.org && <div className="mt-1.5 text-sm text-slate-400">organização: {login.org}</div>}
+            <div className="mt-1.5 font-mono text-mono-sm text-slate-500">método: {login.method || '—'} · {data.version || '?'}</div>
           </div>
         </div>
         <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -52,10 +52,10 @@ export default function Account({ data, onFlash, refresh }) {
           ) : (
             <Btn variant="accent" onClick={() => setShowLogin(true)} className="px-4 py-2 text-sm"><LogIn className="h-4 w-4" /> Logar no Claude</Btn>
           )}
-          <Link to="/terminal/shell" className="inline-flex items-center gap-2 rounded-lg bg-ink-500 px-4 py-2 text-sm font-medium text-slate-100 transition hover:bg-ink-500/70"><SquareTerminal className="h-4 w-4" /> Abrir terminal</Link>
+          <Link to="/terminal/shell" className="inline-flex items-center gap-2 rounded-lg bg-ink-500 px-4 py-2 text-sm font-medium text-slate-100 transition hover:bg-ink-600"><SquareTerminal className="h-4 w-4" /> Abrir terminal</Link>
         </div>
         <p className="mt-3 text-xs text-slate-500">O login é por conta (OAuth): o painel já escolhe “Claude account with subscription”, você abre o link, autoriza, cola o código e clica em Conectar. As credenciais ficam em <code>~/.claude</code> (volume) e persistem entre deploys.</p>
-      </section>
+      </Card>
 
       <ClaudeVersionCard onFlash={onFlash} refresh={refresh} />
       <TwoFactorCard onFlash={onFlash} />
@@ -93,8 +93,8 @@ function ClaudeVersionCard({ onFlash, refresh }) {
             <div className="flex items-center gap-3">
               <div className="grid h-10 w-10 place-items-center rounded-xl bg-ink-700 ring-1 ring-white/5"><Tag className="h-5 w-5 text-claude" /></div>
               <div>
-                <div className="text-sm text-slate-100">instalado: <code className="text-white">{c.current || '?'}</code></div>
-                <div className="text-xs text-slate-500">última no npm: {c.latest ? <code>{c.latest}</code> : <span className="text-amber-300">não consegui consultar (sem acesso ao registry?)</span>}</div>
+                <div className="text-sm text-slate-100">instalado: <code className="font-mono text-mono-sm text-white">{c.current || '?'}</code></div>
+                <div className="font-mono text-mono-sm text-slate-500">última no npm: {c.latest ? <code>{c.latest}</code> : <span className="font-sans text-amber-300">não consegui consultar (sem acesso ao registry?)</span>}</div>
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">
@@ -155,7 +155,9 @@ function TwoFactorCard({ onFlash }) {
         </div>
       ) : setup ? (
         <div className="flex flex-col gap-4 sm:flex-row">
-          <img src={setup.qr} alt="QR code do 2FA" className="h-[200px] w-[200px] shrink-0 rounded-xl ring-1 ring-white/10" />
+          <div className="shrink-0 rounded-xl bg-white p-3 ring-1 ring-white/10">
+            <img src={setup.qr} alt="QR code do 2FA" className="h-[200px] w-[200px] rounded-lg" />
+          </div>
           <div className="min-w-0 flex-1 space-y-3 text-sm text-slate-300">
             <p>1. Abra o app autenticador (Google Authenticator, Authy, 1Password, Bitwarden…) e escaneie o QR — ou digite a chave:</p>
             <code className="block break-all rounded-lg bg-ink-900 px-3 py-2 font-mono text-xs text-slate-200">{setup.secret}</code>
@@ -166,7 +168,7 @@ function TwoFactorCard({ onFlash }) {
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-2 text-sm text-slate-300"><ShieldOff className="h-5 w-5 text-amber-300" /> Este painel expõe um shell no servidor. Ative o 2FA para exigir um código do celular além da senha.</span>
+          <span className="inline-flex items-center gap-2 text-sm text-slate-500"><Dot on={false} /> Este painel expõe um shell no servidor. Ative o 2FA para exigir um código do celular além da senha.</span>
           <Btn variant="accent" className="ml-auto" busy={busy} onClick={start}><ShieldCheck className="h-4 w-4" /> Ativar 2FA</Btn>
         </div>
       )}
@@ -194,13 +196,13 @@ function SessionsCard({ onFlash }) {
         ? <InlineConfirm text="Encerrar todas as outras sessões?" onYes={revokeAll} onNo={() => setConfirmAll(false)} busy={busy === 'all'} />
         : <Btn size="sm" variant="ghost" onClick={() => setConfirmAll(true)}><LogOut className="h-3.5 w-3.5" /> sair de todos os outros dispositivos</Btn>)}>
       {!list ? <Skeleton className="h-16" /> : (
-        <ul className="divide-y divide-white/5">
+        <ul className="space-y-1.5">
           {list.map((s) => (
-            <li key={s.id} className="flex flex-wrap items-center gap-3 py-2 text-sm">
+            <li key={s.id} className={`flex flex-wrap items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${s.current ? 'bg-claude/5 ring-1 ring-claude/25' : 'ring-1 ring-transparent'}`}>
               {/iPhone|iPad|Android/.test(s.ua) ? <Smartphone className="h-4 w-4 text-slate-500" /> : <Monitor className="h-4 w-4 text-slate-500" />}
               <div className="min-w-0 flex-1">
-                <div className="text-slate-200">{uaShort(s.ua)} {s.current && <span className="ml-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] text-emerald-300">esta sessão</span>}</div>
-                <div className="text-xs text-slate-500">IP {s.ip || '?'} · último acesso {fmtAgo(s.last * 1000)} · login {fmtDate(s.iat * 1000)} · expira {fmtDate(s.exp * 1000)}</div>
+                <div className="text-slate-200">{uaShort(s.ua)} {s.current && <span className="ml-1 rounded-full bg-claude/15 px-2 py-0.5 text-[10px] font-medium text-claude-300">esta sessão</span>}</div>
+                <div className="font-mono text-mono-sm text-slate-500">IP {s.ip || '?'} · último acesso {fmtAgo(s.last * 1000)} · login {fmtDate(s.iat * 1000)} · expira {fmtDate(s.exp * 1000)}</div>
               </div>
               {!s.current && <Btn size="sm" variant="danger" busy={busy === s.id} onClick={() => revoke(s.id)}><Trash2 className="h-3.5 w-3.5" /> encerrar</Btn>}
             </li>

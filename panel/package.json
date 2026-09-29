@@ -17,7 +17,9 @@
   "devDependencies": {
     "@codemirror/language-data": "^6.5.1",
     "@codemirror/theme-one-dark": "^6.1.2",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.1.1",
+    "@fontsource/plus-jakarta-sans": "^5.3.0",
     "@vitejs/plugin-react": "^4.3.4",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.15.0",

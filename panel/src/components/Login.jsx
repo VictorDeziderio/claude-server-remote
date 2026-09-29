@@ -26,16 +26,18 @@ export default function Login({ onSuccess }) {
       setBusy(false)
     }
   }
-  const field = 'flex items-center gap-2 rounded-xl bg-ink-900 px-3 ring-1 ring-white/10 focus-within:ring-claude/40'
+  const field = 'flex items-center gap-2 rounded-xl bg-ink-900 px-3 ring-1 ring-white/10 transition focus-within:ring-2 focus-within:ring-claude/50'
   const input = 'w-full bg-transparent py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none'
 
   return (
     <div className="flex h-full items-center justify-center overflow-auto px-4 py-10">
-      <form onSubmit={submit} className="w-full max-w-sm rounded-3xl bg-ink-800 p-7 shadow-2xl shadow-black/40 ring-1 ring-white/5">
+      <form onSubmit={submit} className="w-full max-w-sm animate-fade-up rounded-3xl bg-ink-800 p-7 shadow-elevated ring-1 ring-white/6">
         <div className="mb-6 flex flex-col items-center text-center">
           <div className="mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-ink-700 ring-1 ring-claude/30"><Logo size={32} /></div>
-          <h1 className="text-xl font-semibold text-white">Claude <span className="text-claude">Remote</span></h1>
-          <p className="mt-1 text-xs text-slate-400">entre para acessar o painel</p>
+          <h1 className="text-display text-white">Claude <span className="text-claude">Remote</span></h1>
+          <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-slate-500">
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-live-400 shadow-[0_0_6px_1px_rgba(79,224,203,.5)]" /> entre para acessar o painel
+          </p>
         </div>
 
         {err && (
@@ -66,10 +68,10 @@ export default function Login({ onSuccess }) {
         )}
 
         <button type="submit" disabled={busy}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-claude/90 py-2.5 text-sm font-semibold text-white transition hover:bg-claude focus:outline-none focus-visible:ring-2 focus-visible:ring-claude/60 disabled:opacity-50">
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-claude py-2.5 text-sm font-semibold text-white transition duration-150 hover:bg-claude-600 hover:shadow-glow-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-claude/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-800 disabled:opacity-50">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />} Entrar
         </button>
-        {ver && <p className="mt-4 text-center text-[10px] text-slate-600">painel v{ver}</p>}
+        {ver && <p className="mt-4 text-center font-mono text-mono-sm text-slate-600">painel v{ver}</p>}
       </form>
     </div>
   )

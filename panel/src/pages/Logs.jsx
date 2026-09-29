@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { ScrollText, RefreshCw, Pause, Play, ArrowDownToLine, Loader2 } from 'lucide-react'
-import { Btn, IconBtn, inputCls } from '../components/ui.jsx'
+import { Btn, IconBtn, inputCls, Empty } from '../components/ui.jsx'
 import { fmtSize, fmtDate } from '../lib/format.js'
 import * as api from '../api.js'
 
@@ -33,7 +33,7 @@ export default function LogsPage() {
   }
 
   return (
-    <div className="flex h-full min-h-[60vh] flex-col rounded-2xl bg-ink-800 ring-1 ring-white/5">
+    <div className="flex h-full min-h-[60vh] flex-col overflow-hidden rounded-2xl bg-ink-800 shadow-card ring-1 ring-white/6">
       <div className="flex flex-wrap items-center gap-2 border-b border-white/5 px-3 py-2">
         <div className="flex items-center gap-1.5">
           {files.map((f) => (
@@ -47,16 +47,23 @@ export default function LogsPage() {
         <select value={lines} onChange={(e) => setLines(parseInt(e.target.value, 10))} className={`${inputCls} py-1`}>
           {[100, 300, 1000, 3000].map((n) => <option key={n} value={n}>{n} linhas</option>)}
         </select>
-        <span className="ml-auto text-[11px] text-slate-500">{tail ? `${shown.length}/${tail.total} linhas · ${fmtSize(tail.size)} · ${fmtDate(tail.mtime)}` : ''}</span>
+        <span className="ml-auto font-mono text-mono-sm text-slate-500">{tail ? `${shown.length}/${tail.total} linhas · ${fmtSize(tail.size)} · ${fmtDate(tail.mtime)}` : ''}</span>
         <IconBtn title={auto ? 'pausar auto-refresh' : 'retomar auto-refresh (5s)'} active={auto} onClick={() => setAuto((a) => !a)}>{auto ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}</IconBtn>
         <IconBtn title="ir para o fim" onClick={() => { if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight }}><ArrowDownToLine className="h-4 w-4" /></IconBtn>
         <IconBtn title="atualizar" onClick={load}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</IconBtn>
       </div>
-      <pre ref={preRef} className="min-h-0 flex-1 overflow-auto p-3 font-mono text-[11.5px] leading-relaxed">
-        {!tail ? <span className="text-slate-500">carregando…</span> : shown.length === 0 ? <span className="text-slate-500">{tail.total === 0 ? 'log vazio (ainda não existe)' : 'nada bate com o filtro'}</span>
-          : shown.map((l, i) => <div key={i} className={colorOf(l)}>{pretty(l)}</div>)}
-      </pre>
-      <p className="border-t border-white/5 px-3 py-1.5 text-[11px] text-slate-500"><ScrollText className="mr-1 inline h-3 w-3" /> arquivos em <code>~/.claude/logs/</code> · o log do container (start.sh/Caddy) fica no EasyPanel → Logs do serviço</p>
+      <div ref={preRef} className="min-h-0 flex-1 overflow-auto bg-ink-950">
+        {!tail ? (
+          <div className="flex h-full items-center justify-center"><span className="font-mono text-mono-sm text-slate-500">carregando…</span></div>
+        ) : shown.length === 0 ? (
+          <Empty>{tail.total === 0 ? 'log vazio (ainda não existe)' : 'nada bate com o filtro'}</Empty>
+        ) : (
+          <pre className="p-3 font-mono text-mono-sm leading-relaxed">
+            {shown.map((l, i) => <div key={i} className={colorOf(l)}>{pretty(l)}</div>)}
+          </pre>
+        )}
+      </div>
+      <p className="border-t border-white/5 px-3 py-1.5 text-[11px] text-slate-500"><ScrollText className="mr-1 inline h-3 w-3" /> arquivos em <code className="rounded bg-white/5 px-1 py-0.5 font-mono text-mono-sm">~/.claude/logs/</code> · o log do container (start.sh/Caddy) fica no EasyPanel → Logs do serviço</p>
       <Btn className="hidden" />
     </div>
   )
