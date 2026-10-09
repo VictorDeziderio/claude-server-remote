@@ -87,8 +87,11 @@ fi
 
 # GitHub CLI: auto-login via GH_TOKEN + git usando o gh como credential helper (push do backup)
 if [ -n "${GH_TOKEN:-}" ]; then
-  if printf '%s' "$GH_TOKEN" | as_user gh auth login --with-token >/dev/null 2>&1 \
-     && as_user gh auth setup-git >/dev/null 2>&1; then
+  # env -u: com GH_TOKEN no ambiente o gh RECUSA gravar o login ("o GH_TOKEN ja esta em uso") e,
+  # como ele sai do ambiente logo abaixo, o backup e as sessoes ficariam sem GitHub. Gravado em
+  # ~/.config/gh (volume), vale para todo processo do ubuntu sem o token no ambiente.
+  if printf '%s' "$GH_TOKEN" | as_user env -u GH_TOKEN gh auth login --with-token >/dev/null 2>&1 \
+     && as_user env -u GH_TOKEN gh auth setup-git >/dev/null 2>&1; then
     say "gh: autenticado via GH_TOKEN"
   else
     say "gh: falha no login via GH_TOKEN (token valido/escopo repo?)"
