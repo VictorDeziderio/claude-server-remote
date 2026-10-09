@@ -53,8 +53,13 @@ const env = {
   SESSION_SCRIPT, BACKUP_SCRIPT, TMUX_TMPDIR: ROOT,
   DEVBOX_LIB: path.join(DEVBOX, 'devbox-lib.sh'), CLAUDE_LOOP: FAKE_LOOP,
 }
+// Run from inside tmux, the inherited $TMUX points at the REAL server and wins over TMUX_TMPDIR:
+// the final `tmux kill-server` would kill every live session on the box. Isolate the socket.
+delete env.TMUX
+delete env.TMUX_PANE
 // historico falso do Claude (usado pelo relatorio de custo e pela pagina Historico) — antes de
-// subir o servidor, porque o relatorio cacheia a varredura por 10s
+// subir o servidor, porque o relatorio cacheia a varredura (usage.js) por 60s e o teste nao
+// espera esse tempo: a 1a chamada precisa achar o arquivo ja no lugar
 const encDir = path.join(ROOT, '.claude', 'projects', path.join(ROOT, 'projects', 'demo').replace(/[^a-zA-Z0-9]/g, '-'))
 fs.mkdirSync(encDir, { recursive: true })
 fs.writeFileSync(path.join(encDir, 'abc123def456.jsonl'), [

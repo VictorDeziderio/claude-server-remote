@@ -45,6 +45,7 @@ function attach(req, res) {
   clients.add(res);
   if (lastState) send(res, 'state', lastState);
   send(res, 'activity', activitySnapshot());
+  poke(); // o watcher pausa sem clientes: atualiza estado/atividade ja na reconexao
   const hb = setInterval(() => send(res, 'ping', { t: Date.now() }), 20000);
   req.on('close', () => { clearInterval(hb); clients.delete(res); });
 }
@@ -102,23 +103,34 @@ async function tickSession(name, running) {
   }
 }
 
+// estado completo: projetos + atividade/remoteUrl do watcher (captura tmux de cada sessao)
+async function buildFullState() {
+  const state = stateBuilder ? await stateBuilder() : null;
+  if (!state) return null;
+  await Promise.all(state.projects.map((p) => tickSession(p.name, p.up && p.claudeRunning)));
+  for (const p of state.projects) {
+    const a = act.get(p.session);
+    p.activity = a ? a.state : 'off';
+    p.activitySince = a ? a.changedAt : 0;
+    if (a && a.remoteUrl && p.up) p.remoteUrl = a.remoteUrl;
+  }
+  // limpa sessoes de projetos que sumiram
+  const names = new Set(state.projects.map((p) => p.session));
+  for (const k of act.keys()) if (!names.has(k)) act.delete(k);
+  return state;
+}
+
 async function tick() {
   if (ticking) return;
+  // achado @perf 2026-10-09: painel fechado (nenhum EventSource conectado) nao precisa
+  // capturar tmux a cada tick — ninguem vai ver o broadcast. Mas o lastState congelado
+  // ficaria velho (GET /api/state e o 1o evento do SSE o servem): descarta, currentState()
+  // monta um completo sob demanda e attach() forca um tick ao reconectar.
+  if (clients.size === 0) { lastState = null; lastStateHash = ''; return; }
   ticking = true;
   try {
-    const state = stateBuilder ? await stateBuilder() : null;
+    const state = await buildFullState();
     if (state) {
-      await Promise.all(state.projects.map((p) => tickSession(p.name, p.up && p.claudeRunning)));
-      // enriquece com atividade/remoteUrl do watcher
-      for (const p of state.projects) {
-        const a = act.get(p.session);
-        p.activity = a ? a.state : 'off';
-        p.activitySince = a ? a.changedAt : 0;
-        if (a && a.remoteUrl && p.up) p.remoteUrl = a.remoteUrl;
-      }
-      // limpa sessoes de projetos que sumiram
-      const names = new Set(state.projects.map((p) => p.session));
-      for (const k of act.keys()) if (!names.has(k)) act.delete(k);
       lastState = state;
       const h = hashOf(JSON.stringify(state));
       if (h !== lastStateHash) { lastStateHash = h; broadcast('state', state); }
@@ -137,7 +149,7 @@ function start(builder) {
 // forca um tick agora (depois de uma acao) p/ o SSE refletir na hora
 const poke = () => { setTimeout(tick, 150); };
 const remoteUrlOf = (sess) => (act.get(sess) || {}).remoteUrl || '';
-const currentState = async () => lastState || (stateBuilder ? stateBuilder() : null);
+const currentState = async () => lastState || buildFullState();
 function stop() { if (timer) clearInterval(timer); for (const res of clients) { try { res.end(); } catch { /* */ } } clients.clear(); }
 
 module.exports = { attach, broadcast, start, stop, poke, remoteUrlOf, currentState, activitySnapshot, clientCount: () => clients.size };

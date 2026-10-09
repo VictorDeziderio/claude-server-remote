@@ -8,13 +8,19 @@ const { sh, log } = require('./util');
 const claude = require('./claude');
 
 let latestCache = { t: 0, v: '' };
+let latestInflight = null; // achado @perf 2026-10-09: varias abas/componentes podem cair aqui
+// com o cache vencido ao mesmo tempo (1x/hora) — sem isso, cada um dispara seu proprio `npm view`
 async function latestClaude() {
   if (latestCache.v && Date.now() - latestCache.t < 3600 * 1000) return latestCache.v;
+  if (latestInflight) return latestInflight;
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const r = await sh(npm, ['view', '@anthropic-ai/claude-code', 'version'], { timeout: 15000, shell: process.platform === 'win32' });
-  const v = r.ok ? r.stdout.trim() : '';
-  if (v) latestCache = { t: Date.now(), v };
-  return v;
+  latestInflight = (async () => {
+    const r = await sh(npm, ['view', '@anthropic-ai/claude-code', 'version'], { timeout: 15000, shell: process.platform === 'win32' });
+    const v = r.ok ? r.stdout.trim() : '';
+    if (v) latestCache = { t: Date.now(), v };
+    return v;
+  })();
+  try { return await latestInflight; } finally { latestInflight = null; }
 }
 
 async function diskOf(p) {
