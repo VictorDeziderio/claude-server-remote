@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, BarChart3, FolderTree, SquareTerminal, UserRound, LogOut, RefreshCw, History, ScrollText,
   Settings, DatabaseBackup, PanelLeftClose, PanelLeftOpen, Bell, BellOff, BellRing, HardDrive, MemoryStick, Gauge, Radio, ArrowUpCircle,
+  AlertTriangle, Trash2,
 } from 'lucide-react'
 import Logo from './Logo.jsx'
-import { Dot, Btn } from './ui.jsx'
+import { Dot, Btn, Empty } from './ui.jsx'
 import { cn } from '../lib/utils.js'
+import { fmtAgo } from '../lib/format.js'
 import * as api from '../api.js'
 
 // Rotas com URL propria (react-router)
@@ -26,8 +28,58 @@ const LS_NAV = 'cr.nav.collapsed'
 const readLS = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v) } catch { return d } }
 
 const pctCls = (p) => (p >= 90 ? 'text-destructive' : p >= 75 ? 'text-primary' : 'text-muted-foreground')
+const ALERT_CLS = { error: 'text-destructive', critical: 'text-destructive', warn: 'text-amber-300', warning: 'text-amber-300' }
 
-export default function Layout({ data, live, onLogout, onRefresh, actions, notif, onToggleNotif, children }) {
+// Sininho de alertas (saude da VM): lista os ultimos avisos que chegaram pelo SSE
+// ('notify' kind:'alert') + os que ja estavam registrados no servidor, com "Limpar".
+function AlertsBell({ alerts, onClear }) {
+  const [open, setOpen] = useState(false)
+  const boxRef = useRef(null)
+  useEffect(() => {
+    if (!open) return undefined
+    const onDoc = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+  return (
+    <div ref={boxRef} className="relative">
+      <Btn variant="ghost" size="sm" onClick={() => setOpen((o) => !o)} title="alertas">
+        <span className="relative inline-flex">
+          <AlertTriangle className={cn('size-3.5', alerts.length > 0 && 'text-amber-300')} />
+          {alerts.length > 0 && <span className="absolute -right-1.5 -top-1.5 grid size-3.5 place-items-center rounded-full bg-destructive text-[9px] font-medium text-white">{alerts.length > 9 ? '9+' : alerts.length}</span>}
+        </span>
+      </Btn>
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-[min(92vw,22rem)] rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-xl">
+          <div className="mb-1.5 flex items-center justify-between px-1">
+            <span className="text-xs font-medium text-foreground">Alertas</span>
+            {alerts.length > 0 && (
+              <button type="button" onClick={onClear} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition hover:bg-muted hover:text-foreground">
+                <Trash2 className="size-3" /> Limpar
+              </button>
+            )}
+          </div>
+          <div className="max-h-80 overflow-auto">
+            {alerts.length === 0 ? (
+              <Empty>sem alertas</Empty>
+            ) : (
+              <ul className="space-y-1">
+                {alerts.map((a, i) => (
+                  <li key={i} className="rounded-md px-2 py-1.5 text-xs hover:bg-accent">
+                    <div className={cn('font-medium', ALERT_CLS[a.level] || 'text-foreground')}>{a.msg}</div>
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">{a.project ? a.project + ' · ' : ''}{fmtAgo(a.t)}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function Layout({ data, live, onLogout, onRefresh, actions, notif, onToggleNotif, alerts = [], onClearAlerts, children }) {
   const { pathname } = useLocation()
   const login = data?.login || { logged: false, account: '' }
   const isTerm = pathname.startsWith('/terminal')
@@ -35,14 +87,17 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
   const [health, setHealth] = useState(null)
   const toggle = () => setCollapsed((c) => { try { localStorage.setItem(LS_NAV, JSON.stringify(!c)) } catch { /* */ } return !c })
 
+  // so consulta /api/health com a aba visivel (achado @qa 2026-10-09: painel "CPU-light")
   const ready = !!data
   useEffect(() => {
     if (!ready) return undefined
     let alive = true
-    const load = () => api.health().then((h) => { if (alive && h.ok) setHealth(h) }).catch(() => {})
+    const load = () => { if (document.visibilityState === 'visible') api.health().then((h) => { if (alive && h.ok) setHealth(h) }).catch(() => {}) }
     load()
     const t = setInterval(load, 60000)
-    return () => { alive = false; clearInterval(t) }
+    const onVis = () => { if (document.visibilityState === 'visible') load() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => { alive = false; clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
   }, [ready])
 
   const navCls = ({ isActive }) =>
@@ -112,6 +167,7 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
               </Link>
             )}
             {actions}
+            <AlertsBell alerts={alerts} onClear={onClearAlerts} />
             <Btn variant="ghost" size="sm" onClick={onToggleNotif} title={notif === 'granted' ? 'notificações do navegador ativas' : notif === 'denied' ? 'notificações bloqueadas no navegador' : 'ativar notificações do navegador'}>
               <NotifIcon className={cn('size-3.5', notif === 'granted' && 'text-success')} />
             </Btn>

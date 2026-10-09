@@ -1,11 +1,13 @@
 'use strict';
 // Saude do host: disco, memoria, load, uptime, versoes (Claude Code atual x ultima no npm),
-// e atualizacao do Claude Code (npm i -g, via sudo sem senha do usuario ubuntu).
+// e atualizacao do Claude Code (npm i -g, via sudo sem senha do usuario ubuntu). Tem tambem o
+// sampler de 60s (CPU/memoria/alertas) — ver o fim do arquivo.
 const fs = require('fs');
 const os = require('os');
 const cfg = require('./config');
 const { sh, log } = require('./util');
 const claude = require('./claude');
+const alerts = require('./alerts');
 
 let latestCache = { t: 0, v: '' };
 let latestInflight = null; // achado @perf 2026-10-09: varias abas/componentes podem cair aqui
@@ -45,8 +47,8 @@ function memInfo() {
   }
 }
 async function health() {
-  const [disk, current, latest, tmux] = await Promise.all([
-    diskOf(cfg.HOME), claude.claudeVersion(), latestClaude(), sh('tmux', ['list-sessions', '-F', '#S']),
+  const [disk, current, latest, tmux, top] = await Promise.all([
+    diskOf(cfg.HOME), claude.claudeVersion(), latestClaude(), sh('tmux', ['list-sessions', '-F', '#S']), topProcesses(),
   ]);
   const curNum = (current.match(/\d+\.\d+\.\d+/) || [])[0] || '';
   return {
@@ -60,8 +62,69 @@ async function health() {
     claude: { current, currentNum: curNum, latest, updateAvailable: !!(latest && curNum && latest !== curNum) },
     tmuxSessions: tmux.ok ? tmux.stdout.trim().split('\n').filter(Boolean) : [],
     panel: { pid: process.pid, uptime: Math.round(process.uptime()), rss: process.memoryUsage().rss },
+    cpu: { pct: lastCpuPct, cores: os.cpus().length },
+    cgroupMem: cgroupMem(),
+    top,
+    history: ring.slice(),
   };
 }
+
+// ---------- sampler de 60s: CPU/memoria (ring de 6h) + alertas + disco>90% ----------
+// CPU em % via delta de /proc/stat entre amostras (os.cpus() da snapshot, nao taxa). So o
+// sampler chama isso (nunca health(), que e' sob demanda): um delta precisa de DUAS leituras
+// espacadas — chamar ad-hoc desalinharia o estado usado pelo proprio sampler.
+function readProcStat() {
+  try {
+    const line = fs.readFileSync('/proc/stat', 'utf8').split('\n')[0];
+    const n = line.trim().split(/\s+/).slice(1).map(Number);
+    const idle = (n[3] || 0) + (n[4] || 0);
+    const total = n.reduce((a, b) => a + (b || 0), 0);
+    return { idle, total };
+  } catch { return null; }
+}
+let prevStat = readProcStat();
+let lastCpuPct = 0;
+function sampleCpuPct() {
+  const cur = readProcStat();
+  if (!prevStat || !cur) { prevStat = cur; return; }
+  const dTotal = cur.total - prevStat.total, dIdle = cur.idle - prevStat.idle;
+  prevStat = cur;
+  if (dTotal > 0) lastCpuPct = Math.round(((dTotal - dIdle) / dTotal) * 1000) / 10; // 1 casa decimal
+}
+// cgroup v2 (memory.current/memory.max); ausente (cgroup v1, ou fora de container) -> null
+function cgroupMem() {
+  try {
+    const cur = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf8').trim(), 10);
+    if (!Number.isFinite(cur)) return null;
+    const raw = fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim();
+    const max = raw === 'max' ? null : parseInt(raw, 10);
+    return { current: cur, max: Number.isFinite(max) ? max : null, pct: Number.isFinite(max) && max > 0 ? Math.round((cur / max) * 100) : null };
+  } catch { return null; }
+}
+// top 5 por %CPU. So `comm` (nome do executavel) — NUNCA args/command completo (pode conter
+// segredos passados por linha de comando).
+async function topProcesses() {
+  const r = await sh('ps', ['-eo', 'pid,pcpu,rss,comm', '--sort=-pcpu']);
+  if (!r.ok) return [];
+  return r.stdout.trim().split('\n').slice(1, 6).map((l) => {
+    const m = l.trim().match(/^(\d+)\s+([\d.]+)\s+(\d+)\s+(.+)$/);
+    if (!m) return null;
+    return { pid: parseInt(m[1], 10), pcpu: parseFloat(m[2]), rss: parseInt(m[3], 10) * 1024, comm: m[4].trim() }; // ps da rss em KB; contrato quer bytes
+  }).filter(Boolean);
+}
+const RING_MAX = 360; // 6h a 60s
+const ring = [];
+async function sample() {
+  sampleCpuPct();
+  const mem = memInfo();
+  ring.push({ t: Date.now(), cpu: lastCpuPct, mem: mem.pct });
+  if (ring.length > RING_MAX) ring.shift();
+  alerts.poll(); // o arquivo de alertas so e lido aqui (60s), nunca no tick do watcher (2s)
+  const disk = await diskOf(cfg.HOME);
+  if (disk) alerts.maybeDiskAlert(disk.pct);
+}
+setInterval(() => { sample().catch((e) => log('error', 'health sampler', { err: e.message })); }, 60000).unref();
+sample().catch(() => { /* 1a amostra: so popula o ring, sem alarme se falhar */ });
 
 let updating = null; // promise em andamento
 async function updateClaude() {

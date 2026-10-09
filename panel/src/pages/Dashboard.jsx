@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Cpu, Radio, RefreshCw, Activity, Plus, Power, Wifi, WifiOff, Save, UserRound, Tag, SquareTerminal, FolderOpen, Trash2, Settings2, History, DatabaseBackup, Pencil, HardDrive, MemoryStick, Gauge, Clock, ArrowUpCircle, CheckCircle2, ExternalLink, BarChart3 } from 'lucide-react'
+import { Cpu, Radio, RefreshCw, Activity, Plus, Power, Wifi, WifiOff, Save, UserRound, Tag, SquareTerminal, FolderOpen, Trash2, Settings2, History, DatabaseBackup, Pencil, HardDrive, MemoryStick, Gauge, Clock, ArrowUpCircle, CheckCircle2, ExternalLink, BarChart3, Pause, Play, ListTree, Pin } from 'lucide-react'
 import { Dot, Btn, Chip, Modal, Drawer, ActivityBadge, inputCls, Skeleton } from '../components/ui.jsx'
 import { fmtInt, fmtTok, fmtSize, fmtDate, fmtUsd, fmtUptime } from '../lib/format.js'
 import * as api from '../api.js'
+
+const SESSION_MODES = [
+  ['new', 'Nova conversa'],
+  ['continue', 'Continuar a última'],
+  ['pinned', 'Sessão fixa'],
+]
 
 function StatItem({ icon: Icon, label, children, warn }) {
   return (
@@ -34,7 +40,20 @@ function Meter({ icon: Icon, label, value, hint }) {
   )
 }
 
-// Saude do host + versao do Claude Code (com "atualizar")
+// linha fina (sparkline) 0-100% para o historico de CPU/memoria — sem lib de grafico
+function MiniLine({ points, color }) {
+  if (!points || points.length < 2) return <div className="flex h-10 items-center text-[11px] text-slate-500">sem histórico ainda</div>
+  const w = 100, h = 32
+  const path = points.map((v, i) => `${(i / (points.length - 1)) * w},${h - Math.min(100, Math.max(0, v || 0)) / 100 * h}`).join(' ')
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="h-10 w-full">
+      <polyline points={path} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+    </svg>
+  )
+}
+
+// Saude do host + versao do Claude Code (com "atualizar"); CPU/memoria + top processos.
+// So consulta /api/health com a aba visivel (achado @qa 2026-10-09: painel "CPU-light").
 export function HealthCard({ onFlash, compact }) {
   const [h, setH] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -46,9 +65,12 @@ export function HealthCard({ onFlash, compact }) {
       })
       .catch(() => {})
   useEffect(() => {
+    const tick = () => { if (document.visibilityState === 'visible') load() }
     load()
-    const t = setInterval(load, 60000)
-    return () => clearInterval(t)
+    const t = setInterval(tick, 60000)
+    const onVis = () => { if (document.visibilityState === 'visible') load() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
   }, [])
   const update = async () => {
     setBusy(true)
@@ -59,51 +81,95 @@ export function HealthCard({ onFlash, compact }) {
   }
   if (!h) return <Skeleton className="h-24" />
   const c = h.claude || {}
+  const history = h.history || []
+  const top = h.top || []
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <Meter icon={HardDrive} label="Disco (/root)" value={h.disk?.pct ?? 0} hint={h.disk ? `${fmtSize(h.disk.used)} de ${fmtSize(h.disk.total)} · livre ${fmtSize(h.disk.avail)}` : ''} />
-      <Meter icon={MemoryStick} label="Memória" value={h.mem?.pct ?? 0} hint={h.mem ? `${fmtSize(h.mem.used)} de ${fmtSize(h.mem.total)}` : ''} />
-      <div className="rounded-xl bg-accent p-3 border">
-        <div className="text-[11px] text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5">
-            <Gauge className="h-3.5 w-3.5 text-primary" /> Load / CPUs
-          </span>
-        </div>
-        <div className="mt-1 font-mono text-sm text-slate-100">
-          {(h.load || []).join(' · ')} <span className="text-slate-500">/ {h.cpus}</span>
-        </div>
-        <div className="mt-1 text-[11px] text-slate-500">
-          <Clock className="mr-1 inline h-3 w-3" />
-          host há {fmtUptime(h.uptime)} · painel há {fmtUptime(h.panel?.uptime)}
-        </div>
-      </div>
-      <div className={`rounded-xl border bg-accent p-3 ${c.updateAvailable ? 'border-amber-500/40' : 'border-border'}`}>
-        <div className="text-[11px] text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5">
-            <Tag className="h-3.5 w-3.5 text-primary" /> Claude Code
-          </span>
-        </div>
-        <div className="mt-1 truncate font-mono text-sm text-slate-100" title={c.current}>
-          {c.currentNum || c.current || '?'}
-          {c.latest && <span className="text-slate-500"> · npm {c.latest}</span>}
-        </div>
-        <div className="mt-1.5 flex items-center gap-2">
-          {c.updateAvailable ? (
-            <Btn size="sm" variant="accent" busy={busy} onClick={update} title="npm i -g @anthropic-ai/claude-code@latest">
-              <ArrowUpCircle className="h-3.5 w-3.5" /> Atualizar p/ {c.latest}
-            </Btn>
-          ) : (
-            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-300">
-              <CheckCircle2 className="h-3.5 w-3.5" /> {c.latest ? 'atualizado' : 'sem acesso ao npm'}
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Meter icon={HardDrive} label="Disco (/root)" value={h.disk?.pct ?? 0} hint={h.disk ? `${fmtSize(h.disk.used)} de ${fmtSize(h.disk.total)} · livre ${fmtSize(h.disk.avail)}` : ''} />
+        <Meter icon={MemoryStick} label="Memória" value={h.mem?.pct ?? 0} hint={h.mem ? `${fmtSize(h.mem.used)} de ${fmtSize(h.mem.total)}` : ''} />
+        <Meter icon={Gauge} label="CPU" value={h.cpu?.pct ?? 0} hint={h.cpu?.cores ? `${h.cpu.cores} núcleo(s)` : ''} />
+        <div className="rounded-xl bg-accent p-3 border">
+          <div className="text-[11px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <Gauge className="h-3.5 w-3.5 text-primary" /> Load / CPUs
             </span>
-          )}
-          {!compact && (
-            <Link to="/account" className="text-[11px] text-slate-500 hover:text-slate-300">
-              detalhes →
-            </Link>
-          )}
+          </div>
+          <div className="mt-1 font-mono text-sm text-slate-100">
+            {(h.load || []).join(' · ')} <span className="text-slate-500">/ {h.cpus}</span>
+          </div>
+          <div className="mt-1 text-[11px] text-slate-500">
+            <Clock className="mr-1 inline h-3 w-3" />
+            host há {fmtUptime(h.uptime)} · painel há {fmtUptime(h.panel?.uptime)}
+          </div>
+        </div>
+        <div className={`rounded-xl border bg-accent p-3 ${c.updateAvailable ? 'border-amber-500/40' : 'border-border'}`}>
+          <div className="text-[11px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <Tag className="h-3.5 w-3.5 text-primary" /> Claude Code
+            </span>
+          </div>
+          <div className="mt-1 truncate font-mono text-sm text-slate-100" title={c.current}>
+            {c.currentNum || c.current || '?'}
+            {c.latest && <span className="text-slate-500"> · npm {c.latest}</span>}
+          </div>
+          <div className="mt-1.5 flex items-center gap-2">
+            {c.updateAvailable ? (
+              <Btn size="sm" variant="accent" busy={busy} onClick={update} title="npm i -g @anthropic-ai/claude-code@latest">
+                <ArrowUpCircle className="h-3.5 w-3.5" /> Atualizar p/ {c.latest}
+              </Btn>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-300">
+                <CheckCircle2 className="h-3.5 w-3.5" /> {c.latest ? 'atualizado' : 'sem acesso ao npm'}
+              </span>
+            )}
+            {!compact && (
+              <Link to="/account" className="text-[11px] text-slate-500 hover:text-slate-300">
+                detalhes →
+              </Link>
+            )}
+          </div>
         </div>
       </div>
+
+      {!compact && (history.length > 0 || top.length > 0) && (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {history.length > 0 && (
+            <div className="rounded-xl bg-accent p-3 border">
+              <div className="mb-1 text-[11px] text-muted-foreground">Últimas 6h</div>
+              <div className="mb-1 flex items-center gap-1.5 text-[11px] text-slate-400">
+                <span className="inline-block h-1.5 w-3 rounded-full bg-sky-400" /> CPU
+                <span className="ml-3 inline-block h-1.5 w-3 rounded-full bg-amber-400" /> Memória
+              </div>
+              <div className="relative">
+                <MiniLine points={history.map((p) => p.cpu)} color="#38bdf8" />
+                <div className="absolute inset-0">
+                  <MiniLine points={history.map((p) => p.mem)} color="#f0a83c" />
+                </div>
+              </div>
+            </div>
+          )}
+          {top.length > 0 && (
+            <div className="rounded-xl bg-accent p-3 border">
+              <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <ListTree className="h-3.5 w-3.5 text-primary" /> Top processos
+              </div>
+              <table className="w-full text-xs">
+                <tbody>
+                  {top.slice(0, 5).map((p) => (
+                    <tr key={p.pid} className="border-t border-white/5 first:border-0">
+                      <td className="py-1 pr-2 text-slate-500">{p.pid}</td>
+                      <td className="py-1 pr-2 truncate text-slate-200" title={p.comm}>{p.comm}</td>
+                      <td className="py-1 pr-2 text-right font-mono text-slate-400">{(p.pcpu ?? 0).toFixed(0)}% cpu</td>
+                      <td className="py-1 text-right font-mono text-slate-400">{fmtSize(p.rss)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -137,8 +203,13 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
       return r
     })
 
+  const [usage, setUsage] = useState(null)
+  useEffect(() => {
+    api.usage().then((r) => { if (r.ok) setUsage(r.usage) }).catch(() => {})
+  }, [])
+
   const login = data.login || { logged: false, account: '' }
-  const u = data.usage || { today: {}, total: {} }
+  const u = usage || { today: {}, total: {} }
   const projects = data.projects || []
   const actOf = (p) => (activity && activity[p.session] && activity[p.session].state) || p.activity || 'off'
   const running = projects.filter((p) => p.claudeRunning).length
@@ -211,6 +282,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                       {p.name}
                     </Link>
                     {!on ? <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-[11px] text-slate-400 border">desligado</span> : p.claudeRunning ? <ActivityBadge state={act} since={p.activitySince} /> : <ActivityBadge state="off" />}
+                    {p.paused && <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-300" title="Claude pausado por inatividade — não consome CPU/memória até retomar">Pausado</span>}
                   </div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
                     <span className="inline-flex items-center gap-1.5">
@@ -250,6 +322,17 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                   <Btn busy={busy === `restart:${p.name}`} onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title={on ? 'mata a sessão tmux (fecha remote + Claude) → reabre o Claude → religa o remote → envia a primeira linha' : 'liga o projeto e sobe a sessão'}>
                     <RefreshCw className="h-3.5 w-3.5" /> {on ? 'Reiniciar' : 'Ligar'}
                   </Btn>
+                  {p.paused ? (
+                    <Btn variant="accent" busy={busy === `unpause:${p.name}`} onClick={() => run(`unpause:${p.name}`, () => api.unpauseProject(p.name))} title="retoma o Claude pausado">
+                      <Play className="h-3.5 w-3.5" /> Retomar
+                    </Btn>
+                  ) : (
+                    p.claudeRunning && (
+                      <Btn variant="ghost" busy={busy === `pause:${p.name}`} onClick={() => run(`pause:${p.name}`, () => api.pauseProject(p.name))} title="pausa o Claude desta sessão — libera CPU/memória até você retomar">
+                        <Pause className="h-3.5 w-3.5" /> Pausar
+                      </Btn>
+                    )
+                  )}
                   <Btn variant="ghost" onClick={() => setDrawer(p.name)} title="configurar: primeira linha, renomear, histórico, backup, excluir">
                     <Settings2 className="h-3.5 w-3.5" />
                   </Btn>
@@ -353,6 +436,29 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
               <Save className="h-3.5 w-3.5" />
             </Btn>
           </div>
+        </Section>
+
+        <Section title="Ao reiniciar o Claude" icon={Pin}>
+          <p className="mb-2 text-xs text-slate-500">O que acontece com a conversa quando o Claude é religado nesta sessão (reiniciar, ligar, ou religar remote).</p>
+          <select value={p.sessionMode || 'new'} onChange={(e) => run(`sessmode:${p.name}`, () => api.setSessionMode(p.name, e.target.value))} className={inputCls}>
+            {SESSION_MODES.map(([k, label]) => (
+              <option key={k} value={k}>{label}</option>
+            ))}
+          </select>
+          {(p.sessionMode || 'new') === 'pinned' && (
+            <p className="mt-2 text-xs text-slate-500">
+              {p.pinnedSession ? (
+                <>
+                  sessão fixada: <code className="font-mono text-xs text-slate-300">{String(p.pinnedSession).slice(0, 8)}</code> · trocar em{' '}
+                </>
+              ) : (
+                <>nenhuma conversa fixada ainda — escolha uma em </>
+              )}
+              <Link to={'/history/' + encodeURIComponent(p.name)} onClick={onClose} className="text-primary hover:underline">
+                Histórico
+              </Link>
+            </p>
+          )}
         </Section>
 
         <Section title="Controle remoto" icon={Radio}>

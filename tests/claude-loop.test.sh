@@ -95,6 +95,32 @@ echo '{"ok":1}' > "$T/.claude/.credentials.json"
 start
 wait_for '\? for shortcuts' 15; ok "aceita 'trust this folder' sozinho e a TUI libera" "$?" "$(screen | tail -6 | tr '\n' '|')"
 
+echo "== pausado: nao abre o Claude ate tirar o flag"
+cat > "$T/bin/claude" <<'EOF'
+#!/usr/bin/env bash
+[ "${1:-}" = "--version" ] && { echo "9.9.9 (Claude Code)"; exit 0; }
+echo "? for shortcuts"; cat
+EOF
+chmod +x "$T/bin/claude"
+mkdir -p "$T/.claude/run"; echo manual > "$T/.claude/run/claude-p1.paused"
+start
+wait_for 'Claude pausado' 8; ok "mostra 'pausado' em vez de abrir o Claude" "$?" "$(screen | tail -4 | tr '\n' '|')"
+screen | grep -q '? for shortcuts'; ok "Claude nao abriu enquanto pausado" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+rm -f "$T/.claude/run/claude-p1.paused"
+wait_for '\? for shortcuts' 12; ok "tirou o flag -> Claude abre" "$?"
+
+echo "== crash-loop: para de reabrir e avisa"
+cat > "$T/bin/claude" <<'EOF'
+#!/usr/bin/env bash
+[ "${1:-}" = "--version" ] && { echo "9.9.9 (Claude Code)"; exit 0; }
+exit 1
+EOF
+chmod +x "$T/bin/claude"
+: > "$T/.claude/run/alerts.jsonl"
+MAX_FAST_FAILS=2 start
+wait_for 'rapido demais' 20; ok "cai no shell apos falhas rapidas seguidas" "$?" "$(screen | tail -4 | tr '\n' '|')"
+grep -q '"kind":"crash-loop"' "$T/.claude/run/alerts.jsonl"; ok "grava alerta crash-loop" "$?"
+
 echo
 echo "$pass PASS, $fail FAIL"
 [ "$fail" = "0" ]

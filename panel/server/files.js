@@ -18,6 +18,7 @@
 //  contra engano/clique errado no gerenciador, nao contra o proprio usuario do shell.
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const cfg = require('./config');
 
 const BASE = cfg.FS_BASE;
@@ -54,10 +55,37 @@ function guard(rel, { self = false } = {}) {
   const full = path.resolve(BASE, String(rel == null ? '' : rel).replace(/^[/\\]+/, ''));
   if (!inside(full, BASE)) return { err: 'caminho invalido' };
   let real;
-  try { real = self && full !== BASE ? path.join(realOf(path.dirname(full)), path.basename(full)) : realOf(full); }
-  catch (e) { return { err: e.message }; }
+  try {
+    if (self && full !== BASE) {
+      real = path.join(realOf(path.dirname(full)), path.basename(full));
+    } else {
+      // achado @security: se `full` e um symlink QUEBRADO (aponta p/ algo que nao existe),
+      // fs.realpathSync(full) da ENOENT e o realOf() caia no fallback de "ainda nao existe,
+      // sobe pro ancestral mais proximo" — tratando o PROPRIO link como se fosse so um nome
+      // de arquivo novo, nunca resolvendo pra onde ele apontava. O resultado "real" sai de
+      // dentro da base (o diretorio que contem o link e' real), guard() libera, e o
+      // writeFileSync/openSync que vem depois SEGUE o link de verdade -> escreve fora da
+      // sandbox. Symlink no fim do caminho tem de ser resolvido por completo aqui; se nao
+      // resolver (quebrado), recusa — nunca trata como "arquivo novo".
+      let lst;
+      try { lst = fs.lstatSync(full); } catch { lst = null; }
+      if (lst && lst.isSymbolicLink()) {
+        try { real = fs.realpathSync(full); }
+        catch { return { err: 'recusado: symlink quebrado (aponta para um alvo que nao existe)' }; }
+      } else {
+        real = realOf(full);
+      }
+    }
+  } catch (e) { return { err: e.message }; }
   if (!inside(real, realBase())) return { err: OUTSIDE_MSG };
   return { full };
+}
+// escreve um arquivo NOVO/truncado recusando seguir um symlink no ultimo componente (O_NOFOLLOW):
+// defesa em profundidade contra TOCTOU entre o guard() acima e a escrita real.
+const NOFOLLOW = fs.constants.O_NOFOLLOW || 0; // indisponivel no Windows -> degrada sem o reforco
+function writeFileNoFollow(full, data) {
+  const fd = fs.openSync(full, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | NOFOLLOW);
+  try { fs.writeSync(fd, data); } finally { fs.closeSync(fd); }
 }
 const relOf = (full) => path.relative(BASE, full).split(path.sep).join('/');
 
@@ -117,7 +145,7 @@ function fsSave(rel, content) {
   if (content.length > MAX_SAVE) return { ok: false, msg: 'conteudo muito grande (>5MB)' };
   try {
     fs.mkdirSync(path.dirname(full), { recursive: true });
-    fs.writeFileSync(full, content);
+    writeFileNoFollow(full, content);
     return { ok: true, msg: `salvo: ${relOf(full)}` };
   } catch (e) { return { ok: false, msg: e.message }; }
 }
@@ -128,7 +156,7 @@ function fsCreate(rel, kind) {
   if (fs.existsSync(full)) return { ok: false, msg: 'ja existe' };
   try {
     if (kind === 'dir') fs.mkdirSync(full, { recursive: true });
-    else { fs.mkdirSync(path.dirname(full), { recursive: true }); fs.writeFileSync(full, ''); }
+    else { fs.mkdirSync(path.dirname(full), { recursive: true }); writeFileNoFollow(full, ''); }
     return { ok: true, msg: `${kind === 'dir' ? 'pasta' : 'arquivo'} criado: ${relOf(full)}`, path: relOf(full) };
   } catch (e) { return { ok: false, msg: e.message }; }
 }
@@ -170,18 +198,55 @@ function fsDownload(rel, res) {
   });
   fs.createReadStream(full).pipe(res);
 }
-// upload: corpo bruto -> arquivo (ja lido pelo caller com readRaw)
-function fsUpload(rel, buf, overwrite) {
+// upload: ESTREAMADO direto pro disco (achado @security: um Buffer por upload, ate 100MB,
+// sem limite de quantos em paralelo, deixava a RAM do painel proporcional a uploads simultaneos).
+// Escreve num temp na MESMA pasta (rename e atomico) e so troca pro nome final no final; se
+// passar do limite so para de GRAVAR (sem acumular em memoria) e deixa o corpo dre nar sozinho
+// ate o 'end' natural — do mesmo jeito que o readRaw (nao pode destruir o socket e perder a
+// resposta). Cap de uploads simultaneos: protege contra varios uploads grandes ao mesmo tempo
+// saturando disco/CPU (hash/gzip de proxy, etc.).
+const MAX_CONCURRENT_UPLOADS = 2;
+let activeUploads = 0;
+function fsUploadStream(rel, req, overwrite) {
   const { full, err } = guard(rel);
-  if (err) return { ok: false, msg: err };
-  if (full === BASE) return { ok: false, msg: 'caminho invalido' };
-  if (!buf) return { ok: false, msg: `upload muito grande (>${MAX_UPLOAD / 1024 / 1024}MB) ou interrompido` };
-  if (!overwrite && fs.existsSync(full)) return { ok: false, msg: 'ja existe (marque sobrescrever)' };
-  try {
-    fs.mkdirSync(path.dirname(full), { recursive: true });
-    fs.writeFileSync(full, buf);
-    return { ok: true, msg: `enviado: ${relOf(full)} (${buf.length} bytes)`, path: relOf(full) };
-  } catch (e) { return { ok: false, msg: e.message }; }
+  if (err) return Promise.resolve({ ok: false, msg: err });
+  if (full === BASE) return Promise.resolve({ ok: false, msg: 'caminho invalido' });
+  if (activeUploads >= MAX_CONCURRENT_UPLOADS) {
+    return Promise.resolve({ ok: false, status: 429, msg: 'muitos uploads simultaneos — tente novamente em alguns segundos' });
+  }
+  activeUploads++;
+  const tmp = full + '.upload-' + crypto.randomBytes(8).toString('hex') + '.tmp';
+  return new Promise((resolve) => {
+    let size = 0, over = false, writeErr = null, fd = null, done = false;
+    const finish = (v) => {
+      if (done) return;
+      done = true;
+      if (fd !== null) { try { fs.closeSync(fd); } catch { /* */ } }
+      activeUploads--;
+      if (!v.ok) { try { fs.rmSync(tmp, { force: true }); } catch { /* */ } }
+      resolve(v);
+    };
+    try {
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fd = fs.openSync(tmp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | NOFOLLOW);
+    } catch (e) { return finish({ ok: false, msg: e.message }); }
+    req.on('data', (chunk) => {
+      if (over || writeErr) return;
+      size += chunk.length;
+      if (size > MAX_UPLOAD) { over = true; return; } // para de gravar, mas deixa o corpo drenar
+      try { fs.writeSync(fd, chunk); } catch (e) { writeErr = e; }
+    });
+    req.on('end', () => {
+      if (writeErr) return finish({ ok: false, msg: writeErr.message });
+      if (over) return finish({ ok: false, msg: `upload muito grande (>${MAX_UPLOAD / 1024 / 1024}MB) ou interrompido` });
+      if (!overwrite && fs.existsSync(full)) return finish({ ok: false, msg: 'ja existe (marque sobrescrever)' });
+      try { fs.closeSync(fd); fd = null; fs.renameSync(tmp, full); }
+      catch (e) { return finish({ ok: false, msg: e.message }); }
+      finish({ ok: true, msg: `enviado: ${relOf(full)} (${size} bytes)`, path: relOf(full), size });
+    });
+    req.on('error', () => finish({ ok: false, msg: 'upload interrompido' }));
+    req.on('close', () => finish({ ok: false, msg: 'upload interrompido' }));
+  });
 }
 
-module.exports = { fsStat, fsList, fsRead, fsSave, fsCreate, fsDelete, fsRename, fsDownload, fsUpload, MAX_UPLOAD };
+module.exports = { fsStat, fsList, fsRead, fsSave, fsCreate, fsDelete, fsRename, fsDownload, fsUploadStream, MAX_UPLOAD };

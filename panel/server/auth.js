@@ -56,6 +56,10 @@ function loadOrCreateSecret() {
 }
 const KEY = crypto.createHmac('sha256', loadOrCreateSecret()).update('claude-remote-session-v3:' + cfg.PANEL_PASSWORD).digest();
 
+// achado @security: gravar o "login" digitado verbatim no audit.log podia vazar senha (erro
+// comum: digitar a senha no campo de usuario) ou dado pessoal. So um hash curto, pra ainda dar
+// pra notar "mesmo valor repetido" sem guardar o texto em claro.
+const loginHashOf = (s) => crypto.createHash('sha256').update(String(s || '')).digest('hex').slice(0, 12);
 const b64u = (buf) => Buffer.from(buf).toString('base64url');
 const sign = (data) => crypto.createHmac('sha256', KEY).update(data).digest('base64url');
 const safeEq = (a, b) => {
@@ -101,6 +105,13 @@ const isHttps = (req) => String(req.headers['x-forwarded-proto'] || '').split(',
 const clientIp = (req) => (String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || (req.socket && req.socket.remoteAddress) || '?';
 const hostOf = (req) => String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
 
+// achado @security: o deploy real e SEMPRE https atras do Traefik, mas o Traefik desse ambiente
+// nao repassa x-forwarded-proto de um jeito que isHttps(req) enxergue — o cookie de sessao saia
+// sem o atributo Secure. Em vez de depender do header, manda Secure sempre; so os testes (http
+// em localhost) desligam, e so com a flag de teste explicita (nunca em producao).
+const TEST_INSECURE_COOKIE = process.env.PANEL_TEST_INSECURE_COOKIE === '1';
+const secureAttr = (req) => (TEST_INSECURE_COOKIE && !isHttps(req)) ? '' : '; Secure';
+
 // ---- rate-limit do login (por IP): 8 falhas em 10 min -> bloqueia 10 min ----
 const attempts = new Map(); // ip -> { n, first, until }
 const WINDOW = 10 * 60 * 1000, MAX_FAIL = 8;
@@ -129,7 +140,7 @@ function doLogin(body, req, res) {
   const okPass = safeEq(String(body.password || ''), cfg.PANEL_PASSWORD);
   if (!(okUser && okPass)) {
     fail(ip);
-    audit('login.fail', { ip, login: String(body.login || '').slice(0, 64) });
+    audit('login.fail', { ip, loginHash: loginHashOf(body.login) });
     return { ok: false, msg: 'login ou senha incorretos' };
   }
   if (totp.isEnabled()) {
@@ -139,14 +150,14 @@ function doLogin(body, req, res) {
   attempts.delete(ip);
   const s = sessions.create(ip, req.headers['user-agent']);
   res.setHeader('Set-Cookie',
-    `${COOKIE}=${issueToken(s.id, s.exp)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${cfg.SESSION_DAYS * 86400}${isHttps(req) ? '; Secure' : ''}`);
+    `${COOKIE}=${issueToken(s.id, s.exp)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${cfg.SESSION_DAYS * 86400}${secureAttr(req)}`);
   audit('login.ok', { ip, ua: String(req.headers['user-agent'] || '').slice(0, 120), twofa: totp.isEnabled() });
   return { ok: true, msg: 'autenticado' };
 }
 function doLogout(req, res) {
   const sid = sessionId(req);
   if (sid) { sessions.revoke(sid); audit('logout', { ip: clientIp(req) }); }
-  res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${isHttps(req) ? '; Secure' : ''}`);
+  res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${secureAttr(req)}`);
   return { ok: true };
 }
 // sessoes ativas (pagina Conta)
@@ -181,4 +192,4 @@ function sameOrigin(req) {
   return false; // sem nenhum sinal: nao assume mesma origem
 }
 
-module.exports = { isAuthed, doLogin, doLogout, sameOrigin, clientIp, hostOf, listSessions, revokeSession, revokeOthers, COOKIE };
+module.exports = { isAuthed, doLogin, doLogout, sameOrigin, clientIp, hostOf, sessionId, listSessions, revokeSession, revokeOthers, COOKIE };

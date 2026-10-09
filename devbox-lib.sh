@@ -42,23 +42,27 @@ proj_config() {  # $1 = projeto
       try { c = JSON.parse(raw) || {}; } catch { c = {}; corrupt = true; }
     } catch { /* arquivo ausente: normal, cai nos defaults abaixo */ }
     if (corrupt) {
-      process.stdout.write("enabled=false\nautoStartClaude=false\nautoRemote=false\ninitLine=\n");
+      process.stdout.write("enabled=false\nautoStartClaude=false\nautoRemote=false\ninitLine=\nsessionMode=new\npinnedSession=\n");
     } else {
       const d = c.defaults || {}, p = (c.projects && c.projects[proj]) || {};
       const pick = (k) => (k in p ? p[k] !== false : (k in d ? d[k] !== false : true));
       const il = typeof p.initLine === "string" ? p.initLine : "";
+      // sessionMode: new (padrao) | continue (ultima conversa da pasta) | pinned (pinnedSession)
+      const sm = ["new", "continue", "pinned"].includes(p.sessionMode) ? p.sessionMode : "new";
+      const ps = typeof p.pinnedSession === "string" && /^[A-Za-z0-9_-]{6,80}$/.test(p.pinnedSession) ? p.pinnedSession : "";
       process.stdout.write(
         "enabled=" + pick("enabled") + "\nautoStartClaude=" + pick("autoStartClaude") +
-        "\nautoRemote=" + pick("autoRemote") + "\ninitLine=" + Buffer.from(il).toString("base64") + "\n");
+        "\nautoRemote=" + pick("autoRemote") + "\ninitLine=" + Buffer.from(il).toString("base64") +
+        "\nsessionMode=" + sm + "\npinnedSession=" + ps + "\n");
     }
   ' "$PANEL_CONFIG" "$1" 2>/dev/null \
-    || printf 'enabled=false\nautoStartClaude=false\nautoRemote=false\ninitLine=\n'
+    || printf 'enabled=false\nautoStartClaude=false\nautoRemote=false\ninitLine=\nsessionMode=new\npinnedSession=\n'
 }
 
 # carrega a config do projeto em variaveis CFG_* (CFG_ENABLED, CFG_AUTOSTART, CFG_REMOTE, CFG_INITLINE)
 load_proj_config() {  # $1 = projeto
   local line k v
-  CFG_ENABLED=true CFG_AUTOSTART=true CFG_REMOTE=true CFG_INITLINE=""
+  CFG_ENABLED=true CFG_AUTOSTART=true CFG_REMOTE=true CFG_INITLINE="" CFG_SESSMODE=new CFG_PINNED=""
   while IFS= read -r line; do
     k="${line%%=*}"; v="${line#*=}"
     case "$k" in
@@ -66,9 +70,15 @@ load_proj_config() {  # $1 = projeto
       autoStartClaude) CFG_AUTOSTART="$v" ;;
       autoRemote) CFG_REMOTE="$v" ;;
       initLine) CFG_INITLINE="$(printf '%s' "$v" | base64 -d 2>/dev/null || true)" ;;
+      sessionMode) CFG_SESSMODE="$v" ;;
+      pinnedSession) CFG_PINNED="$v" ;;
     esac
   done < <(proj_config "$1")
 }
+
+# pasta onde o Claude Code guarda as conversas de um diretorio (~/.claude/projects/<cwd codificado>):
+# todo caractere fora de [A-Za-z0-9] vira "-" (ex.: /root/projects/pilot -> -root-projects-pilot)
+conv_dir() { printf '%s/.claude/projects/%s' "$DEVBOX_HOME" "$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '-')"; }
 
 # verdadeiro se o Claude ja estiver logado (/login feito)
 is_logged_in() {
@@ -79,6 +89,14 @@ is_logged_in() {
 
 # comando do remote-control do projeto (REMOTE_CONTROL_NAME forca um nome fixo p/ todos)
 remote_cmd() { printf '/remote-control %s' "${REMOTE_CONTROL_NAME:-$1}"; }
+
+# Alerta p/ o painel (RUN_DIR/alerts.jsonl -> toast/notificacao). Uma linha JSON por evento.
+alert() {  # $1=level(info|warn|error) $2=kind $3=projeto(ou "") $4=mensagem
+  mkdir -p "$RUN_DIR"
+  "$NODE_BIN" -e 'const [, l, k, p, m] = process.argv;
+    process.stdout.write(JSON.stringify({ t: Date.now(), level: l, kind: k, ...(p ? { project: p } : {}), msg: m }) + "\n");' \
+    "$1" "$2" "${3:-}" "$4" >> "$RUN_DIR/alerts.jsonl" 2>/dev/null || true
+}
 
 # Sem logrotate na imagem: corta o log acima de ~5MB mantendo o final. Trunca NO LUGAR (nao
 # `mv`): panel.log/sessions.log estao abertos com >> por processos vivos, e um mv os deixaria

@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Settings, Cpu, Radio, Bell, BellRing, BellOff, Eye, EyeOff, ShieldCheck, FolderCog, Info } from 'lucide-react'
-import { Btn, Card, Skeleton } from '../components/ui.jsx'
+import { Settings, Cpu, Radio, Bell, BellRing, BellOff, Eye, EyeOff, ShieldCheck, FolderCog, Info, Save, PauseCircle } from 'lucide-react'
+import { Btn, Card, Skeleton, inputCls } from '../components/ui.jsx'
 import * as api from '../api.js'
 
 function Toggle({ on, onChange, label, hint, icon: Icon, busy }) {
@@ -24,6 +24,8 @@ export default function SettingsPage({ onFlash, refresh, notif, onToggleNotif })
   const [s, setS] = useState(null)
   const [busy, setBusy] = useState('')
   const [showEnv, setShowEnv] = useState(false)
+  const [idleHours, setIdleHours] = useState('0')
+  const idleTouched = useRef(false)
   const load = useCallback(
     () =>
       api
@@ -37,6 +39,9 @@ export default function SettingsPage({ onFlash, refresh, notif, onToggleNotif })
   useEffect(() => {
     load()
   }, [load])
+  useEffect(() => {
+    if (s && !idleTouched.current) setIdleHours(String(s.defaults.idlePauseHours ?? 0))
+  }, [s])
 
   const setDefault = async (k, v) => {
     setBusy(k)
@@ -87,6 +92,30 @@ export default function SettingsPage({ onFlash, refresh, notif, onToggleNotif })
         <div className="grid gap-2 sm:grid-cols-2">
           <Toggle icon={Cpu} on={!!s.defaults.autoStartClaude} busy={busy === 'autoStartClaude'} onChange={(v) => setDefault('autoStartClaude', v)} label="Iniciar o Claude na sessão" hint="autoStartClaude" />
           <Toggle icon={Radio} on={!!s.defaults.autoRemote} busy={busy === 'autoRemote'} onChange={(v) => setDefault('autoRemote', v)} label="Religar o remote-control" hint="autoRemote" />
+        </div>
+        <div className="mt-2 flex flex-wrap items-end gap-2 rounded-xl border border-border bg-accent p-3">
+          <label className="text-xs text-slate-400">
+            <span className="mb-1 flex items-center gap-1.5 text-slate-300">
+              <PauseCircle className="h-4 w-4 text-primary" /> Pausar Claude parado após (horas, 0 = nunca)
+            </span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={idleHours}
+              onChange={(e) => { idleTouched.current = true; setIdleHours(e.target.value) }}
+              className={`mt-1 block w-28 ${inputCls}`}
+            />
+          </label>
+          <Btn
+            size="sm"
+            variant="accent"
+            busy={busy === 'idlePauseHours'}
+            onClick={() => { idleTouched.current = false; setDefault('idlePauseHours', Math.max(0, parseInt(idleHours, 10) || 0)) }}
+          >
+            <Save className="h-3.5 w-3.5" /> Salvar
+          </Btn>
+          <span className="text-[11px] text-slate-500">pausa o Claude sozinho quando fica ocioso por tempo demais (libera CPU/memória)</span>
         </div>
       </Card>
 

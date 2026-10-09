@@ -31,6 +31,9 @@ export const setInitLine = (name, text) => post('/api/initline', { name, text })
 export const restartProject = (name) => post('/api/restart', { name })
 export const reconnectRemote = (name) => post('/api/remote', { name })
 export const setPower = (name, on) => post('/api/power', { name, on })
+export const setSessionMode = (name, mode, id) => post('/api/session-mode', { name, mode, id })
+export const pauseProject = (name) => post('/api/pause', { name })
+export const unpauseProject = (name) => post('/api/unpause', { name })
 
 // --- arquivos (sandbox em /root) ---
 export const fsStat = (p) => get('/api/fs/stat?' + q({ path: p || '' }))
@@ -59,6 +62,11 @@ export const termWindow = (name, action, index) => post('/api/term/window', { na
 
 // --- relatorio por periodo ---
 export const report = (from, to) => get('/api/report?' + q({ from: from || '', to: to || '' }))
+export const usage = () => get('/api/usage')
+
+// --- alertas ---
+export const alerts = () => get('/api/alerts')
+export const alertsClear = () => post('/api/alerts/clear', {})
 
 // --- conta do Claude / painel ---
 export const claudeLogout = () => post('/api/claude/logout', {})

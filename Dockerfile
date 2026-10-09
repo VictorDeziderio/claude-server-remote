@@ -144,8 +144,6 @@ ENV \
     PROJECT_FOLDER=claude \
     REMOTE_CONTROL_NAME= \
     CLAUDE_AUTOCMD_DELAY=15 \
-    # GitHub: token (escopo repo) p/ auto-login do gh e push do backup. Defina no Environment.
-    GH_TOKEN= \
     # Backup automatico dos projetos: liga/desliga + intervalo (segundos); config 1x/dia
     BACKUP_ENABLED=true \
     BACKUP_INTERVAL=3600 \
@@ -155,11 +153,10 @@ ENV \
     GATEWAY_PORT=8080 \
     PROJECTS_DIR=/root/projects \
     # AUTH: painel via PANEL_LOGIN+PANEL_PASSWORD (+ 2FA opcional ativado no painel).
-    # PANEL_PASSWORD fica VAZIO de proposito: o painel expoe um shell e, sem senha (ou com o
-    # default publico antigo), RECUSA subir (fail-closed em panel/server/auth.js). Defina no
-    # Environment do EasyPanel. Nao coloque default aqui: tudo que esta no repo e publico.
+    # PANEL_PASSWORD e GH_TOKEN NAO tem ENV aqui de proposito: sem senha o painel RECUSA subir
+    # (fail-closed em panel/server/auth.js). Lugar certo: /root/.devbox-secrets.env no volume
+    # (KEY=valor; ver start.sh) -- no Environment do EasyPanel eles vazam no log de build.
     PANEL_LOGIN=admin \
-    PANEL_PASSWORD= \
     PANEL_SESSION_DAYS=30
 
 # Politica GLOBAL do Claude Code (managed settings) — permissao para TUDO em todo o

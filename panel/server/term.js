@@ -114,6 +114,11 @@ async function windowAction(name, action, index) {
 // ---------- WebSocket + PTY ----------
 const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
 const live = new Set(); // ptys abertos (p/ encerrar no shutdown)
+// achado @security: sem limite, uma sessao de painel (sid) podia abrir WebSockets sem parar,
+// cada um subindo um PTY (tmux attach) — cap por sessao de login, nao por IP/global, pra nao
+// punir varios dispositivos legitimos atras do mesmo IP.
+const MAX_PTY_PER_SID = 10;
+const sidCounts = new Map(); // sid -> PTYs abertos agora
 const CTRL = '\x01';
 const CTL_TYPES = new Set(['resize', 'ping']);
 // frame de controle = "\x01" + JSON de um tipo conhecido; senao e teclado (ex.: Ctrl+A = "\x01")
@@ -122,7 +127,7 @@ function parseCtl(s) {
   try { const c = JSON.parse(s.slice(1)); return c && CTL_TYPES.has(c.type) ? c : null; } catch { return null; }
 }
 
-function attach(ws, params, ip) {
+function attach(ws, params, ip, sid) {
   const name = params.get('name') || 'shell';
   const cols = clampInt(params.get('cols'), 20, 500, 120);
   const rows = clampInt(params.get('rows'), 5, 200, 32);
@@ -132,6 +137,12 @@ function attach(ws, params, ip) {
 
   const sendCtl = (obj) => { if (ws.readyState === ws.OPEN) ws.send(CTRL + JSON.stringify(obj)); };
   const closeWith = (code, reason) => { try { ws.close(code, reason); } catch { /* */ } };
+
+  if (sid) {
+    const n = sidCounts.get(sid) || 0;
+    if (n >= MAX_PTY_PER_SID) return closeWith(4009, 'muitos terminais abertos nesta sessao — feche algum antes de abrir outro');
+    sidCounts.set(sid, n + 1);
+  }
 
   (async () => {
     if (!pty) return closeWith(4003, 'node-pty indisponivel no servidor');
@@ -185,8 +196,12 @@ function attach(ws, params, ip) {
     }
     if (proc) proc.write(s);
   });
+  let byeDone = false;
   const bye = () => {
+    if (byeDone) return;
+    byeDone = true;
     alive = false;
+    if (sid) { const n = (sidCounts.get(sid) || 1) - 1; if (n <= 0) sidCounts.delete(sid); else sidCounts.set(sid, n); }
     if (proc) { try { proc.kill(); } catch { /* */ } live.delete(proc); proc = null; }
   };
   ws.on('close', bye);
@@ -197,8 +212,8 @@ function attach(ws, params, ip) {
   ws.on('close', () => clearInterval(hb));
 }
 
-function handleUpgrade(req, socket, head, params, ip) {
-  wss.handleUpgrade(req, socket, head, (ws) => attach(ws, params, ip));
+function handleUpgrade(req, socket, head, params, ip, sid) {
+  wss.handleUpgrade(req, socket, head, (ws) => attach(ws, params, ip, sid));
 }
 function shutdown() {
   for (const p of live) { try { p.kill(); } catch { /* */ } }

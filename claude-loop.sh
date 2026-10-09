@@ -24,6 +24,7 @@ PROJ_NAME="${2:?uso: claude-loop.sh <sessao> <projeto>}"
 DELAY="${CLAUDE_AUTOCMD_DELAY:-15}"
 RUN_FLAG="$RUN_DIR/$SESS.running"
 RESUME_FLAG="$RUN_DIR/$SESS.resume"
+PAUSE_FLAG="$RUN_DIR/$SESS.paused"
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 
 gray() { printf '\033[90m%s\033[0m\n' "$*"; }
@@ -103,6 +104,34 @@ send_remote_when_ready() {  # $1 = comando
   slog "remote: nao confirmei apos $attempt tentativas (use 'Religar remote' no painel)"
 }
 
+# ---------- volta automatica da versao do Claude Code ----------
+# Toda imagem nova traz o Claude "latest". Se ele crashar em loop, volta UMA vez para a ultima
+# versao que rodou saudavel aqui (gravada no volume) -- o build ja reprova binario quebrado, isto
+# cobre o que so quebra em uso. Uma tentativa por versao (flag), serializada entre projetos (flock).
+GOOD_FILE="$RUN_DIR/claude-good-version"
+claude_ver() { claude --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1; }
+record_good_claude() {
+  local v; v="$(claude_ver)"
+  [ -n "$v" ] && [ "$(cat "$GOOD_FILE" 2>/dev/null)" != "$v" ] && printf '%s\n' "$v" > "$GOOD_FILE"
+  return 0
+}
+rollback_claude() {
+  local cur good tried
+  good="$(cat "$GOOD_FILE" 2>/dev/null)"; cur="$(claude_ver)"
+  [ -n "$good" ] && [ -n "$cur" ] && [ "$good" != "$cur" ] || return 1
+  tried="$RUN_DIR/claude-rollback-tried-$cur"
+  [ -e "$tried" ] && return 1
+  : > "$tried"
+  slog "rollback: Claude $cur em crash-loop — voltando para $good (ultima saudavel)"
+  if ( flock 8; timeout 300 sudo -n npm install -g --include=optional "@anthropic-ai/claude-code@$good" ) \
+       8>"$RUN_DIR/claude-rollback.lock" >>"$LOG_DIR/sessions.log" 2>&1 && [ "$(claude_ver)" = "$good" ]; then
+    alert warn claude-update "$PROJ_NAME" "Claude $cur caía em loop — voltei automaticamente para $good."
+    return 0
+  fi
+  alert error claude-update "$PROJ_NAME" "Claude $cur caía em loop e a volta para $good falhou — veja Logs → Sessões."
+  return 1
+}
+
 # cai num shell interativo na pasta (a sessao tmux continua viva)
 drop_to_shell() {
   rm -f "$RUN_FLAG"
@@ -126,6 +155,19 @@ while true; do
   load_proj_config "$PROJ_NAME"
   if [ "$CFG_ENABLED" != "true" ] || [ "$CFG_AUTOSTART" != "true" ]; then
     drop_to_shell "[dev-box] Claude DESLIGADO para \"$PROJ_NAME\" no painel — shell livre. Rode  claude  quando quiser."
+  fi
+
+  # Pausado (inatividade ou "Pausar" no painel): nao reabre ate o painel tirar o flag ou alguem
+  # apertar Enter aqui. A conversa fica salva -- com sessao fixa/continuar, volta onde parou.
+  if [ -e "$PAUSE_FLAG" ]; then
+    rm -f "$RUN_FLAG"
+    slog "pausado ($(head -c 20 "$PAUSE_FLAG" 2>/dev/null)) — aguardando retomar"
+    gray "[Claude pausado ($(head -c 20 "$PAUSE_FLAG" 2>/dev/null)) — Enter aqui ou 'Retomar' no painel]"
+    while [ -e "$PAUSE_FLAG" ]; do
+      if read -r -t 5 _; then rm -f "$PAUSE_FLAG"; fi
+    done
+    FAILS=0
+    slog "retomado"
   fi
 
   # aceita o "trust this folder" sozinho (roda sempre, mesmo sem remote): sem isso nada mais
@@ -154,12 +196,32 @@ while true; do
     }
   fi
 
+  # Sessao fixa (panel.json -> sessionMode): o "Continuar" do Historico (RESUME_ID) vence; senao
+  # "pinned" reabre sempre a conversa escolhida e "continue" a mais recente da pasta. So retoma o
+  # que existe em disco: --continue/--resume sem conversa sairia na hora e contaria como crash.
+  CONTINUE=""
+  CDIR="$(conv_dir "$PWD")"
+  if [ -z "$RESUME_ID" ] && [ "$CFG_SESSMODE" = "pinned" ]; then
+    if [ -n "$CFG_PINNED" ] && [ -f "$CDIR/$CFG_PINNED.jsonl" ]; then
+      RESUME_ID="$CFG_PINNED"
+    else
+      slog "sessao fixa: conversa '${CFG_PINNED:-?}' nao encontrada — abrindo uma nova"
+    fi
+  elif [ -z "$RESUME_ID" ] && [ "$CFG_SESSMODE" = "continue" ]; then
+    if compgen -G "$CDIR/*.jsonl" >/dev/null; then CONTINUE=1
+    else slog "continuar: nenhuma conversa anterior nesta pasta — abrindo uma nova"; fi
+  fi
+
   : > "$RUN_FLAG"
-  slog "claude iniciado${RESUME_ID:+ (resume $RESUME_ID)}"
+  slog "claude iniciado${RESUME_ID:+ (resume $RESUME_ID)}${CONTINUE:+ (continue)}"
   T0=$(date +%s)
+  # retomando conversa, a "primeira linha" NAO e reenviada (repetiria o pedido a cada reinicio)
   if [ -n "$RESUME_ID" ]; then
     gray "[continuando a conversa $RESUME_ID]"
     claude --resume "$RESUME_ID"
+  elif [ -n "$CONTINUE" ]; then
+    gray "[continuando a ultima conversa desta pasta]"
+    claude --continue
   elif [ -n "$CFG_INITLINE" ]; then
     # interativo, ja executando a primeira linha; "-..." viraria flag do CLI -> espaco na frente
     case "$CFG_INITLINE" in -*) CFG_INITLINE=" $CFG_INITLINE" ;; esac
@@ -181,8 +243,13 @@ while true; do
   # sozinho ja sobrecarrega a VM (CPU+memoria de cada reabertura, sem teto). Roda tempo o
   # bastante (MIN_HEALTHY_RUN_S) -> zera o contador, era uso normal.
   FAILS="$(backoff_next "$FAILS" "$RAN_FOR")"
+  [ "$FAILS" = "0" ] && record_good_claude
+  if [ "$FAILS" -ge "$MAX_FAST_FAILS" ] && rollback_claude; then
+    FAILS=0
+  fi
   if [ "$FAILS" -ge "$MAX_FAST_FAILS" ]; then
     slog "crash-loop: claude saiu $FAILS vezes seguidas rapido demais — parando de reabrir sozinho"
+    alert error crash-loop "$PROJ_NAME" "Claude caiu $FAILS vezes seguidas (último código $rc) — parei de reabrir. Veja Logs → Sessões."
     drop_to_shell "[dev-box] Claude saiu $FAILS vezes seguidas rapido demais — parei de reabrir pra nao sobrecarregar a VM. Shell livre; rode  claude  quando quiser (ou 'Reiniciar' no painel pra tentar de novo do zero)."
   fi
   WAIT="$(backoff_sleep "$FAILS")"

@@ -6,7 +6,10 @@ const { truthy } = require('./util');
 const projects = require('./projects');
 const totp = require('./totp');
 
-const mask = (v) => (!v ? '' : v.length <= 6 ? '••••' : v.slice(0, 2) + '••••' + v.slice(-2));
+// achado @security: mostrar os 2 primeiros/ultimos caracteres (ex. PANEL_PASSWORD, GH_TOKEN)
+// ainda vaza parte do segredo (e o tamanho). Placeholder FIXO — nenhum caractere real, nenhuma
+// pista de tamanho; `set` ja diz se esta configurado ou nao.
+const mask = (v) => (v ? '••••••••' : '');
 
 function getSettings() {
   const c = projects.loadConfig();

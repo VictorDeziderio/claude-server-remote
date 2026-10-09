@@ -44,6 +44,15 @@ if ! flock -n 9; then
   exit 0
 fi
 
+# alert() e RUN_DIR vem da lib comum; sem ela (teste fora da imagem) os alertas so nao saem
+# shellcheck source=devbox-lib.sh
+. "${DEVBOX_LIB:-/usr/local/lib/devbox/lib.sh}" 2>/dev/null || alert() { :; }
+# memoria da VM no limite (guarda do start.sh): tar/git agora so piorariam -- pula esta passada
+if [ -e "${RUN_DIR:-$H/.claude/run}/lowmem" ]; then
+  log "skip: memoria alta (lowmem) — backup adiado"
+  exit 0
+fi
+
 backup_config() {
   mkdir -p "$CFG_BACKUP_DIR"
   local out stamp
@@ -110,6 +119,7 @@ backup_repo() {
     log "ok    $name: snapshot enviado"
   else
     log "WARN  $name: commit local feito, push falhou (remote/credencial/branch?)"
+    alert warn backup "$name" "Backup de \"$name\": commit local feito, mas o push falhou (remote/credencial/rede?)."
   fi
 }
 

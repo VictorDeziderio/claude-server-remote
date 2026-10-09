@@ -23,6 +23,7 @@ export CLAUDE_AUTOCMD_DELAY="${CLAUDE_AUTOCMD_DELAY:-15}"
 GATEWAY_PORT="${GATEWAY_PORT:-8080}"
 PANEL_PORT=7001
 LOGS="$H/.claude/logs"
+SECRETS_FILE="$H/.devbox-secrets.env"
 
 say() { echo ">> $*"; }
 as_user() { gosu "$U" env HOME="$H" USER="$U" LOGNAME="$U" "$@"; }
@@ -49,7 +50,20 @@ JSON
 [ -f "$PANEL_CONFIG" ] || cp /usr/local/share/claude/panel.json "$PANEL_CONFIG" 2>/dev/null || true
 
 # ownership: so o que NAO e do ubuntu (evita reescrever o volume inteiro a cada boot)
-find "$H" -xdev \( ! -user "$U" -o ! -group "$U" \) -exec chown -h "$U:$U" {} + 2>/dev/null || true
+find "$H" -xdev \( ! -user "$U" -o ! -group "$U" \) ! -path "$SECRETS_FILE" -exec chown -h "$U:$U" {} + 2>/dev/null || true
+
+# Segredos do volume: o EasyPanel passa TODO o Environment como --build-arg e o comando aparece
+# inteiro no log de build -- quem tira PANEL_PASSWORD/GH_TOKEN do Environment e os poe aqui
+# (KEY=valor, root 600) nao vaza mais nada no log. Vence o Environment. So chaves conhecidas;
+# o arquivo nunca e executado (sem `source`).
+if [ -f "$SECRETS_FILE" ]; then
+  chown root:root "$SECRETS_FILE"; chmod 600 "$SECRETS_FILE"
+  while IFS= read -r line || [ -n "$line" ]; do
+    k="${line%%=*}"; v="${line#*=}"
+    case "$k" in PANEL_LOGIN|PANEL_PASSWORD|GH_TOKEN) export "$k=$v" ;; esac
+  done < "$SECRETS_FILE"
+  say "segredos: lidos de $SECRETS_FILE"
+fi
 
 # ---------------------------------------------------------------------------
 # 2) ferramentas
@@ -99,9 +113,36 @@ export -n PANEL_PASSWORD GH_TOKEN 2>/dev/null || true
 # pelo watchdog. Os ligados sobem, e se a sessao cair sem o container reiniciar, voltam em ~10s.
 ensure_sessions() { as_user bash /usr/local/bin/claude-session.sh --all || say "aviso: falha ao garantir as sessoes"; }
 ensure_sessions
+
+# Guarda de memoria: acima de MEM_HIGH_PCT% do limite do container cria RUN_DIR/lowmem (backup
+# pula, painel desacelera) e avisa no painel; abaixo de MEM_OK_PCT% libera. Le o cgroup (o limite
+# REAL do container no EasyPanel) e cai no /proc/meminfo se nao houver limite.
+MEM_HIGH_PCT="${MEM_HIGH_PCT:-85}" MEM_OK_PCT="${MEM_OK_PCT:-75}"
+mem_pct() {
+  local cur max
+  cur="$(cat /sys/fs/cgroup/memory.current 2>/dev/null || true)"
+  max="$(cat /sys/fs/cgroup/memory.max 2>/dev/null || true)"
+  if [ -n "$cur" ] && [ -n "$max" ] && [ "$max" != "max" ] && [ "$max" -gt 0 ]; then
+    echo $(( cur * 100 / max )); return
+  fi
+  awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{if(t) print int((t-a)*100/t); else print 0}' /proc/meminfo
+}
+ALERTS="$RUN_DIR/alerts.jsonl"
+{ touch "$ALERTS"; chown "$U:$U" "$ALERTS"; } 2>/dev/null || true
+mem_guard() {
+  local p; p="$(mem_pct)"
+  if [ "$p" -ge "$MEM_HIGH_PCT" ] && [ ! -e "$RUN_DIR/lowmem" ]; then
+    : > "$RUN_DIR/lowmem"
+    alert warn memory "" "Memória do container em ${p}% — backup adiado e painel desacelerado até baixar."
+  elif [ "$p" -lt "$MEM_OK_PCT" ] && [ -e "$RUN_DIR/lowmem" ]; then
+    rm -f "$RUN_DIR/lowmem"
+    alert info memory "" "Memória voltou ao normal (${p}%)."
+  fi
+}
 ( while sleep 10; do
     ensure_sessions >/dev/null 2>&1
-    for f in "$LOGS"/panel.log "$LOGS"/sessions.log "$LOGS"/backup.log; do trim_log "$f"; done
+    mem_guard
+    for f in "$LOGS"/panel.log "$LOGS"/sessions.log "$LOGS"/backup.log "$ALERTS"; do trim_log "$f"; done
   done ) &
 
 # ---------------------------------------------------------------------------
@@ -109,10 +150,11 @@ ensure_sessions
 # ---------------------------------------------------------------------------
 if [ "${BACKUP_ENABLED:-true}" = "true" ]; then
   say "backup: ligado (intervalo ${BACKUP_INTERVAL:-3600}s) | log: $LOGS/backup.log"
-  ( while sleep "${BACKUP_INTERVAL:-3600}"; do as_user bash /usr/local/bin/backup.sh >/dev/null 2>&1 || true; done ) &
+  # prioridade minima de CPU e disco: backup nunca disputa com o Claude/painel
+  ( while sleep "${BACKUP_INTERVAL:-3600}"; do as_user nice -n 15 ionice -c3 bash /usr/local/bin/backup.sh >/dev/null 2>&1 || true; done ) &
   # snapshot da CONFIG (~/.claude + ~/.claude.json) 1x/dia -> /root/.claude-backups (rotaciona 7)
   ( sleep 120; while true; do
-      as_user bash /usr/local/bin/backup.sh --config >/dev/null 2>&1 || true
+      as_user nice -n 15 ionice -c3 bash /usr/local/bin/backup.sh --config >/dev/null 2>&1 || true
       sleep "${CONFIG_BACKUP_INTERVAL:-86400}"
     done ) &
 fi
@@ -158,7 +200,7 @@ if [ "${PANEL_ENABLED:-true}" = "true" ]; then
       GATEWAY_PORT="$GATEWAY_PORT" GH_TOKEN="${GH_TOKEN:-}" \
       GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-}" GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-}" TZ="${TZ:-}" \
       TERM=xterm-256color \
-      node /usr/local/bin/panel/server.js
+      nice -n 5 node --max-old-space-size="${PANEL_MAX_MEM_MB:-512}" /usr/local/bin/panel/server.js
 fi
 
 # Gateway (Caddy) — PID principal. So faz proxy: o painel tem login proprio (cookie de sessao).

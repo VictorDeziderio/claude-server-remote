@@ -7,8 +7,8 @@ const cfg = require('./config');
 const { sh, validName, sessionName, paneOf, truthy, log } = require('./util');
 const { listProjects } = require('./projects-list');
 const { loginInfo, claudeVersion } = require('./claude');
-const { usageSummary } = require('./usage');
 const events = require('./events');
+const history = require('./history'); // seguro no topo: history.js so pede ./projects LAZY (dentro de uma funcao)
 
 const remoteCmdFor = (name) => '/remote-control ' + (cfg.REMOTE_CONTROL_NAME || name);
 
@@ -16,7 +16,9 @@ const remoteCmdFor = (name) => '/remote-control ' + (cfg.REMOTE_CONTROL_NAME || 
 // enabled: projeto LIGADO (sessao sobe no boot e o watchdog a mantem) | autoStartClaude: a sessao
 // roda o Claude | autoRemote: religa o /remote-control a cada inicio do Claude (claude-loop.sh)
 const FLAGS = ['enabled', 'autoStartClaude', 'autoRemote'];
-const DEFAULTS = { enabled: true, autoStartClaude: true, autoRemote: true };
+const DEFAULTS = { enabled: true, autoStartClaude: true, autoRemote: true, idlePauseHours: 0 };
+const SESSION_MODES = new Set(['new', 'continue', 'pinned']);
+const PINNED_ID_RX = /^[A-Za-z0-9_-]{6,80}$/;
 function loadConfig() {
   try {
     const c = JSON.parse(fs.readFileSync(cfg.CONFIG_FILE, 'utf8'));
@@ -33,19 +35,27 @@ function saveConfig(c) {
     return true;
   } catch (e) { log('error', 'erro salvando panel.json', { err: e.message }); return false; }
 }
-function projConfig(name) {
-  const c = loadConfig();
+// mesma derivacao de projConfig, mas a partir de um `c` (loadConfig()) ja carregado — usado no
+// buildState (hot path do watcher) p/ nao reler panel.json do disco uma vez por projeto a cada tick
+function configFrom(c, name) {
   const d = c.defaults || {};
   const p = (c.projects && c.projects[name]) || {};
   // mesma regra do devbox-lib.sh (proj_config): so `false` explicito desliga
   const pick = (k) => (k in p ? p[k] !== false : (k in d ? d[k] !== false : true));
+  const numOr = (v, fallback) => (typeof v === 'number' && v >= 0 ? v : fallback);
   return {
     enabled: pick('enabled'),
     autoStartClaude: pick('autoStartClaude'),
     autoRemote: pick('autoRemote'),
     initLine: typeof p.initLine === 'string' ? p.initLine : '', // "primeira linha" enviada ao Claude quando ele fica pronto
+    // sessionMode: 'new' (comeca do zero) | 'continue' (claude --continue) | 'pinned' (--resume <id> fixo)
+    sessionMode: SESSION_MODES.has(p.sessionMode) ? p.sessionMode : 'new',
+    pinnedSession: typeof p.pinnedSession === 'string' ? p.pinnedSession : '',
+    // 0 = off; override por projeto, senao o default do panel.json, senao 0
+    idlePauseHours: numOr(p.idlePauseHours, numOr(d.idlePauseHours, 0)),
   };
 }
+function projConfig(name) { return configFrom(loadConfig(), name); }
 function setProjConfig(name, patch) {
   const c = loadConfig();
   c.projects = c.projects || {};
@@ -84,6 +94,11 @@ const projectExists = (name) => validName(name) && fs.existsSync(path.join(cfg.P
 // Claude de fato rodando nessa sessao? flag file mantido pelo claude-loop.sh
 function claudeRunningFlag(sess) {
   try { return fs.existsSync(path.join(cfg.RUN_DIR, sess + '.running')); } catch { return false; }
+}
+// pausado (manual ou por inatividade)? o claude-loop.sh nao reabre o Claude enquanto o flag existe
+const pausedFlagPath = (sess) => path.join(cfg.RUN_DIR, sess + '.paused');
+function pausedFlag(sess) {
+  try { return fs.existsSync(pausedFlagPath(sess)); } catch { return false; }
 }
 
 // ---------- acoes ----------
@@ -233,14 +248,60 @@ async function setInitLine(name, text) {
   events.poke();
   return { ok: true, msg: t ? `"${name}": primeira linha salva (vale no proximo inicio do Claude)` : `"${name}": primeira linha removida` };
 }
+// modo de sessao: 'new' | 'continue' | 'pinned' (precisa de um id que exista no historico do projeto)
+async function setSessionMode(name, mode, id) {
+  if (!validName(name)) return { ok: false, msg: 'nome invalido' };
+  if (!projectExists(name)) return { ok: false, msg: 'projeto inexistente' };
+  if (!SESSION_MODES.has(mode)) return { ok: false, msg: 'modo invalido (use new, continue ou pinned)' };
+  let pinnedSession = '';
+  if (mode === 'pinned') {
+    if (!PINNED_ID_RX.test(String(id || ''))) return { ok: false, msg: 'id de conversa invalido' };
+    const h = await history.listHistory(name);
+    if (!h.ok || !h.sessions.some((s) => s.id === id)) return { ok: false, msg: 'conversa nao encontrada no historico desse projeto' };
+    pinnedSession = id;
+  }
+  if (!setProjConfig(name, { sessionMode: mode, pinnedSession: mode === 'pinned' ? pinnedSession : undefined })) {
+    return { ok: false, msg: 'falha ao salvar panel.json' };
+  }
+  events.poke();
+  return { ok: true, msg: `"${name}": modo de sessao = ${mode}${mode === 'pinned' ? ` (${pinnedSession.slice(0, 8)}…)` : ''}` };
+}
+// pausa manual: grava o flag sempre; so manda /exit se o Claude estiver parado no prompt
+// (nao interrompe trabalho em andamento) — o claude-loop.sh nao reabre enquanto o flag existir
+async function pauseProject(name) {
+  if (!validName(name)) return { ok: false, msg: 'nome invalido' };
+  if (!projectExists(name)) return { ok: false, msg: 'projeto inexistente' };
+  const sess = sessionName(name);
+  try {
+    fs.mkdirSync(cfg.RUN_DIR, { recursive: true });
+    fs.writeFileSync(pausedFlagPath(sess), 'manual');
+  } catch (e) { return { ok: false, msg: 'falha ao gravar flag: ' + e.message }; }
+  let exited = false;
+  if (claudeRunningFlag(sess) && ['idle', 'prompt'].includes(events.activityOf(sess))) {
+    await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', '/exit']);
+    await sh('tmux', ['send-keys', '-t', paneOf(sess), 'Enter']);
+    exited = true;
+  }
+  events.poke();
+  return { ok: true, msg: `"${name}": pausado${exited ? ' — /exit enviado' : ''} (o Claude nao reabre nessa sessao enquanto pausado)` };
+}
+function unpauseProject(name) {
+  if (!validName(name)) return { ok: false, msg: 'nome invalido' };
+  if (!projectExists(name)) return { ok: false, msg: 'projeto inexistente' };
+  const sess = sessionName(name);
+  try { fs.rmSync(pausedFlagPath(sess), { force: true }); } catch (e) { return { ok: false, msg: e.message }; }
+  events.poke();
+  return { ok: true, msg: `"${name}": despausado` };
+}
 
 // ---------- estado consolidado (dashboard) ----------
 async function buildState() {
   const names = listProjects();
+  const conf = loadConfig();
   const projects = await Promise.all(names.map(async (name) => {
     const sess = sessionName(name);
     const up = await sessionUp(sess);
-    const c = projConfig(name);
+    const c = configFrom(conf, name);
     return {
       name,
       dir: path.join(cfg.PROJECTS_DIR, name),
@@ -251,11 +312,14 @@ async function buildState() {
       autoStartClaude: c.autoStartClaude,
       autoRemote: c.autoRemote,
       initLine: c.initLine,
+      sessionMode: c.sessionMode,
+      pinnedSession: c.pinnedSession,
+      idlePauseHours: c.idlePauseHours,
+      paused: pausedFlag(sess),
       remoteCmd: remoteCmdFor(name),
       remoteUrl: up ? events.remoteUrlOf(sess) : '',
     };
   }));
-  const conf = loadConfig();
   return {
     projectsDir: cfg.PROJECTS_DIR,
     panelVersion: cfg.PANEL_VERSION,
@@ -265,7 +329,6 @@ async function buildState() {
     remoteNameForced: cfg.REMOTE_CONTROL_NAME,
     shellSession: cfg.SHELL_SESSION,
     settings: conf.settings || {},
-    usage: usageSummary(),
     projects,
   };
 }
@@ -273,5 +336,6 @@ async function buildState() {
 module.exports = {
   listProjects, projConfig, loadConfig, saveConfig, sessionUp, ensureSession, killSession, recreateSession,
   createProject, restartProject, renameProject, deleteProject, sendRemote, setConfig, setPower, setInitLine,
+  setSessionMode, pauseProject, unpauseProject,
   buildState,
 };

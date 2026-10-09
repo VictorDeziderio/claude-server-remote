@@ -49,6 +49,9 @@ if (process.platform === 'win32') {
 }
 const env = {
   ...process.env, PATH, HOME: ROOT, PANEL_PORT: String(PORT), PANEL_BIND: '127.0.0.1', PANEL_LOGIN: 'admin', PANEL_PASSWORD: 'test123',
+  // teste roda em http puro em localhost: so o teste desliga o Secure do cookie (producao real,
+  // atras do Traefik em https, nunca passa essa flag — ver server/auth.js)
+  PANEL_TEST_INSECURE_COOKIE: '1',
   PROJECTS_DIR: path.join(ROOT, 'projects'), PANEL_CONFIG: path.join(ROOT, '.claude', 'panel.json'),
   SESSION_SCRIPT, BACKUP_SCRIPT, TMUX_TMPDIR: ROOT,
   DEVBOX_LIB: path.join(DEVBOX, 'devbox-lib.sh'), CLAUDE_LOOP: FAKE_LOOP,
@@ -83,7 +86,8 @@ for (const [label, pass] of [['vazia', ''], ['default publico versionado', LEAKE
 // o default nao pode voltar a ser versionado (Dockerfile / .env.example)
 for (const f of ['Dockerfile', '.env.example']) {
   const txt = fs.readFileSync(path.join(DEVBOX, f), 'utf8')
-  failClosed.push([`${f} sem senha default`, !txt.includes(LEAKED_DEFAULT) && /^\s*PANEL_PASSWORD=\s*(\\)?\s*$/m.test(txt), f])
+  // nenhum PANEL_PASSWORD com valor (vazio ou ausente sao ok: o Dockerfile nao declara mais o ENV)
+  failClosed.push([`${f} sem senha default`, !txt.includes(LEAKED_DEFAULT) && !/^[ \t]*PANEL_PASSWORD=[ \t]*[^\s\\]/m.test(txt), f])
 }
 const srv = spawn(process.execPath, ['server.js'], { cwd: PANEL, env, stdio: ['ignore', 'pipe', 'pipe'] })
 let logs = ''
@@ -120,6 +124,16 @@ try {
   r = await j('GET', '/api/state'); ok('state sem auth -> 401', r.status === 401)
   r = await j('POST', '/api/login', { login: 'admin', password: 'errada' }); ok('login errado', r.data.ok === false)
   r = await j('POST', '/api/login', '{bad json'); ok('login corpo invalido -> 400', r.status === 400)
+  // corpo acima do limite: readJson tem que resolver (nao travar a request pra sempre no req.destroy())
+  {
+    const ac = new AbortController()
+    const t = setTimeout(() => ac.abort(), 5000)
+    try {
+      const rr = await fetch(BASE + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json', ...H }, body: 'x'.repeat(1_200_000), signal: ac.signal })
+      ok('corpo grande demais -> 400 (nao trava a conexao)', rr.status === 400)
+    } catch (e) { ok('corpo grande demais -> 400 (nao trava a conexao)', false, e.message) }
+    finally { clearTimeout(t) }
+  }
   r = await j('POST', '/api/login', { login: 'admin', password: 'test123' }, { headers: { origin: 'http://evil.example' } }); ok('login origem errada -> 403', r.status === 403)
   r = await j('POST', '/api/login', { login: 'admin', password: 'test123' })
   ok('login certo', r.data.ok === true && /cr_auth=/.test(r.headers.get('set-cookie') || ''))
@@ -183,6 +197,19 @@ try {
     r = await j('GET', '/api/fs/read?path=inlink/demo/meu.txt'); ok('symlink p/ DENTRO da base: permitido', r.data.ok && r.data.content === 'meu', JSON.stringify(r.data).slice(0, 160))
     r = await j('POST', '/api/fs/delete', { path: 'escape' }); ok('apagar o PROPRIO link p/ fora: permitido, alvo intacto', r.data.ok && !fs.existsSync(path.join(ROOT, 'escape')) && secret() === 'SEGREDO', JSON.stringify(r.data).slice(0, 160))
     r = await j('GET', '/api/fs/list?path=../..'); ok('controle textual ../.. continua recusado', r.data.ok === false)
+
+    // symlink QUEBRADO (alvo nao existe) p/ fora: realOf() tratava o link como "arquivo novo"
+    // (ENOENT ao resolver) e deixava escrever ATRAVES dele — tem de recusar sem criar nada em OUT
+    fs.symlinkSync(path.join(OUT, 'nao-existe-1.txt'), path.join(ROOT, 'dangling1.txt'))
+    r = await j('POST', '/api/fs/save', { path: 'dangling1.txt', content: 'x' })
+    ok('symlink quebrado p/ fora: save recusado', refused(r.data) && !fs.existsSync(path.join(OUT, 'nao-existe-1.txt')), JSON.stringify(r.data).slice(0, 160))
+    fs.symlinkSync(path.join(OUT, 'nao-existe-2.txt'), path.join(ROOT, 'dangling2.txt'))
+    r = await j('POST', '/api/fs/create', { path: 'dangling2.txt', kind: 'file' })
+    ok('symlink quebrado p/ fora: create recusado', refused(r.data) && !fs.existsSync(path.join(OUT, 'nao-existe-2.txt')), JSON.stringify(r.data).slice(0, 160))
+    fs.symlinkSync(path.join(OUT, 'nao-existe-3.txt'), path.join(ROOT, 'dangling3.txt'))
+    r = await fetch(BASE + '/api/fs/upload?path=dangling3.txt', { method: 'POST', headers: { cookie, ...H, 'content-type': 'application/octet-stream' }, body: Buffer.from([9, 9]) })
+    ok('symlink quebrado p/ fora: upload recusado', refused(await r.json()) && !fs.existsSync(path.join(OUT, 'nao-existe-3.txt')))
+
     fs.rmSync(OUT, { recursive: true, force: true })
   }
 
@@ -205,6 +232,11 @@ try {
   r = await j('GET', '/api/logs/tail?file=audit&lines=50'); ok('audit log registrou acoes', r.data.ok && r.data.lines.some((l) => /"action":"config"/.test(l)) && r.data.lines.some((l) => /login\.ok/.test(l)), JSON.stringify(r.data).slice(0, 300))
   r = await j('GET', '/api/logs/tail?file=nada'); ok('log desconhecido', r.data.ok === false)
   r = await j('GET', '/api/health'); ok('health', r.data.ok && r.data.mem && Array.isArray(r.data.load) && r.data.claude, JSON.stringify(r.data).slice(0, 200))
+  ok('health: cpu/top/history (sampler D)', typeof r.data.cpu?.pct === 'number' && Array.isArray(r.data.top) && Array.isArray(r.data.history), JSON.stringify({ cpu: r.data.cpu, topLen: r.data.top?.length, histLen: r.data.history?.length }))
+  // contrato @panel-ui: ps da rss em KB, top[].rss tem de estar em BYTES (x1024) — pcpu continua numero
+  ok('health: top[].rss em bytes (nao KB)', r.data.top.length === 0 || (typeof r.data.top[0].rss === 'number' && r.data.top[0].rss >= 1024 && typeof r.data.top[0].pcpu === 'number'), JSON.stringify(r.data.top[0]))
+  r = await j('GET', '/api/usage'); ok('usage sob demanda (fora do buildState)', r.data.ok && 'total' in r.data.usage && 'today' in r.data.usage, JSON.stringify(r.data).slice(0, 200))
+  r = await j('GET', '/api/state'); ok('state nao traz mais usage (tirado do tick de 2s)', !('usage' in r.data))
   r = await j('POST', '/api/backup/run', { name: 'demo' }); ok('backup run', r.data.ok, r.data.msg)
   r = await j('POST', '/api/backup/config', {}); ok('backup config', r.data.ok && r.data.backups.length >= 1, r.data.msg)
   r = await j('GET', '/api/backup/status'); ok('backup status', r.data.ok && r.data.projects[0].last && r.data.configBackups.length >= 1)
@@ -212,6 +244,35 @@ try {
   r = await fetch(BASE + '/api/backup/download?file=../x.tgz', { headers: { cookie } }); ok('backup download nome invalido', r.status === 400)
   r = await j('GET', '/api/history?name=demo'); ok('history list', r.data.ok && r.data.sessions[0]?.title === 'Cria um README' && r.data.sessions[0].model === 'claude-opus-5', JSON.stringify(r.data).slice(0, 200))
   r = await j('GET', '/api/history/conversation?name=demo&id=abc123def456'); ok('history conversation', r.data.ok && r.data.conversation.items.length === 2)
+
+  // A: modo de sessao (new/continue/pinned) — pinned exige um id que exista no historico
+  r = await j('POST', '/api/session-mode', { name: 'demo', mode: 'pinned', id: 'nao-existe-123' })
+  ok('session-mode pinned com id inexistente recusado', r.data.ok === false, JSON.stringify(r.data))
+  r = await j('POST', '/api/session-mode', { name: 'demo', mode: 'pinned', id: 'abc123def456' })
+  ok('session-mode pinned com id valido', r.data.ok === true, r.data.msg)
+  const cfgPinned = JSON.parse(fs.readFileSync(path.join(ROOT, '.claude', 'panel.json'), 'utf8'))
+  ok('panel.json: sessionMode/pinnedSession gravados', cfgPinned.projects.demo.sessionMode === 'pinned' && cfgPinned.projects.demo.pinnedSession === 'abc123def456', JSON.stringify(cfgPinned.projects.demo))
+  r = await j('GET', '/api/state'); ok('state expoe sessionMode/pinnedSession', r.data.projects[0].sessionMode === 'pinned' && r.data.projects[0].pinnedSession === 'abc123def456', JSON.stringify(r.data.projects[0]).slice(0, 200))
+  r = await j('POST', '/api/session-mode', { name: 'demo', mode: 'new' }); ok('session-mode volta pra new', r.data.ok === true)
+  r = await j('POST', '/api/session-mode', { name: 'demo', mode: 'invalido' }); ok('session-mode invalido recusado', r.data.ok === false)
+
+  // B: pausa manual — grava/remove o flag, estado reflete em paused
+  const pausedFlagFile = path.join(ROOT, '.claude', 'run', 'claude-demo.paused')
+  r = await j('POST', '/api/pause', { name: 'demo' }); ok('pause grava flag', r.data.ok, r.data.msg)
+  ok('flag .paused existe com conteudo', fs.existsSync(pausedFlagFile) && fs.readFileSync(pausedFlagFile, 'utf8').trim().length > 0)
+  r = await j('GET', '/api/state'); ok('state: paused=true', r.data.projects[0].paused === true)
+  r = await j('POST', '/api/unpause', { name: 'demo' }); ok('unpause remove flag', r.data.ok && !fs.existsSync(pausedFlagFile), r.data.msg)
+  r = await j('GET', '/api/state'); ok('state: paused=false', r.data.projects[0].paused === false)
+
+  // C: alertas dos scripts (RUN_DIR/alerts.jsonl) -> GET /api/alerts (poll on-demand) -> clear
+  fs.mkdirSync(path.join(ROOT, '.claude', 'run'), { recursive: true })
+  fs.appendFileSync(path.join(ROOT, '.claude', 'run', 'alerts.jsonl'), JSON.stringify({ t: Date.now(), level: 'warn', kind: 'backup', project: 'demo', msg: 'backup atrasado' }) + '\n')
+  r = await j('GET', '/api/alerts')
+  ok('alerta anexado pelo script aparece em /api/alerts', r.data.ok && r.data.alerts.some((a) => a.kind === 'backup' && a.project === 'demo' && a.msg === 'backup atrasado'), JSON.stringify(r.data).slice(0, 300))
+  ok('alerta: t em epoch ms', typeof r.data.alerts.find((a) => a.kind === 'backup')?.t === 'number' && r.data.alerts.find((a) => a.kind === 'backup').t > 1e12)
+  r = await j('POST', '/api/alerts/clear', {}); ok('alerts/clear ok', r.data.ok)
+  r = await j('GET', '/api/alerts'); ok('lista vazia apos clear', r.data.ok && r.data.alerts.length === 0)
+
   r = await j('GET', '/api/report'); ok('report custo por modelo', r.data.ok && r.data.usage.byModel['claude-opus-5'] && r.data.usage.total.cost > 0, JSON.stringify(r.data.usage.byModel))
   r = await j('GET', '/api/sessions'); ok('sessoes ativas lista a atual', r.data.ok && r.data.sessions.some((s) => s.current))
   // segunda sessao + revogar

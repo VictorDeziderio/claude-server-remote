@@ -1,27 +1,46 @@
 'use strict';
 const { execFile } = require('child_process');
 
+// achado @security: `tmux new-session` sobe um shell que herda o env de quem chamou (o painel) —
+// sem filtrar, PANEL_PASSWORD/GH_TOKEN iam pra dentro de TODA sessao tmux (e de qualquer Claude
+// rodando nela, visivel via `env`). So o caso de tmux: outros comandos (git, npm, bash de backup)
+// continuam herdando o env normal, alguns dependem dele de proposito (ex.: GH_TOKEN no backup).
+const TMUX_STRIP_ENV = ['PANEL_PASSWORD', 'GH_TOKEN'];
+
 // roda um comando sem shell (args separados) e nunca rejeita: {ok, stdout, stderr}
 function sh(cmd, args, opts = {}) {
   return new Promise((resolve) => {
-    execFile(cmd, args, { timeout: 20000, maxBuffer: 4 * 1024 * 1024, ...opts }, (err, stdout, stderr) =>
+    const finalOpts = { timeout: 20000, maxBuffer: 4 * 1024 * 1024, ...opts };
+    if (cmd === 'tmux') {
+      const env = { ...(opts.env || process.env) };
+      for (const k of TMUX_STRIP_ENV) delete env[k];
+      finalOpts.env = env;
+    }
+    execFile(cmd, args, finalOpts, (err, stdout, stderr) =>
       resolve({ ok: !err, stdout: stdout || '', stderr: stderr || (err && err.message) || '' }));
   });
 }
 
 // le o corpo JSON de uma request (limite 1MB). Corpo invalido -> null (a rota responde 400).
+// req.destroy() dispara 'close'/'aborted', NUNCA 'end' — resolver so no 'end' deixava a promise
+// pendurada pra sempre (handler nunca responde, socket nunca fecha, conexao vaza) quando o corpo
+// passava do limite. Ao passar do limite so paramos de ACUMULAR (sem crescer memoria): o stream
+// continua drenando (sem destroy) ate o 'end' natural, pra rota ainda poder responder 400 de
+// verdade — destruir o socket aqui impediria QUALQUER resposta (o cliente so veria a conexao cair).
 function readJson(req, limit = 1e6) {
   return new Promise((resolve) => {
     let data = '';
     let over = false;
-    req.on('data', (c) => { data += c; if (data.length > limit) { over = true; req.destroy(); } });
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    req.on('data', (c) => { if (over) return; data += c; if (data.length > limit) { over = true; data = ''; } });
     req.on('end', () => {
-      if (over) return resolve(null);
-      if (!data) return resolve({});
-      try { const v = JSON.parse(data); resolve(v && typeof v === 'object' ? v : null); }
-      catch { resolve(null); }
+      if (over || !data) return finish(over ? null : {});
+      try { const v = JSON.parse(data); finish(v && typeof v === 'object' ? v : null); }
+      catch { finish(null); }
     });
-    req.on('error', () => resolve(null));
+    req.on('error', () => finish(null));
+    req.on('close', () => finish(null));
   });
 }
 
@@ -31,9 +50,12 @@ function readRaw(req, limit) {
     const chunks = [];
     let size = 0;
     let over = false;
-    req.on('data', (c) => { size += c.length; if (size > limit) { over = true; req.destroy(); return; } chunks.push(c); });
-    req.on('end', () => resolve(over ? null : Buffer.concat(chunks)));
-    req.on('error', () => resolve(null));
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    req.on('data', (c) => { if (over) return; size += c.length; if (size > limit) { over = true; chunks.length = 0; return; } chunks.push(c); });
+    req.on('end', () => finish(over ? null : Buffer.concat(chunks)));
+    req.on('error', () => finish(null));
+    req.on('close', () => finish(null));
   });
 }
 

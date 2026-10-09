@@ -66,8 +66,14 @@ load();
 const isEnabled = () => state.enabled && !!state.secret;
 const issuer = 'Claude Remote';
 
-// gera um segredo pendente (so vira ativo depois de enable() com um codigo valido)
-function setup(host) {
+// gera um segredo pendente (so vira ativo depois de enable() com um codigo valido).
+// achado @security: com o 2FA JA ativo, gerar um novo QR sem provar o codigo atual deixava
+// uma sessao de painel ja autenticada (ex.: cookie vazado) trocar o segredo por um que o
+// invasor controla — exige o codigo do segredo ATUAL antes de abrir um novo setup.
+function setup(host, code) {
+  if (isEnabled() && !verifyCode(state.secret, code)) {
+    return { ok: false, msg: '2FA ja esta ativo — informe o codigo atual do autenticador para gerar um novo QR' };
+  }
   state.pending = b32encode(crypto.randomBytes(20));
   const label = encodeURIComponent(`${issuer}:${cfg.PANEL_LOGIN}@${host || 'devbox'}`);
   const url = `otpauth://totp/${label}?secret=${state.pending}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;

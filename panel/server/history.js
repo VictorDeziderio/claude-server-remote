@@ -2,6 +2,7 @@
 // Historico de conversas do Claude por projeto (lendo ~/.claude/projects/<cwd codificado>/*.jsonl)
 // + "continuar" uma conversa (claude --resume <id>) via flag lida pelo claude-loop.sh.
 const fs = require('fs');
+const fsp = require('fs/promises');
 const path = require('path');
 const cfg = require('./config');
 const { sh, validName, sessionName, paneOf } = require('./util');
@@ -24,9 +25,11 @@ function textOf(content) {
 }
 
 // le um .jsonl e devolve resumo {id, title, first, last, messages, model, tokens}
-function summarizeFile(file, wantMessages) {
+// achado @security: readFileSync (ate 64MB) travava o event loop por arquivo; assincrono
+// (fs/promises) deixa a leitura em disco fora do loop — so o parse das linhas continua sincrono.
+async function summarizeFile(file, wantMessages) {
   let data;
-  try { if (fs.statSync(file).size > 64 * 1024 * 1024) return null; data = fs.readFileSync(file, 'utf8'); } catch { return null; }
+  try { if ((await fsp.stat(file)).size > 64 * 1024 * 1024) return null; data = await fsp.readFile(file, 'utf8'); } catch { return null; }
   const id = path.basename(file, '.jsonl');
   let title = '', first = '', last = '', model = '', count = 0;
   let tokens = 0;
@@ -52,18 +55,18 @@ function summarizeFile(file, wantMessages) {
   return out;
 }
 
-function listHistory(name) {
+async function listHistory(name) {
   if (!validName(name)) return { ok: false, msg: 'nome invalido' };
   const dir = dirOf(name);
   let files = [];
-  try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl')).map((f) => path.join(dir, f)); } catch { return { ok: true, sessions: [], dir }; }
-  const sessions = files.map((f) => summarizeFile(f, false)).filter(Boolean).sort((a, b) => (b.last || '').localeCompare(a.last || ''));
+  try { files = (await fsp.readdir(dir)).filter((f) => f.endsWith('.jsonl')).map((f) => path.join(dir, f)); } catch { return { ok: true, sessions: [], dir }; }
+  const sessions = (await Promise.all(files.map((f) => summarizeFile(f, false)))).filter(Boolean).sort((a, b) => (b.last || '').localeCompare(a.last || ''));
   return { ok: true, sessions, dir };
 }
-function readConversation(name, id) {
+async function readConversation(name, id) {
   if (!validName(name) || !/^[A-Za-z0-9_-]{6,80}$/.test(String(id || ''))) return { ok: false, msg: 'parametros invalidos' };
   const file = path.join(dirOf(name), id + '.jsonl');
-  const s = summarizeFile(file, true);
+  const s = await summarizeFile(file, true);
   if (!s) return { ok: false, msg: 'conversa nao encontrada' };
   return { ok: true, conversation: s };
 }

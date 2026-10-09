@@ -1,12 +1,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { History, MessageSquare, Play, ArrowLeft, RefreshCw, Bot, User, Wrench, Loader2 } from 'lucide-react'
+import { History, MessageSquare, Play, ArrowLeft, RefreshCw, Bot, User, Wrench, Loader2, Pin } from 'lucide-react'
 import { Btn, Card, Empty, Skeleton, InlineConfirm } from '../components/ui.jsx'
 import { fmtInt, fmtTok, fmtIso, shortModel } from '../lib/format.js'
 import * as api from '../api.js'
 
 // /history[/:name] — conversas do Claude por projeto (lidas dos .jsonl) + "continuar" (claude --resume)
-export default function HistoryPage({ data, onFlash }) {
+export default function HistoryPage({ data, onFlash, refresh }) {
   const { name } = useParams()
   const navigate = useNavigate()
   const projects = data?.projects || []
@@ -15,6 +15,16 @@ export default function HistoryPage({ data, onFlash }) {
   const [loading, setLoading] = useState(false)
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState('')
+  const proj = projects.find((p) => p.name === name)
+  const pinnedId = proj?.pinnedSession
+
+  const pin = async (id) => {
+    setBusy('pin:' + id)
+    const r = await api.setSessionMode(name, 'pinned', id).catch((e) => ({ ok: false, msg: e.message }))
+    setBusy('')
+    onFlash?.(r)
+    if (r.ok) refresh?.()
+  }
 
   const load = useCallback(async () => {
     if (!name) return
@@ -50,7 +60,6 @@ export default function HistoryPage({ data, onFlash }) {
     onFlash?.(r)
     if (r.ok) navigate('/terminal/' + encodeURIComponent(name))
   }
-  const proj = projects.find((p) => p.name === name)
 
   if (!name) {
     return (
@@ -84,11 +93,17 @@ export default function HistoryPage({ data, onFlash }) {
               <ArrowLeft className="h-3.5 w-3.5" /> Voltar
             </Btn>
             <h2 className="truncate text-sm font-medium text-white">{c.title}</h2>
+            {pinnedId === open.id && <span className="rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[11px] text-primary">Fixada</span>}
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-mono text-xs text-slate-500">
               {fmtInt(c.messages)} msgs · {fmtTok(c.tokens)} tokens · {shortModel(c.model)} · {fmtIso(c.first)} → {fmtIso(c.last)}
             </span>
+            {pinnedId !== open.id && (
+              <Btn size="sm" variant="ghost" busy={busy === 'pin:' + open.id} onClick={() => pin(open.id)} title="esta conversa volta sempre que o Claude for religado nesta sessão">
+                <Pin className="h-3.5 w-3.5" /> Fixar esta sessão
+              </Btn>
+            )}
             {confirm === open.id ? (
               <InlineConfirm danger={false} text={proj?.claudeRunning ? 'Isso encerra a conversa atual e reabre continuando esta. Ok?' : 'Enviar claude --resume ao shell da sessão?'} onYes={() => resume(open.id)} onNo={() => setConfirm('')} busy={busy === 'resume:' + open.id} />
             ) : (
@@ -145,11 +160,19 @@ export default function HistoryPage({ data, onFlash }) {
             <li key={s.id} className="flex flex-wrap items-center gap-3 rounded-lg px-2 py-2.5 transition hover:bg-accent">
               <MessageSquare className="h-4 w-4 shrink-0 text-primary" />
               <button type="button" onClick={() => view(s.id)} className="min-w-0 flex-1 text-left">
-                <div className="truncate text-sm text-slate-100 hover:underline">{s.title}</div>
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm text-slate-100 hover:underline">{s.title}</span>
+                  {pinnedId === s.id && <span className="shrink-0 rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[11px] text-primary">Fixada</span>}
+                </div>
                 <div className="font-mono text-xs text-slate-500">
                   {fmtIso(s.last)} · {fmtInt(s.messages)} msgs · {fmtTok(s.tokens)} tokens · {shortModel(s.model) || '?'} · <span className="text-slate-600">{s.id.slice(0, 8)}</span>
                 </div>
               </button>
+              {pinnedId !== s.id && (
+                <Btn size="sm" variant="ghost" busy={busy === 'pin:' + s.id} onClick={() => pin(s.id)} title="esta conversa volta sempre que o Claude for religado nesta sessão">
+                  <Pin className="h-3.5 w-3.5" />
+                </Btn>
+              )}
               {confirm === s.id ? (
                 <InlineConfirm danger={false} text={proj?.claudeRunning ? 'Encerra a conversa atual e reabre continuando esta. Ok?' : 'Enviar claude --resume?'} onYes={() => resume(s.id)} onNo={() => setConfirm('')} busy={busy === 'resume:' + s.id} />
               ) : (

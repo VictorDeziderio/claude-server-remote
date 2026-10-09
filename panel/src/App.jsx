@@ -34,19 +34,23 @@ export default function App() {
   const [flash, setFlash] = useState(null)
   const [showNew, setShowNew] = useState(false)
   const [notifPerm, setNotifPerm] = useState(() => (typeof Notification !== 'undefined' ? Notification.permission : 'denied'))
+  const [alerts, setAlerts] = useState([])
   const { pathname } = useLocation()
 
-  // notificacoes (Claude terminou / esta esperando voce): toast sempre + Notification do navegador se permitido
+  // notificacoes (Claude terminou / esta esperando voce / alerta de saude da VM): toast
+  // sempre + Notification do navegador se permitido
   const onNotify = useCallback((n) => {
     const s = (data && data.settings) || {}
     if (s.notifications === false) return
     if (n.kind === 'done' && s.notifyDone === false) return
     if (n.kind === 'prompt' && s.notifyPrompt === false) return
-    setFlash({ ok: n.kind !== 'prompt', msg: `${n.title}${n.body ? ' — ' + n.body : ''}` })
+    const isAlert = n.kind === 'alert'
+    if (isAlert) setAlerts((a) => [{ t: Date.now(), level: n.level, kind: n.alertKind, project: n.project, msg: `${n.title}${n.body ? ' — ' + n.body : ''}` }, ...a].slice(0, 50))
+    setFlash({ ok: isAlert ? n.level !== 'error' && n.level !== 'critical' : n.kind !== 'prompt', msg: `${n.title}${n.body ? ' — ' + n.body : ''}` })
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
       try {
-        const note = new Notification(n.title, { body: n.body, tag: 'cr-' + n.name + '-' + n.kind, icon: '/icon.svg' })
-        note.onclick = () => { window.focus(); window.location.hash = ''; window.history.pushState({}, '', '/terminal/' + encodeURIComponent(n.name)); window.dispatchEvent(new PopStateEvent('popstate')); note.close() }
+        const note = new Notification(n.title, { body: n.body, tag: 'cr-' + (n.name || n.project) + '-' + n.kind, icon: '/icon.svg' })
+        note.onclick = () => { window.focus(); window.location.hash = ''; window.history.pushState({}, '', n.name ? '/terminal/' + encodeURIComponent(n.name) : '/dashboard'); window.dispatchEvent(new PopStateEvent('popstate')); note.close() }
       } catch { /* */ }
     }
   }, [data])
@@ -56,6 +60,12 @@ export default function App() {
 
   // primeira carga: descobre se esta autenticado
   useEffect(() => { refresh() }, [refresh])
+  // alertas ja registrados no servidor (o SSE so traz os novos a partir de agora)
+  useEffect(() => {
+    if (authed !== true) return
+    api.alerts().then((r) => { if (r.ok) setAlerts(r.alerts) }).catch(() => {})
+  }, [authed])
+  const clearAlerts = useCallback(() => { api.alertsClear().catch(() => {}); setAlerts([]) }, [])
 
   const doLogout = async () => { try { await api.logout() } catch { /* */ } setData(null); setAuthed(false) }
   const closeFlash = useCallback(() => setFlash(null), [])
@@ -81,7 +91,7 @@ export default function App() {
     : null
 
   return (
-    <Layout data={data} live={live} onLogout={doLogout} onRefresh={refresh} actions={actions} notif={notifPerm} onToggleNotif={toggleNotif}>
+    <Layout data={data} live={live} onLogout={doLogout} onRefresh={refresh} actions={actions} notif={notifPerm} onToggleNotif={toggleNotif} alerts={alerts} onClearAlerts={clearAlerts}>
       {stale && (
         <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-sky-500/10 px-4 py-2.5 text-sm text-sky-100 ring-1 ring-sky-500/30">
           <RefreshCw className="h-4 w-4 text-sky-300" />
@@ -98,8 +108,8 @@ export default function App() {
             <Route path="/files/*" element={<FilesPage onFlash={setFlash} />} />
             <Route path="/terminal" element={<Navigate to="/terminal/shell" replace />} />
             <Route path="/terminal/:name" element={<TerminalPage data={data} activity={activity} onFlash={setFlash} />} />
-            <Route path="/history" element={<HistoryPage data={data} onFlash={setFlash} />} />
-            <Route path="/history/:name" element={<HistoryPage data={data} onFlash={setFlash} />} />
+            <Route path="/history" element={<HistoryPage data={data} onFlash={setFlash} refresh={refresh} />} />
+            <Route path="/history/:name" element={<HistoryPage data={data} onFlash={setFlash} refresh={refresh} />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/backup" element={<BackupPage data={data} onFlash={setFlash} />} />
             <Route path="/settings" element={<SettingsPage data={data} onFlash={setFlash} refresh={refresh} notif={notifPerm} onToggleNotif={toggleNotif} />} />

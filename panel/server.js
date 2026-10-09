@@ -12,7 +12,7 @@
 const http = require('http');
 const fs = require('fs');
 const cfg = require('./server/config');
-const { readJson, readRaw, sendJson, log } = require('./server/util');
+const { readJson, sendJson, log } = require('./server/util');
 const auth = require('./server/auth');
 const totp = require('./server/totp');
 const { audit, summarize } = require('./server/audit');
@@ -28,6 +28,7 @@ const logs = require('./server/logs');
 const health = require('./server/health');
 const backup = require('./server/backup');
 const settings = require('./server/settings');
+const alerts = require('./server/alerts');
 const { serveStatic } = require('./server/static');
 
 fs.mkdirSync(cfg.PROJECTS_DIR, { recursive: true });
@@ -39,6 +40,9 @@ const SECURITY_HEADERS = {
   'Referrer-Policy': 'same-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+  // deploy real e sempre https atras do Traefik; sem efeito nenhum sobre http (o browser so
+  // obedece HSTS recebido via https) — seguro mandar sempre, inclusive nos testes locais.
+  'Strict-Transport-Security': 'max-age=15552000; includeSubDomains',
 };
 
 // rotas GET (todas exigem auth). (q = URLSearchParams, req)
@@ -65,6 +69,8 @@ const GET = {
   '/api/sessions': async (q, req) => auth.listSessions(req),
   '/api/totp/status': async () => ({ ok: true, ...totp.status() }),
   '/api/claude/login/status': async () => claudeLogin.status(),
+  '/api/usage': async () => ({ ok: true, usage: usage.usageSummary() }), // achado @perf: tirado do buildState (tick de 2s), servido sob demanda
+  '/api/alerts': async () => { alerts.poll(); return { ok: true, alerts: alerts.list100() }; }, // on-demand (abrir a pagina), nao e o tick de 2s
 };
 // rotas POST (JSON; todas exigem auth + mesma origem). (body, req)
 const POST = {
@@ -100,15 +106,20 @@ const POST = {
   '/api/settings': (b) => settings.setSettings(b),
   '/api/sessions/revoke': (b, req) => auth.revokeSession(req, b.id),
   '/api/sessions/revoke-others': (b, req) => auth.revokeOthers(req),
-  '/api/totp/setup': (b, req) => totp.setup(auth.hostOf(req)),
+  '/api/totp/setup': (b, req) => totp.setup(auth.hostOf(req), b.code),
   '/api/totp/enable': (b) => totp.enable(b.code),
   '/api/totp/disable': (b) => totp.disable(b.code),
+  '/api/session-mode': (b) => projects.setSessionMode(b.name, b.mode, b.id),
+  '/api/pause': (b) => projects.pauseProject(b.name),
+  '/api/unpause': (b) => projects.unpauseProject(b.name),
+  '/api/alerts/clear': () => { alerts.clear(); return { ok: true }; },
 };
 // acoes que entram no audit log (as de leitura nao)
 const AUDITED = new Set(['/api/create', '/api/rename', '/api/delete', '/api/config', '/api/initline', '/api/restart', '/api/power', '/api/remote',
   '/api/fs/save', '/api/fs/create', '/api/fs/delete', '/api/fs/rename', '/api/term/exit', '/api/term/window', '/api/claude/logout',
   '/api/claude/update', '/api/claude/login/start', '/api/claude/login/code', '/api/claude/login/cancel', '/api/history/resume', '/api/backup/run', '/api/backup/config', '/api/settings/defaults', '/api/settings',
-  '/api/sessions/revoke', '/api/sessions/revoke-others', '/api/totp/enable', '/api/totp/disable']);
+  '/api/sessions/revoke', '/api/sessions/revoke-others', '/api/totp/enable', '/api/totp/disable',
+  '/api/session-mode', '/api/pause', '/api/unpause', '/api/alerts/clear']);
 
 const server = http.createServer(async (req, res) => {
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
@@ -125,14 +136,17 @@ const server = http.createServer(async (req, res) => {
       if (!body) return sendJson(res, 400, { ok: false, msg: 'corpo invalido' });
       return sendJson(res, 200, auth.doLogin(body, req, res));
     }
-    if (req.method === 'POST' && url === '/api/logout') return sendJson(res, 200, auth.doLogout(req, res));
+    if (req.method === 'POST' && url === '/api/logout') {
+      if (!auth.sameOrigin(req)) return sendJson(res, 403, { ok: false, msg: 'origem invalida' });
+      return sendJson(res, 200, auth.doLogout(req, res));
+    }
     if (req.method === 'GET' && url === '/api/login/info') return sendJson(res, 200, { ok: true, twofa: totp.isEnabled(), panelVersion: cfg.PANEL_VERSION });
 
     // --- API protegida ---
     if (url.startsWith('/api/')) {
       if (!auth.isAuthed(req)) return sendJson(res, 401, { ok: false, msg: 'nao autenticado' });
       if (req.method === 'GET') {
-        if (url === '/api/events') return events.attach(req, res);
+        if (url === '/api/events') return events.attach(req, res, auth.sessionId(req));
         if (url === '/api/fs/download') return files.fsDownload(u.searchParams.get('path') || '', res);
         if (url === '/api/backup/download') return backup.downloadConfig(res, u.searchParams.get('file') || '', u.searchParams.get('full') === '1');
         const h = GET[url];
@@ -142,10 +156,9 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'POST') {
         if (!auth.sameOrigin(req)) return sendJson(res, 403, { ok: false, msg: 'origem invalida' });
         if (url === '/api/fs/upload') {
-          const buf = await readRaw(req, files.MAX_UPLOAD);
-          const r = files.fsUpload(u.searchParams.get('path') || '', buf, u.searchParams.get('overwrite') === '1');
-          audit('fs.upload', { ip: auth.clientIp(req), path: u.searchParams.get('path') || '', ok: r.ok, size: buf ? buf.length : 0 });
-          return sendJson(res, 200, r);
+          const r = await files.fsUploadStream(u.searchParams.get('path') || '', req, u.searchParams.get('overwrite') === '1');
+          audit('fs.upload', { ip: auth.clientIp(req), path: u.searchParams.get('path') || '', ok: r.ok, size: r.size || 0 });
+          return sendJson(res, r.status || 200, r);
         }
         const h = POST[url];
         if (!h) return sendJson(res, 404, { ok: false, msg: 'rota desconhecida' });
@@ -175,7 +188,7 @@ server.on('upgrade', (req, socket, head) => {
   if (u.pathname !== '/ws/term') return reject(404, 'Not Found');
   if (!auth.sameOrigin(req)) return reject(403, 'Forbidden');
   if (!auth.isAuthed(req)) return reject(401, 'Unauthorized');
-  term.handleUpgrade(req, socket, head, u.searchParams, auth.clientIp(req));
+  term.handleUpgrade(req, socket, head, u.searchParams, auth.clientIp(req), auth.sessionId(req));
 });
 
 server.listen(cfg.PORT, cfg.BIND, () => {
