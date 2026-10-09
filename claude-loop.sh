@@ -163,6 +163,10 @@ while true; do
   else
     claude
   fi
+  rc=$?
+  # exit code in the log: 0 = normal exit (/exit, Ctrl-D); 137 = SIGKILL (OOM/kill); 134 = abort
+  # (e.g. V8 heap out of memory); 129/143 = HUP/TERM. Without it a dropped session leaves no clue.
+  slog "claude saiu (codigo $rc)"
   rm -f "$RUN_FLAG"
   # o envio do remote/trust pertence a ESTE Claude: se ele ja saiu, nao pode digitar no proximo
   if [ -n "$REMOTE_PID" ]; then kill "$REMOTE_PID" 2>/dev/null; wait "$REMOTE_PID" 2>/dev/null; REMOTE_PID=""; fi
