@@ -121,6 +121,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 0' TERM HUP
 
+FAILS=0  # consecutivos; zera quando o Claude roda tempo suficiente (ver backoff_next)
 while true; do
   load_proj_config "$PROJ_NAME"
   if [ "$CFG_ENABLED" != "true" ] || [ "$CFG_AUTOSTART" != "true" ]; then
@@ -155,26 +156,39 @@ while true; do
 
   : > "$RUN_FLAG"
   slog "claude iniciado${RESUME_ID:+ (resume $RESUME_ID)}"
+  T0=$(date +%s)
   if [ -n "$RESUME_ID" ]; then
     gray "[continuando a conversa $RESUME_ID]"
     claude --resume "$RESUME_ID"
   elif [ -n "$CFG_INITLINE" ]; then
-    claude "$CFG_INITLINE"          # interativo, ja executando a primeira linha
+    # interativo, ja executando a primeira linha; "-..." viraria flag do CLI -> espaco na frente
+    case "$CFG_INITLINE" in -*) CFG_INITLINE=" $CFG_INITLINE" ;; esac
+    claude "$CFG_INITLINE"
   else
     claude
   fi
   rc=$?
+  RAN_FOR=$(( $(date +%s) - T0 ))
   # exit code in the log: 0 = normal exit (/exit, Ctrl-D); 137 = SIGKILL (OOM/kill); 134 = abort
   # (e.g. V8 heap out of memory); 129/143 = HUP/TERM. Without it a dropped session leaves no clue.
-  slog "claude saiu (codigo $rc)"
+  slog "claude saiu (codigo $rc, rodou ${RAN_FOR}s)"
   rm -f "$RUN_FLAG"
   # o envio do remote/trust pertence a ESTE Claude: se ele ja saiu, nao pode digitar no proximo
   if [ -n "$REMOTE_PID" ]; then kill "$REMOTE_PID" 2>/dev/null; wait "$REMOTE_PID" 2>/dev/null; REMOTE_PID=""; fi
   if [ -n "$TRUST_PID" ]; then kill "$TRUST_PID" 2>/dev/null; wait "$TRUST_PID" 2>/dev/null; TRUST_PID=""; fi
 
-  gray "[claude saiu — reabrindo em 3s | Ctrl-C = ficar no shell]"
+  # Backoff: sem isso, um Claude que crasha rapido (bug/OOM) reabre a cada 3s PRA SEMPRE e
+  # sozinho ja sobrecarrega a VM (CPU+memoria de cada reabertura, sem teto). Roda tempo o
+  # bastante (MIN_HEALTHY_RUN_S) -> zera o contador, era uso normal.
+  FAILS="$(backoff_next "$FAILS" "$RAN_FOR")"
+  if [ "$FAILS" -ge "$MAX_FAST_FAILS" ]; then
+    slog "crash-loop: claude saiu $FAILS vezes seguidas rapido demais — parando de reabrir sozinho"
+    drop_to_shell "[dev-box] Claude saiu $FAILS vezes seguidas rapido demais — parei de reabrir pra nao sobrecarregar a VM. Shell livre; rode  claude  quando quiser (ou 'Reiniciar' no painel pra tentar de novo do zero)."
+  fi
+  WAIT="$(backoff_sleep "$FAILS")"
+  gray "[claude saiu — reabrindo em ${WAIT}s | Ctrl-C = ficar no shell]"
   # Ctrl-C aqui interrompe o sleep -> cai no shell (em vez de reabrir)
-  if ! (trap 'exit 130' INT; sleep 3); then
+  if ! (trap 'exit 130' INT; sleep "$WAIT"); then
     drop_to_shell "[dev-box] supervisor pausado — shell livre. Para voltar: 'Reiniciar' no painel."
   fi
 done

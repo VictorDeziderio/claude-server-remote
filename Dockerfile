@@ -16,6 +16,7 @@ ARG PLAYWRIGHT_VERSION=1.62.1
 # quais browsers instalar no Playwright: "chromium chrome" (default) | "chrome" (so o Google Chrome,
 # ~300MB a menos; scripts sem channel:'chrome' deixam de funcionar) | "chromium"
 ARG PLAYWRIGHT_BROWSERS="chromium chrome"
+ARG CADDY_VERSION=2.11.7
 
 # ============================================================================
 # Stage 1: build do painel (dist/ + node_modules so de runtime: ws + node-pty compilado)
@@ -41,6 +42,7 @@ FROM ubuntu:24.04
 ARG CLAUDE_CODE_VERSION
 ARG PLAYWRIGHT_VERSION
 ARG PLAYWRIGHT_BROWSERS
+ARG CADDY_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=America/Sao_Paulo \
@@ -87,12 +89,16 @@ RUN playwright install --with-deps ${PLAYWRIGHT_BROWSERS} \
     && rm -rf /var/lib/apt/lists/*
 
 # 6) Caddy — gateway/reverse-proxy de uma porta so (painel em /). Lida com WebSocket nativamente.
-RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
-        | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
-        > /etc/apt/sources.list.d/caddy-stable.list \
-    && apt-get update && apt-get install -y --no-install-recommends caddy \
-    && rm -rf /var/lib/apt/lists/*
+# Binario oficial via GitHub Releases (nao mais via apt do Cloudsmith: o repo publico deles
+# passou a exigir pagamento — HTTP 402 Payment Required, quebrando o build a partir de 2026-10-09).
+RUN set -e; \
+    ARCH="$(dpkg --print-architecture)"; \
+    curl -fsSL -o /tmp/caddy.tar.gz \
+        "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${ARCH}.tar.gz" \
+    && tar -xzf /tmp/caddy.tar.gz -C /usr/local/bin caddy \
+    && chmod +x /usr/local/bin/caddy \
+    && rm -f /tmp/caddy.tar.gz \
+    && caddy version
 
 # 7) tmux + gosu + usuario nao-root.
 # O Claude Code se recusa a rodar como root com --dangerously-skip-permissions, entao os

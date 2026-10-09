@@ -2,9 +2,16 @@
 # Testes do supervisor (claude-loop.sh) + claude-session.sh com um `claude` FALSO, num tmux e
 # HOME temporarios — nada real e tocado. Uso: bash tests/claude-loop.test.sh (precisa de tmux).
 set -uo pipefail
+# de dentro de um tmux, $TMUX vence TMUX_TMPDIR e o `tmux kill-server` abaixo mataria o servidor REAL
+unset TMUX TMUX_PANE
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 T="$(mktemp -d)"
 export HOME="$T" TMUX_TMPDIR="$T" CLAUDE_AUTOCMD_DELAY=1
+# PROJECTS_DIR/PANEL_CONFIG tambem isolados: devbox-lib.sh so usa $HOME como default se essas
+# vierem VAZIAS do ambiente -- rodando este teste de dentro do dev-box real (onde start.sh ja
+# exportou as de verdade), elas vazam pro teste e ele acaba lendo/criando sessao no projeto
+# REAL em vez do temporario (achado 2026-10-09, rodando os testes de dentro do proprio dev-box).
+export PROJECTS_DIR="$T/projects" PANEL_CONFIG="$T/.claude/panel.json"
 export DEVBOX_LIB="$HERE/devbox-lib.sh" CLAUDE_LOOP="$HERE/claude-loop.sh"
 export PATH="$T/bin:$PATH"
 mkdir -p "$T/bin" "$T/.claude" "$T/projects/p1"

@@ -116,8 +116,15 @@ TUI ficar pronta (lê a tela — sem depender de um sleep fixo), envia `/remote-
 **confirma** que o link apareceu e **tenta até 3×**. Só se o projeto tiver `autoRemote: true` e o
 Claude estiver logado. Manual: botão **Religar remote** (⚙ do projeto).
 
-> 🐚 **Cair no shell de propósito:** `exit` e **`Ctrl+C`** na janela de 3s (`[claude saiu — reabrindo em 3s]`),
-> ou **Claude OFF** no Dashboard. Log do supervisor (envio do remote etc.): **Logs → Sessões**.
+> 🐚 **Cair no shell de propósito:** `exit` e **`Ctrl+C`** na janela de reabertura (`[claude saiu —
+> reabrindo em Ns]`), ou **Claude OFF** no Dashboard. Log do supervisor (envio do remote etc.):
+> **Logs → Sessões**.
+
+> 🛑 **Proteção contra crash-loop:** se o Claude sair rápido demais repetidas vezes (bug/OOM), o
+> tempo de espera entre reaberturas cresce (backoff exponencial, teto `MAX_BACKOFF_S`) e, após
+> `MAX_FAST_FAILS` falhas seguidas, o supervisor **desiste de reabrir sozinho** e cai num shell
+> livre — sem isso, um crash-loop reabriria a cada poucos segundos pra sempre e sobrecarregaria a
+> VM. Rode `claude` manualmente ou **Reiniciar** no painel para tentar de novo do zero.
 
 ---
 
@@ -149,13 +156,22 @@ Todas têm default no Dockerfile — o serviço sobe sem definir nada. Referênc
 | **`PANEL_LOGIN`** | `admin` | **usuário do login do painel** — troque do default (achado @security 2026-09-28: `admin` é previsível e reduz o espaço de brute-force à senha; o rate-limit de login é por IP e em memória, não substitui um usuário não-óbvio) |
 | **`PANEL_PASSWORD`** | (vazio) | **senha do login do painel — obrigatória**. Vazia ou igual ao antigo default público → o painel **recusa subir** (fail-closed) |
 | `PANEL_SESSION_DAYS` | `30` | validade da sessão do painel (dias) |
+| `MIN_HEALTHY_RUN_S` | `20` | segundos rodando para o backoff de crash-loop considerar "saudável" e zerar o contador |
+| `MAX_BACKOFF_S` | `60` | teto do backoff exponencial entre reaberturas do Claude/painel (segundos) |
+| `MAX_FAST_FAILS` | `6` | falhas rápidas seguidas até o supervisor desistir de reabrir o Claude sozinho e cair num shell livre |
 
 ---
 
 ## 🛠️ Toolchain incluído
 `claude-code` (**sempre a mais recente do npm a cada build**; `CLAUDE_CODE_VERSION=<x.y.z>` pina) · `playwright` (`PLAYWRIGHT_VERSION`; browsers
 em `PLAYWRIGHT_BROWSERS`, default `chromium chrome`) · node 22 · npm/pnpm/yarn/bun · git · `gh` ·
-ripgrep · fd · jq · tree · build-essential · python3/pip/venv · `psql` · tmux · caddy.
+ripgrep · fd · jq · tree · build-essential · python3/pip/venv · `psql` · tmux · `caddy` (binário
+oficial via GitHub Releases, pinado por `CADDY_VERSION`, default `2.11.7` — o repo apt da
+Cloudsmith passou a exigir pagamento, HTTP 402).
+
+> `CLAUDE_CODE_VERSION`, `PLAYWRIGHT_VERSION`, `PLAYWRIGHT_BROWSERS` e `CADDY_VERSION` são
+> **argumentos de build** (`ARG` no Dockerfile — `--build-arg` no EasyPanel), não variáveis de
+> Environment: pinam o que entra na **imagem**, valem só no próximo deploy/rebuild.
 
 No Playwright, use o Chrome real com `channel: 'chrome'`. Mais browsers: `playwright install firefox webkit`.
 
@@ -210,6 +226,10 @@ O filtro de IP **não** fica no container (o proxy do EasyPanel mascara o IP rea
 - **Projetos:** a cada `BACKUP_INTERVAL` s o container faz **commit + push** de cada repo git dentro de
   `/root/projects` que tenha remote `origin` + auth (`GH_TOKEN` ou `gh auth login`). Status e "backup
   agora" em **Backup**; log em **Logs → Backup**. `docs/worklog` nunca entra no snapshot automático.
+  Lock não-bloqueante (`flock`): duas chamadas ao mesmo tempo (loop automático, "backup agora" do
+  painel, snapshot da config) nunca rodam `git add/commit/push` em paralelo — a segunda so pula e
+  volta no próximo intervalo/clique. `git push` tem timeout de 120s para não travar o backup pra
+  sempre numa rede engasgada.
 - **Config** (`~/.claude` + `~/.claude.json` = login, panel.json, 2FA, sessões): snapshot diário em
   `/root/.claude-backups` (mantém 7) e **download** pelo painel. Está no mesmo volume — **baixe de tempos
   em tempos**. Restaurar: `tar xzf config-….tgz -C /root` e reiniciar o serviço.

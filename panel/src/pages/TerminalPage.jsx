@@ -163,12 +163,15 @@ export default function TerminalPage({ data, activity, onFlash }) {
     const up = () => {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
-      writeLS(LS_SIDEW, sideW)
       dragRef.current = null
     }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
+    dragRef.current = up
   }
+  // se a pagina trocar de alvo/desmontar no meio do arrasto, os listeners em `window` ficavam
+  // presos (dragRef nunca era lido) reagindo a todo mousemove da pagina ate o proximo mouseup
+  useEffect(() => () => dragRef.current?.(), [])
   useEffect(() => {
     writeLS(LS_SIDEW, sideW)
   }, [sideW])

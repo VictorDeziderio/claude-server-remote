@@ -25,7 +25,24 @@ CFG_BACKUP_DIR="$H/.claude-backups"
 CFG_KEEP="${CONFIG_BACKUP_KEEP:-7}"
 mkdir -p "$LOG_DIR"
 
-log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
+log() {
+  echo "[$(date '+%F %T')] $*" | tee -a "$LOG"
+  # sem logrotate neste dev-box: backup.log roda pra sempre e cresceria sem teto ate
+  # faltar disco. Trunca sozinho acima de ~5MB, mantendo so o final (achado @qa).
+  if [ "$(stat -c%s "$LOG" 2>/dev/null || echo 0)" -gt 5242880 ]; then
+    tail -n 2000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+  fi
+}
+
+# Duas chamadas ao mesmo tempo (loop automatico + "backup agora" do painel, ou o loop de
+# projetos e o de config disparando juntos) rodariam git add/commit/push no MESMO repo em
+# paralelo -> corrida no indice do git. Lock nao-bloqueante: se ja tem um backup rodando,
+# so pula esta passada (ela volta no proximo intervalo/clique) em vez de empilhar.
+exec 9>"$LOG_DIR/backup.lock"
+if ! flock -n 9; then
+  log "skip: outro backup.sh ja em execucao"
+  exit 0
+fi
 
 backup_config() {
   mkdir -p "$CFG_BACKUP_DIR"
@@ -87,7 +104,9 @@ backup_repo() {
     return 0
   fi
   git -C "$dir" commit -m "chore(backup): auto-snapshot $(date '+%F %T')" >/dev/null 2>&1
-  if git -C "$dir" push >/dev/null 2>&1; then
+  # timeout: push numa rede travada (sem erro, sem avancar) ficaria pendurado pra sempre e
+  # o loop automatico (start.sh) nunca mais chamaria backup.sh de novo (achado @qa).
+  if timeout 120 git -C "$dir" push >/dev/null 2>&1; then
     log "ok    $name: snapshot enviado"
   else
     log "WARN  $name: commit local feito, push falhou (remote/credencial/branch?)"

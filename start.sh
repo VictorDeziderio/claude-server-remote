@@ -9,6 +9,10 @@
 # Variaveis: ver .env.example (todas tem default no Dockerfile).
 set -euo pipefail
 
+LIB="${DEVBOX_LIB:-/usr/local/lib/devbox/lib.sh}"
+# shellcheck source=devbox-lib.sh
+. "$LIB"   # so pelas funcoes de backoff (run_bg) -- os caminhos abaixo continuam proprios
+
 U=ubuntu
 H=/root                                     # home do ubuntu = volume persistente
 export PROJECT_FOLDER="${PROJECT_FOLDER:-projects}"
@@ -82,6 +86,12 @@ as_user git config --global user.email >/dev/null 2>&1 \
 as_user git config --global user.name >/dev/null 2>&1 \
   || as_user git config --global user.name "${GIT_AUTHOR_NAME:-claude-devbox}"
 
+# Segredos fora do ambiente herdado: daqui pra baixo tudo que sobe (servidor tmux, sessoes do
+# Claude em bypassPermissions, backups) herdaria PANEL_PASSWORD/GH_TOKEN -- um `env` dentro de
+# qualquer sessao vazaria a senha do painel. Continuam como variaveis do shell (o painel recebe
+# explicitamente em run_bg); o gh ja guardou o proprio login acima.
+export -n PANEL_PASSWORD GH_TOKEN 2>/dev/null || true
+
 # ---------------------------------------------------------------------------
 # 3) sessoes tmux (uma por projeto LIGADO) + watchdog
 # ---------------------------------------------------------------------------
@@ -89,7 +99,10 @@ as_user git config --global user.name >/dev/null 2>&1 \
 # pelo watchdog. Os ligados sobem, e se a sessao cair sem o container reiniciar, voltam em ~10s.
 ensure_sessions() { as_user bash /usr/local/bin/claude-session.sh --all || say "aviso: falha ao garantir as sessoes"; }
 ensure_sessions
-( while sleep 10; do ensure_sessions >/dev/null 2>&1; done ) &
+( while sleep 10; do
+    ensure_sessions >/dev/null 2>&1
+    for f in "$LOGS"/panel.log "$LOGS"/sessions.log "$LOGS"/backup.log; do trim_log "$f"; done
+  done ) &
 
 # ---------------------------------------------------------------------------
 # 4) backup automatico
@@ -117,12 +130,19 @@ elif [ "$(printf '%s' "$PANEL_PASSWORD" | sha256sum | cut -c1-64)" = "98a2fc5119
   say "[SEGURANCA] PANEL_PASSWORD e o default PUBLICO que ja esteve no repo -> o painel NAO vai subir. Troque no Environment."
 fi
 
-# respawn simples: roda um comando em loop (reabre se cair), como ubuntu, logando em arquivo
+# respawn com backoff: roda um comando em loop (reabre se cair), como ubuntu, logando em
+# arquivo. Sem backoff, um processo em crash-loop (bug/OOM) reabre a cada 3s pra sempre e
+# sozinho sobrecarrega a VM — ver devbox-lib.sh#backoff_next.
 run_bg() {  # $1=label  $2=logfile  resto=comando
-  local label="$1" log="$2"; shift 2
+  local label="$1" log="$2" fails=0 t0 ran delay; shift 2
   ( while true; do
+      t0=$(date +%s)
       as_user "$@" >> "$log" 2>&1 || true
-      echo "[$label saiu — reabrindo em 3s]" >> "$log"; sleep 3
+      ran=$(( $(date +%s) - t0 ))
+      fails="$(backoff_next "$fails" "$ran")"
+      delay="$(backoff_sleep "$fails")"
+      echo "[$label saiu (rodou ${ran}s) — reabrindo em ${delay}s]" >> "$log"
+      sleep "$delay"
     done ) &
 }
 
@@ -147,6 +167,11 @@ cat > "$CADDYFILE" <<CADDY
 {
 	auto_https off
 	admin off
+	# o Traefik do EasyPanel fica na frente: sem isso o Caddy sobrescreve X-Forwarded-For/Proto
+	# (todo cliente vira o IP do Traefik -> rate-limit do login compartilhado; HTTPS invisivel)
+	servers {
+		trusted_proxies static private_ranges
+	}
 }
 :${GATEWAY_PORT} {
 	route {

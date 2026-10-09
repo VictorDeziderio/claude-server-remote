@@ -79,3 +79,48 @@ is_logged_in() {
 
 # comando do remote-control do projeto (REMOTE_CONTROL_NAME forca um nome fixo p/ todos)
 remote_cmd() { printf '/remote-control %s' "${REMOTE_CONTROL_NAME:-$1}"; }
+
+# Sem logrotate na imagem: corta o log acima de ~5MB mantendo o final. Trunca NO LUGAR (nao
+# `mv`): panel.log/sessions.log estao abertos com >> por processos vivos, e um mv os deixaria
+# escrevendo num arquivo apagado que continua ocupando disco.
+trim_log() {  # $1 = arquivo
+  local f="$1" tmp
+  [ "$(stat -c%s "$f" 2>/dev/null || echo 0)" -gt 5242880 ] || return 0
+  tmp="$(mktemp)" || return 0
+  tail -n 2000 "$f" > "$tmp" && cat "$tmp" > "$f"
+  rm -f "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# backoff p/ loops de respawn (claude-loop.sh, start.sh#run_bg)
+# ---------------------------------------------------------------------------
+# Sem isso, um processo que crasha rapido (bug, OOM) reabre a cada poucos segundos PRA SEMPRE
+# -- cada reabertura tem custo de CPU/memoria (novo node/claude subindo), e sem teto isso
+# sozinho ja sobrecarrega a VM. Uso:
+#   fails=0
+#   while true; do
+#     t0=$(date +%s)
+#     comando
+#     fails=$(backoff_next "$fails" "$(( $(date +%s) - t0 ))")
+#     sleep "$(backoff_sleep "$fails")"
+#   done
+# O contador ZERA se o processo rodou tempo o bastante (MIN_HEALTHY_RUN_S) -- nao confunde
+# uso normal (sessoes curtas de proposito) com crash-loop real.
+MIN_HEALTHY_RUN_S="${MIN_HEALTHY_RUN_S:-20}"
+MAX_BACKOFF_S="${MAX_BACKOFF_S:-60}"
+MAX_FAST_FAILS="${MAX_FAST_FAILS:-6}"  # a partir daqui, quem chama decide: parar de tentar, avisar, etc.
+
+# $1 = contador atual de fails, $2 = segundos que o processo rodou -> novo contador
+backoff_next() {
+  local fails="${1:-0}" ran="${2:-0}"
+  if [ "$ran" -ge "$MIN_HEALTHY_RUN_S" ]; then echo 0; else echo "$((fails + 1))"; fi
+}
+
+# $1 = contador de fails -> segundos de espera antes do proximo restart (3,6,12,24,48,60,60...)
+backoff_sleep() {
+  local fails="${1:-0}" exp s
+  exp="$fails"; [ "$exp" -gt 5 ] && exp=5
+  s=$((3 * (1 << exp)))
+  [ "$s" -gt "$MAX_BACKOFF_S" ] && s="$MAX_BACKOFF_S"
+  echo "$s"
+}
