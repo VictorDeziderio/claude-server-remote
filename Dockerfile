@@ -22,11 +22,18 @@ ARG CADDY_VERSION=2.11.7
 # Stage 1: build do painel (dist/ + node_modules so de runtime: ws + node-pty compilado)
 # ============================================================================
 FROM node:22-bookworm-slim AS panel-build
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+# rede instavel (ECONNRESET no meio do download derrubou um rebuild em 2026-10-10): o npm
+# re-tenta cada pacote com espera crescente em vez de desistir na primeira queda
+ENV npm_config_fetch_retries=5 \
+    npm_config_fetch_retry_mintimeout=20000 \
+    npm_config_fetch_retry_maxtimeout=120000
+RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
+    && apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /panel
 COPY panel/package.json panel/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# e se a rede cair de vez no meio, mais 2 passadas inteiras antes de reprovar o build
+RUN for i in 1 2 3; do npm ci --no-audit --no-fund && break; [ "$i" = 3 ] && exit 1; sleep 15; done
 COPY panel/ ./
 # carimbo do build (aparece no rodape do painel -> da pra saber se o deploy novo esta no ar)
 RUN date -u +%Y-%m-%dT%H:%M:%SZ > BUILD_TIME
@@ -49,10 +56,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
     # browsers do Playwright FORA de /root (senao o volume montado em /root os esconde)
-    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
+    npm_config_fetch_retries=5 \
+    npm_config_fetch_retry_mintimeout=20000 \
+    npm_config_fetch_retry_maxtimeout=120000
 
 # 1) Toolchain de dev + dependencias do Claude (git, ripgrep, build, python, psql...)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+#    (Acquire::Retries: apt re-tenta download que cai no meio, em todas as etapas seguintes)
+RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries \
+    && apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl wget gnupg lsb-release apt-transport-https \
         git openssh-client \
         ripgrep fd-find jq tree \
@@ -93,7 +105,7 @@ RUN playwright install --with-deps ${PLAYWRIGHT_BROWSERS} \
 # passou a exigir pagamento — HTTP 402 Payment Required, quebrando o build a partir de 2026-10-09).
 RUN set -e; \
     ARCH="$(dpkg --print-architecture)"; \
-    curl -fsSL -o /tmp/caddy.tar.gz \
+    curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors -o /tmp/caddy.tar.gz \
         "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${ARCH}.tar.gz" \
     && tar -xzf /tmp/caddy.tar.gz -C /usr/local/bin caddy \
     && chmod +x /usr/local/bin/caddy \
