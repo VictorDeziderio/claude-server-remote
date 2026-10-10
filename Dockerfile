@@ -195,7 +195,7 @@ EXPOSE 8080
 
 # Healthcheck: bate no GATEWAY (Caddy responde /healthz com "ok", sem auth e sempre
 # de pe). start-period generoso pro Caddy/painel subirem.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
   CMD curl -fsS "http://localhost:${GATEWAY_PORT:-8080}/healthz" || exit 1
 
 # Gateway (Caddy) em primeiro plano + sessoes tmux por projeto persistentes.

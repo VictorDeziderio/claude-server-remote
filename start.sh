@@ -49,8 +49,14 @@ JSON
 # panel.json: a copia VIVA fica no volume; semeada da imagem so na 1a vez
 [ -f "$PANEL_CONFIG" ] || cp /usr/local/share/claude/panel.json "$PANEL_CONFIG" 2>/dev/null || true
 
-# ownership: so o que NAO e do ubuntu (evita reescrever o volume inteiro a cada boot)
-find "$H" -xdev \( ! -user "$U" -o ! -group "$U" \) ! -path "$SECRETS_FILE" -exec chown -h "$U:$U" {} + 2>/dev/null || true
+# ownership: so o que NAO e do ubuntu. Varrer o volume INTEIRO no boot passava de 2 min (milhoes de
+# arquivos: node_modules de worktrees) e o healthcheck do EasyPanel matava o container novo em loop
+# (2026-10-10). Bloqueia o boot so o raso (o que o boot e as sessoes usam: ~/.claude, configs, pastas
+# dos projetos); o resto corre em segundo plano com prioridade minima.
+fix_owner() { find "$@" -xdev \( ! -user "$U" -o ! -group "$U" \) ! -path "$SECRETS_FILE" -exec chown -h "$U:$U" {} + 2>/dev/null || true; }
+fix_owner "$H" -maxdepth 2
+fix_owner "$H/.claude" -maxdepth 3
+( renice -n 19 -p "$BASHPID" >/dev/null 2>&1; ionice -c3 -p "$BASHPID" 2>/dev/null; fix_owner "$H" ) &
 
 # Segredos do volume: o EasyPanel passa TODO o Environment como --build-arg e o comando aparece
 # inteiro no log de build -- quem tira PANEL_PASSWORD/GH_TOKEN do Environment e os poe aqui
