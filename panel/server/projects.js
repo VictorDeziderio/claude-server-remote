@@ -325,6 +325,7 @@ async function buildState() {
       pinnedSession: c.pinnedSession,
       idlePauseHours: c.idlePauseHours,
       paused: pausedFlag(sess),
+      autoResumeAt: (require('./autoresume').list().find((x) => x.project === name) || {}).at || 0,
       remoteCmd: remoteCmdFor(name),
       remoteUrl: up ? events.remoteUrlOf(sess) : '',
     };

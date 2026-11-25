@@ -20,7 +20,7 @@ function getSettings() {
   return {
     ok: true,
     defaults: c.defaults,
-    settings: { notifications: true, notifyDone: true, notifyPrompt: true, ...(c.settings || {}) },
+    settings: { notifications: true, notifyDone: true, notifyPrompt: true, autoResume: true, ...(c.settings || {}) },
     env,
     paths: { home: cfg.HOME, projectsDir: cfg.PROJECTS_DIR, configFile: cfg.CONFIG_FILE, logsDir: cfg.LOGS_DIR, backupDir: cfg.CONFIG_BACKUP_DIR },
     twofa: totp.status(),
@@ -35,7 +35,7 @@ function setDefaults(patch) {
 function setSettings(patch) {
   const c = projects.loadConfig();
   c.settings = c.settings || {};
-  for (const k of ['notifications', 'notifyDone', 'notifyPrompt']) if (patch && k in patch) c.settings[k] = truthy(patch[k]);
+  for (const k of ['notifications', 'notifyDone', 'notifyPrompt', 'autoResume']) if (patch && k in patch) c.settings[k] = truthy(patch[k]);
   return projects.saveConfig(c) ? { ok: true, msg: tr('srv.prefsSaved'), settings: c.settings } : { ok: false, msg: tr('srv.saveFailed') };
 }
 

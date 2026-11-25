@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Settings, Cpu, Radio, Bell, BellRing, BellOff, Eye, EyeOff, ShieldCheck, FolderCog, Info, Save, PauseCircle } from 'lucide-react'
+import { Settings, Cpu, Radio, Bell, BellRing, BellOff, Eye, EyeOff, ShieldCheck, FolderCog, Info, Save, PauseCircle, RotateCw } from 'lucide-react'
 import { Btn, Card, Skeleton, inputCls } from '../components/ui.jsx'
 import * as api from '../api.js'
 import { t, getLang, setLang, languages } from '../lib/i18n.js'
@@ -93,6 +93,7 @@ export default function SettingsPage({ onFlash, refresh, notif, onToggleNotif })
           </button>
           <Toggle icon={Cpu} on={s.settings.notifyDone !== false} busy={busy === 'notifyDone'} onChange={(v) => setPref('notifyDone', v)} label={t('settings.notifyDone')} hint={t('settings.notifyDoneHint')} />
           <Toggle icon={ShieldCheck} on={s.settings.notifyPrompt !== false} busy={busy === 'notifyPrompt'} onChange={(v) => setPref('notifyPrompt', v)} label={t('settings.notifyPrompt')} hint={t('settings.notifyPromptHint')} />
+          <Toggle icon={RotateCw} on={s.settings.autoResume !== false} busy={busy === 'autoResume'} onChange={(v) => setPref('autoResume', v)} label={t('settings.autoResume')} hint={t('settings.autoResumeHint')} />
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">{t('settings.installApp')}</p>
       </Card>

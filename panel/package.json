@@ -8,7 +8,7 @@
     "build": "vite build",
     "start": "node server.js",
     "check": "node --check server.js && node -e \"for (const f of require('fs').readdirSync('server')) { require('child_process').execFileSync(process.execPath, ['--check', 'server/' + f], { stdio: 'inherit' }) }\" && node -e \"require('./server/config.js'); require('./server/totp.js'); require('./server/usage.js'); require('./server/limits.js'); require('./server/logs.js')\"",
-    "test": "node test/unit.mjs && node test/smoke.mjs"
+    "test": "node test/unit.mjs && node test/autoresume.test.cjs && node test/smoke.mjs"
   },
   "dependencies": {
     "node-pty": "^1.0.0",

@@ -207,13 +207,14 @@ server.listen(cfg.PORT, cfg.BIND, () => {
   events.start(projects.buildState); // watcher + SSE
   limits.start(); // poller de limites do plano / gasto da API (server/limits.js)
   notify.start(); // Web Push: hooks, alerts, login, boot
+  require('./server/autoresume').start(); // "continue" by itself after a usage-limit reset
 });
 
 // shutdown limpo (tini/docker stop mandam SIGTERM): fecha PTYs/SSE (os tmux continuam vivos)
 for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => {
     log('info', 'encerrando', { sig });
-    term.shutdown(); events.stop(); limits.stop(); notify.stop();
+    term.shutdown(); events.stop(); limits.stop(); notify.stop(); require('./server/autoresume').stop();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();
   });

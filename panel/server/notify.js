@@ -28,6 +28,7 @@
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
+const autoresume = require('./autoresume');
 const { log, validName, clampInt } = require('./util');
 const push = require('./push');
 
@@ -119,6 +120,7 @@ function handleHook(h, now = Date.now()) {
   if (h.agent) return null; // subagent: the main thread reports for it
   if (h.ev === 'UserPromptSubmit') {
     if (sid) turns.set(sid, { start: t, src: String(h.src || '') });
+    if (project && String(h.src || '') !== 'sdk') autoresume.onHook(h, project, t);
     if (turns.size > 200) turns.delete(turns.keys().next().value);
     return null;
   }
@@ -129,11 +131,12 @@ function handleHook(h, now = Date.now()) {
     turns.delete(sid);
     if (nonInteractive) return null;
     const err = String(h.err || '');
+    const ar = autoresume.onHook({ ev: h.ev, err }, project, t); // schedules "continue" after the reset
     if (h.ev === 'StopFailure' && AUTH_ERR.has(err)) {
       return { event: 'login', project, url: '/account', title: 'Claude needs login', body: `${name}: ${clip(h.msg || err.replace(/_/g, ' '), 160)}` };
     }
     if (h.ev === 'StopFailure' && LIMIT_ERR.has(err)) {
-      return { event: 'usage', project, key: 'limit', url: urlFor(project), title: 'Claude usage limit reached', body: `${name}: ${clip(h.msg || err.replace(/_/g, ' '), 160)}` };
+      return { event: 'usage', project, key: 'limit', url: urlFor(project), title: 'Claude usage limit reached', body: `${name}: ${clip(h.msg || err.replace(/_/g, ' '), 160)}` + (ar ? ` — it continues by itself at ${new Date(ar.at).toISOString().slice(0, 16).replace('T', ' ')} UTC.` : '') };
     }
     if (h.ev === 'Stop' && h.bg > 0) return null; // waiting on background work: not finished yet
     const secs = turn ? Math.round((t - turn.start) / 1000) : null;

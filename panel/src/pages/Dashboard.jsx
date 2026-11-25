@@ -5,7 +5,7 @@ import { Dot, Btn, Chip, Modal, Drawer, ActivityBadge, inputCls, Skeleton } from
 import { fmtInt, fmtTok, fmtSize, fmtDate, fmtUsd, fmtUptime } from '../lib/format.js'
 import * as api from '../api.js'
 import { UsageWidget } from '../components/UsageLimits.jsx'
-import { t } from '../lib/i18n.js'
+import { t, getLang } from '../lib/i18n.js'
 import { TR } from '../lib/i18n-rich.jsx'
 
 const SESSION_MODES = [
@@ -292,6 +292,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                       </Link>
                       {!on ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground border">{t('dash.off')}</span> : p.claudeRunning ? <ActivityBadge state={act} since={p.activitySince} /> : <ActivityBadge state="off" />}
                       {p.paused && <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-600 dark:text-amber-300" title={t('dash.pausedTitle')}>{t('dash.paused')}</span>}
+                      {p.autoResumeAt > 0 && <span className="rounded-full border border-sky-500/30 bg-sky-500/15 px-2 py-0.5 text-[11px] text-sky-600 dark:text-sky-300" title={t('dash.autoResumeTitle')}>{t('dash.autoResume', { time: new Date(p.autoResumeAt).toLocaleString(getLang(), { dateStyle: 'short', timeStyle: 'short' }) })}</span>}
                     </div>
                     {/* celular: configurar fica no canto do cartao (no desktop, no fim dos botoes) */}
                     <Btn variant="ghost" className="-mr-2 -mt-1 sm:hidden" onClick={() => setDrawer(p.name)} title={t('dash.configure')}>

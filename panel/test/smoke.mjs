@@ -55,6 +55,7 @@ const fakeSrv = http.createServer((req, res) => {
     fake.usageReqs.push({ url: req.url, auth: req.headers.authorization || '', beta: req.headers['anthropic-beta'] || '' })
     if (fake.mode === '401') return send(401, { type: 'error', error: { type: 'authentication_error' } })
     if (fake.mode === '500') return send(500, { type: 'error' })
+    if (fake.mode === 'renewed') return send(200, { five_hour: { utilization: 2, resets_at: isoIn(5 * 3600e3) }, seven_day: { utilization: 10, resets_at: isoIn(3 * 86400e3) } })
     return send(200, {
       five_hour: { utilization: 85, resets_at: isoIn(2 * 3600e3), limit_dollars: null },
       seven_day: { utilization: 40, resets_at: isoIn(3 * 86400e3) },
@@ -104,6 +105,8 @@ const env = {
   // Web Push: nothing goes to the network — deliveries (encrypted + VAPID-signed for real) land
   // in this file; the boot id is fixed so "dev-box restarted" can be checked
   PANEL_PUSH_TEST_SINK: path.join(ROOT, 'push-sink.jsonl'), PANEL_BOOT_ID: 'boot-new:1',
+  // auto-resume after the usage limit: fast clock; the text is a command the fake shell runs
+  AUTO_RESUME_FALLBACK_SECONDS: '2', AUTO_RESUME_MARGIN_SECONDS: '0', AUTO_RESUME_TICK_SECONDS: '1', AUTO_RESUME_TEXT: 'echo AUTO-RESUMED-$((40+2))',
 }
 delete env.CLAUDE_CODE_OAUTH_TOKEN
 // previous run of the panel was on another boot -> the server must report a restart
@@ -602,6 +605,26 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
       r = await j('GET', '/api/term/windows?name=demo'); ok('term windows = 2', r.data.ok && r.data.windows.length === 2)
       r = await j('POST', '/api/term/window', { name: 'demo', action: 'kill', index: r.data.windows[1].index }); ok('term window kill', r.data.ok, r.data.msg)
       r = await j('GET', '/api/term/capture?name=demo'); ok('term capture', r.data.ok && /SMOKE-READY/.test(r.data.content))
+      // auto-resume: limit hit (hook StopFailure rate_limit) -> after the reset the panel types the text alone
+      {
+        const RUN = path.join(ROOT, '.claude', 'run')
+        const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
+        fake.mode = 'renewed'; await j('POST', '/api/limits/refresh', {})
+        fs.writeFileSync(path.join(RUN, 'claude-demo.running'), '1')
+        fs.appendFileSync(path.join(RUN, 'hooks.jsonl'), JSON.stringify({ t: Date.now(), tty: 1, ev: 'StopFailure', sid: 'ar1', err: 'rate_limit', cwd: path.join(ROOT, 'projects', 'demo'), msg: 'limit reached' }) + '\n')
+        let st = null, cap = ''
+        for (let i = 0; i < 20 && !(st && st.autoResumeAt > 0); i++) { await sleep(250); st = ((await j('GET', '/api/state')).data.projects || []).find((p) => p.name === 'demo') }
+        ok('auto-resume: Dashboard shows when it continues', st && st.autoResumeAt > Date.now() - 5000, JSON.stringify(st && st.autoResumeAt))
+        ok('auto-resume: saved in run/autoresume.json', /"demo"/.test(fs.readFileSync(path.join(RUN, 'autoresume.json'), 'utf8')))
+        for (let i = 0; i < 60 && !/AUTO-RESUMED-42/.test(cap); i++) { await sleep(500); cap = (await j('GET', '/api/term/capture?name=demo')).data.content || '' }
+        ok('auto-resume: text typed + Enter in the session after the reset', /AUTO-RESUMED-42/.test(cap), cap.slice(-300))
+        const rec = (await j('GET', '/api/push/info')).data.recent || []
+        ok('auto-resume: push "resumed automatically" (sent or logged)', rec.some((e) => e.event === 'usage' && e.project === 'demo' && /resumed automatically/.test(e.title)), JSON.stringify(rec.slice(0, 3)))
+        fs.appendFileSync(path.join(RUN, 'hooks.jsonl'), JSON.stringify({ t: Date.now(), tty: 1, ev: 'Stop', sid: 'ar1', cwd: path.join(ROOT, 'projects', 'demo') }) + '\n')
+        for (let i = 0; i < 20 && st && st.autoResumeAt; i++) { await sleep(250); st = ((await j('GET', '/api/state')).data.projects || []).find((p) => p.name === 'demo') }
+        ok('auto-resume: finished turn clears it', st && !st.autoResumeAt)
+        fs.rmSync(path.join(RUN, 'claude-demo.running'), { force: true }); fake.mode = 'ok'; await j('POST', '/api/limits/refresh', {})
+      }
       // "Selecionar texto" (celular): capture com MAIS historico (lines=), limitado no servidor
       r = await j('POST', '/api/term/send', { name: 'demo', text: "seq -f 'HIST-%04g' 1 600", key: 'Enter' }); ok('term send (historico)', r.data.ok, r.data.msg)
       await new Promise((s) => setTimeout(s, 800))

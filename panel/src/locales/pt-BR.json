@@ -637,5 +637,9 @@
   "srv.saveFailed": "falha ao salvar",
   "srv.prefsSaved": "preferências salvas",
   "srv.captureFailed": "falha ao capturar a tela",
-  "srv.remoteOnSent": "\"{name}\": remote LIGADO e reenviado ({cmd})"
+  "srv.remoteOnSent": "\"{name}\": remote LIGADO e reenviado ({cmd})",
+  "dash.autoResume": "continua às {time}",
+  "dash.autoResumeTitle": "Limite de uso atingido: o painel digita \"continue\" sozinho depois da renovação",
+  "settings.autoResume": "Continuar depois do limite de uso",
+  "settings.autoResumeHint": "digita \"continue\" quando o limite renovar"
 }

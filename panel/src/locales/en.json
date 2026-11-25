@@ -637,5 +637,9 @@
   "srv.saveFailed": "could not save",
   "srv.prefsSaved": "preferences saved",
   "srv.captureFailed": "could not capture the screen",
-  "srv.remoteOnSent": "\"{name}\": remote ON and re-sent ({cmd})"
+  "srv.remoteOnSent": "\"{name}\": remote ON and re-sent ({cmd})",
+  "dash.autoResume": "continues at {time}",
+  "dash.autoResumeTitle": "Usage limit hit: the panel types \"continue\" by itself after the reset",
+  "settings.autoResume": "Continue after the usage limit",
+  "settings.autoResumeHint": "types \"continue\" when the limit resets"
 }
