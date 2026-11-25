@@ -14,12 +14,21 @@
 // If the limit is hit again, the next StopFailure schedules a new try. After MAX_TRIES sends or
 // GIVE_UP_MS since the first hit, it gives up (until the person types or a turn ends). A finished
 // turn (Stop) clears the entry.
+//
+// Also after a RESTART (deploy, container restart): the hooks tell when a turn starts
+// (UserPromptSubmit) and ends (Stop/StopFailure). The projects with a turn in progress are kept
+// on disk (RUN_DIR/autoresume-turns.json). When the panel starts again, each of them whose
+// session reopens the same conversation (sessionMode continue/pinned; 'new' starts from zero, so
+// there is nothing to continue) gets an entry with why='restart', due after RESTART_DELAY: the
+// same safe-typing rules apply (Claude running, screen idle, nobody typed). If only the panel
+// process restarted and Claude is still working, its Stop hook clears the entry.
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
 const { sessionName, typeLine, log } = require('./util');
 
 const FILE = path.join(cfg.RUN_DIR, 'autoresume.json');
+const TURNS_FILE = path.join(cfg.RUN_DIR, 'autoresume-turns.json');
 const num = (v, d) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : d; };
 const S = {
   marginMs: num(process.env.AUTO_RESUME_MARGIN_SECONDS, 90) * 1000,      // after resetsAt
@@ -29,6 +38,8 @@ const S = {
   maxTries: num(process.env.AUTO_RESUME_MAX_TRIES, 6),
   giveUpMs: 8 * 86400e3,       // the weekly window can take days
   text: String(process.env.AUTO_RESUME_TEXT || 'continue').slice(0, 200),
+  restartDelayMs: num(process.env.AUTO_RESUME_RESTART_SECONDS, 45) * 1000, // after the panel starts
+  turnMaxMs: 12 * 3600e3,      // a "turn in progress" older than this is stale (lost Stop hook)
 };
 
 // dependencies (replaced in the unit test)
@@ -48,9 +59,13 @@ const D = {
   notify: (ev) => { try { require('./notify').notify(ev).catch(() => {}); } catch { /* */ } },
   save: (obj) => { try { fs.mkdirSync(path.dirname(FILE), { recursive: true }); fs.writeFileSync(FILE, JSON.stringify(obj)); } catch (e) { log('error', 'autoresume: save', { err: e.message }); } },
   load: () => { try { return JSON.parse(fs.readFileSync(FILE, 'utf8')) || {}; } catch { return {}; } },
+  saveTurns: (obj) => { try { fs.mkdirSync(path.dirname(TURNS_FILE), { recursive: true }); fs.writeFileSync(TURNS_FILE, JSON.stringify(obj)); } catch (e) { log('error', 'autoresume: save turns', { err: e.message }); } },
+  loadTurns: () => { try { return JSON.parse(fs.readFileSync(TURNS_FILE, 'utf8')) || {}; } catch { return {}; } },
+  sessionMode: (project) => { try { return require('./projects').projConfig(project).sessionMode; } catch { return 'new'; } },
 };
 
 let pending = {}; // project -> { since, at, tries, sentAt, why }
+let turns = {};   // project -> start time of the turn in progress (from the hooks)
 let timer = null;
 let busy = false;
 
@@ -74,6 +89,8 @@ function resumeAt(now = D.now()) {
 // hook lines (called by notify.js for every interactive main-thread hook of a project)
 function onHook(h, project, t = D.now()) {
   if (!project || !h) return null;
+  if (h.ev === 'UserPromptSubmit' && turns[project] !== t) { turns[project] = t; D.saveTurns(turns); }
+  if ((h.ev === 'Stop' || h.ev === 'StopFailure') && project in turns) { delete turns[project]; D.saveTurns(turns); }
   const p = pending[project];
   if (h.ev === 'StopFailure' && h.err === 'rate_limit') {
     if (!D.enabled()) return null;
@@ -119,7 +136,7 @@ async function tick() {
       const ok = await D.type(sess, S.text);
       p.tries += 1; p.sentAt = D.now(); p.at = p.sentAt + S.fallbackMs; changed = true;
       log('info', 'autoresume: sent', { project, ok, tries: p.tries });
-      if (ok) D.notify({ event: 'usage', project, key: 'resumed:' + project + ':' + p.sentAt, title: ['srv.push.resumed', { name: project }], body: ['srv.push.resumedBody', { text: S.text }] });
+      if (ok) D.notify({ event: 'usage', project, key: 'resumed:' + project + ':' + p.sentAt, title: ['srv.push.resumed', { name: project }], body: [p.why === 'restart' ? 'srv.push.resumedRestartBody' : 'srv.push.resumedBody', { text: S.text }] });
     }
     if (changed) save();
   } catch (e) { log('error', 'autoresume: tick', { err: e.message }); }
@@ -131,9 +148,27 @@ function list() {
 }
 function cancel(project) { const had = !!pending[project]; delete pending[project]; if (had) save(); return had; }
 
+// projects that were in the middle of a turn when the panel went down -> resume entries
+function scheduleAfterRestart(now = D.now()) {
+  turns = D.loadTurns();
+  const out = [];
+  if (!D.enabled()) return out;
+  for (const [project, startedAt] of Object.entries(turns)) {
+    if (pending[project]) continue; // already waiting (e.g. a usage limit)
+    if (now - Number(startedAt) > S.turnMaxMs) { delete turns[project]; continue; }
+    if (D.sessionMode(project) === 'new') continue; // fresh conversation: nothing to continue
+    pending[project] = { since: now, at: now + S.restartDelayMs, why: 'restart', tries: 0, sentAt: 0 };
+    out.push(project);
+  }
+  if (out.length) { save(); log('info', 'autoresume: resume after restart', { projects: out }); }
+  D.saveTurns(turns);
+  return out;
+}
+
 function start() {
   if (timer) return;
   pending = D.load();
+  scheduleAfterRestart();
   timer = setInterval(() => { tick(); }, S.tickMs);
   timer.unref();
 }
@@ -141,5 +176,6 @@ function stop() { if (timer) clearInterval(timer); timer = null; }
 
 module.exports = {
   start, stop, onHook, tick, list, cancel, resumeAt,
-  _deps: D, _settings: S, _reset: () => { pending = {}; },
+  scheduleAfterRestart, busyProjects: () => Object.keys(turns),
+  _deps: D, _settings: S, _reset: () => { pending = {}; turns = {}; },
 };

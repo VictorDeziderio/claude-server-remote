@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Settings, Cpu, Radio, Bell, BellRing, BellOff, Eye, EyeOff, ShieldCheck, FolderCog, Info, Save, PauseCircle, RotateCw } from 'lucide-react'
+import { Settings, Cpu, Radio, Bell, BellRing, BellOff, Eye, EyeOff, ShieldCheck, FolderCog, Info, Save, PauseCircle, RotateCw, ArrowUpCircle } from 'lucide-react'
 import { Btn, Card, Skeleton, inputCls } from '../components/ui.jsx'
 import * as api from '../api.js'
 import { t, getLang, setLang, languages } from '../lib/i18n.js'
@@ -22,6 +22,38 @@ function Toggle({ on, onChange, label, hint, icon: Icon, busy }) {
 }
 
 // /settings — defaults do panel.json, notificacoes, ambiente (mascarado), caminhos
+// "Update the panel" (server/update.js): only when DEPLOY_WEBHOOK_URL is set. "When idle" waits for
+// every project to finish its task; interrupted ones continue by themselves after the restart.
+function UpdateCard({ onFlash }) {
+  const [u, setU] = useState(null)
+  const [busy, setBusy] = useState('')
+  const load = useCallback(() => api.updateStatus().then(setU).catch(() => {}), [])
+  useEffect(() => { load(); const id = setInterval(load, 15000); return () => clearInterval(id) }, [load])
+  if (!u || !u.configured) return null
+  const go = async (mode) => {
+    setBusy(mode)
+    const r = await api.updateRequest(mode).catch((e) => ({ ok: false, msg: e.message }))
+    setBusy('')
+    onFlash?.(r)
+    load()
+  }
+  return (
+    <Card title={t('settings.update')} subtitle={t('settings.updateSub')}>
+      <div className="space-y-3 text-sm" data-testid="update-card">
+        <p className="text-xs text-muted-foreground">
+          {u.waiting ? t('settings.updateWaiting', { names: u.busy.join(', ') || '—' }) : u.busy.length ? t('settings.updateBusy', { names: u.busy.join(', ') }) : t('settings.updateIdle')}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {u.waiting
+            ? <Btn variant="ghost" busy={busy === 'cancel'} onClick={() => go('cancel')}>{t('common.cancel')}</Btn>
+            : <Btn variant="accent" busy={busy === 'idle'} onClick={() => go('idle')}><ArrowUpCircle className="h-3.5 w-3.5" /> {t('settings.updateIdleBtn')}</Btn>}
+          {!u.waiting && <Btn variant="ghost" busy={busy === 'now'} onClick={() => go('now')}>{t('settings.updateNowBtn')}</Btn>}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 export default function SettingsPage({ onFlash, refresh, notif, onToggleNotif }) {
   const [s, setS] = useState(null)
   const [busy, setBusy] = useState('')
@@ -74,6 +106,8 @@ export default function SettingsPage({ onFlash, refresh, notif, onToggleNotif })
 
   return (
     <div className="space-y-5">
+      <UpdateCard onFlash={onFlash} />
+
       <Card title={t('settings.lang')} subtitle={t('settings.langSub')}>
         <select value={getLang()} onChange={(e) => setLang(e.target.value)} className={inputCls} aria-label={t('settings.lang')}>
           {languages().map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}

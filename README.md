@@ -23,6 +23,10 @@ Your projects and your Claude login live in a volume, so nothing is lost on rebu
   login needed, usage limit, crash loop).
 - **Continues by itself after the usage limit:** when a project hits the plan limit, the panel waits
   for the reset and types `continue` in that session, only if nobody typed since and the screen is idle.
+- **Updates without cutting work:** tasks interrupted by a restart continue by themselves, and
+  Settings → *Update the panel* (with `DEPLOY_WEBHOOK_URL`) can wait until every project is idle.
+- **Disk use per project:** see how much each project and each agent work copy uses, and remove
+  old copies safely (only those with no unsaved changes and nothing running inside).
 - **Plan usage and API spend:** 5-hour and weekly windows with reset times, alerts at your thresholds,
   and the Admin API spend for the month.
 - **Cost report:** tokens and estimated cost per day, per model and per project, read from Claude's
@@ -102,6 +106,7 @@ All variables have defaults; only `PANEL_PASSWORD` is required. Full list with c
 | `ANTHROPIC_ADMIN_KEY` / `ANTHROPIC_API_BUDGET_USD` | — | API spend card and budget alerts |
 | `USAGE_POLL_INTERVAL` / `USAGE_THRESHOLDS` | `300` / `80,95` | plan usage checks and alert levels |
 | `AUTO_RESUME` / `AUTO_RESUME_TEXT` | `1` / `continue` | continue by itself after the usage limit |
+| `DEPLOY_WEBHOOK_URL` | — | your hosting's deploy hook: Settings → **Update the panel** ("when idle" waits for running tasks) |
 | `MAX_FAST_FAILS` / `MAX_BACKOFF_S` | `6` / `60` | crash-loop protection of the supervisor |
 
 Build arguments (`docker build --build-arg`): `CLAUDE_CODE_VERSION` (default: latest),

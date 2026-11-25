@@ -27,6 +27,8 @@ let windows = [];
 let typed = [];
 let notes = [];
 let saved = null;
+let savedTurns = {};
+let modes = {};
 const env = { enabled: true, up: true, running: true, paused: false, activity: 'idle', typeOk: true };
 Object.assign(D, {
   now: () => now,
@@ -41,9 +43,12 @@ Object.assign(D, {
   notify: (ev) => notes.push(ev),
   save: (o) => { saved = JSON.parse(JSON.stringify(o)); },
   load: () => (saved ? JSON.parse(JSON.stringify(saved)) : {}),
+  saveTurns: (o) => { savedTurns = JSON.parse(JSON.stringify(o)); },
+  loadTurns: () => JSON.parse(JSON.stringify(savedTurns)),
+  sessionMode: (p) => modes[p] || 'continue',
 });
 const iso = (ms) => new Date(ms).toISOString();
-const reset = () => { AR._reset(); typed = []; notes = []; saved = null; windows = []; Object.assign(env, { enabled: true, up: true, running: true, paused: false, activity: 'idle', typeOk: true }); };
+const reset = () => { AR._reset(); typed = []; notes = []; saved = null; savedTurns = {}; modes = {}; windows = []; Object.assign(env, { enabled: true, up: true, running: true, paused: false, activity: 'idle', typeOk: true }); };
 const hit = (project = 'demo') => AR.onHook({ ev: 'StopFailure', err: 'rate_limit' }, project, now);
 const item = (p = 'demo') => AR.list().find((x) => x.project === p);
 
@@ -117,6 +122,46 @@ const item = (p = 'demo') => AR.list().find((x) => x.project === p);
   reset(); hit('a'); hit('b');
   AR.onHook({ ev: 'UserPromptSubmit' }, 'a', now + 1);
   ok('each project on its own', !item('a') && !!item('b'));
+
+  out('== restart in the middle of a turn (deploy / container restart)');
+  reset();
+  AR.onHook({ ev: 'UserPromptSubmit' }, 'demo', now);
+  ok('a turn in progress is saved to disk', savedTurns.demo === now, JSON.stringify(savedTurns))
+  AR.onHook({ ev: 'Stop' }, 'demo', now + 5000);
+  ok('turn finished -> no longer saved', !('demo' in savedTurns))
+  AR.onHook({ ev: 'UserPromptSubmit' }, 'demo', now); AR.onHook({ ev: 'UserPromptSubmit' }, 'fresh', now); modes.fresh = 'new'
+  AR._reset(); // the panel went down: memory lost, the disk file stays
+  let sch = AR.scheduleAfterRestart(now + 60e3)
+  ok('panel starts again -> resume scheduled for the interrupted project', sch.join() === 'demo' && item().why === 'restart' && item().at === now + 60e3 + S.restartDelayMs, JSON.stringify(sch))
+  ok('sessionMode "new" (fresh conversation) -> nothing to continue', !item('fresh'))
+  now += 60e3 + S.restartDelayMs + 1000
+  await AR.tick()
+  ok('after the delay, idle screen -> types "continue"', typed.length === 1 && typed[0][1] === S.text)
+  ok('push says it was a restart', notes[0] && notes[0].body[0] === 'srv.push.resumedRestartBody')
+  AR.onHook({ ev: 'UserPromptSubmit' }, 'demo', now + 1000)
+  ok('our own "continue" does not cancel it', !!item())
+  AR.onHook({ ev: 'Stop' }, 'demo', now + 30e3)
+  ok('turn ends -> cleared', !item() && !('demo' in savedTurns))
+
+  reset(); AR.onHook({ ev: 'UserPromptSubmit' }, 'demo', now); AR._reset()
+  AR.scheduleAfterRestart(now + 1000)
+  AR.onHook({ ev: 'Stop' }, 'demo', now + 2000)
+  ok('only the panel restarted and Claude finished by itself -> nothing typed', !item() && typed.length === 0)
+
+  reset(); AR.onHook({ ev: 'UserPromptSubmit' }, 'demo', now); AR._reset(); env.activity = 'busy'
+  AR.scheduleAfterRestart(now + 1000); now += S.restartDelayMs + 5000; await AR.tick()
+  ok('Claude still working after the restart -> waits, types nothing', typed.length === 0 && !!item())
+
+  reset(); AR.onHook({ ev: 'UserPromptSubmit' }, 'demo', now); AR._reset(); env.enabled = false
+  ok('feature off -> nothing scheduled after restart', AR.scheduleAfterRestart(now + 1000).length === 0 && !item())
+  reset(); AR.onHook({ ev: 'UserPromptSubmit' }, 'demo', now); AR._reset()
+  ok('stale turn (lost Stop, > 12 h) -> ignored', AR.scheduleAfterRestart(now + S.turnMaxMs + 1000).length === 0)
+  reset(); windows = [{ id: 'five_hour', percent: 100, resetsAt: iso(now + H) }]
+  AR.onHook({ ev: 'UserPromptSubmit' }, 'demo', now); hit() // turn started, then the limit hit (StopFailure ends the turn)
+  const keepAt = item().at
+  savedTurns = { demo: now } // even if a turn were still marked
+  AR._reset(); AR.start(); AR.stop() // panel restarts: loads the saved entries
+  ok('a usage-limit entry already waiting is kept (not replaced by restart)', item() && item().why === 'reset' && item().at === keepAt, JSON.stringify(item()))
 
   fs.rmSync(TMP, { recursive: true, force: true });
   out(`${passes} PASS, ${fails} FAIL${fails ? '' : ' — TUDO OK'}`);

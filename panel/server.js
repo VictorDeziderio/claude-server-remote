@@ -21,6 +21,7 @@ const claudeLogin = require('./server/login');
 const usage = require('./server/usage');
 const projects = require('./server/projects');
 const disk = require('./server/disk');
+const update = require('./server/update');
 const files = require('./server/files');
 const term = require('./server/term');
 const events = require('./server/events');
@@ -53,6 +54,7 @@ const SECURITY_HEADERS = {
 // rotas GET (todas exigem auth). (q = URLSearchParams, req)
 const GET = {
   '/api/state': async () => events.currentState(),
+  '/api/update': async () => update.status(),
   '/api/disk': async (q) => disk.projectDisk(q.get('name') || '', { fresh: q.get('fresh') === '1', days: Number(q.get('days')) || 7 }),
   '/api/report': async (q) => {
     const from = q.get('from') || '', to = q.get('to') || '';
@@ -121,6 +123,7 @@ const POST = {
   '/api/unpause': (b) => projects.unpauseProject(b.name),
   '/api/alerts/clear': () => { alerts.clear(); return { ok: true }; },
   '/api/limits/refresh': () => limits.refresh(),
+  '/api/update': (b) => update.request(b.mode),
   '/api/disk/clean': (b) => disk.cleanWorktrees(b.name, b.worktrees, b.days),
 };
 // Web Push / notifications tab (routes live in server/notify.js)
@@ -131,7 +134,7 @@ const AUDITED = new Set(['/api/create', '/api/rename', '/api/delete', '/api/conf
   '/api/fs/save', '/api/fs/create', '/api/fs/delete', '/api/fs/rename', '/api/term/exit', '/api/term/window', '/api/claude/logout',
   '/api/claude/update', '/api/claude/login/start', '/api/claude/login/code', '/api/claude/login/cancel', '/api/history/resume', '/api/backup/run', '/api/backup/config', '/api/settings/defaults', '/api/settings',
   '/api/sessions/revoke', '/api/sessions/revoke-others', '/api/totp/enable', '/api/totp/disable',
-  '/api/session-mode', '/api/pause', '/api/unpause', '/api/alerts/clear', '/api/disk/clean', ...notify.routes.AUDITED]);
+  '/api/session-mode', '/api/pause', '/api/unpause', '/api/alerts/clear', '/api/disk/clean', '/api/update', ...notify.routes.AUDITED]);
 
 async function handle(req, res) {
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);

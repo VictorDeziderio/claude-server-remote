@@ -723,5 +723,18 @@
   "disk.cleanAsk": "Remove {n} old agent work copies ({size})? Only copies with no unsaved changes and nothing running inside are removed.",
   "disk.cleanYes": "Remove",
   "disk.hint": "Agents create a full copy of the project for each task. Copies untouched for {days}+ days, with no unsaved changes and nothing running, can be removed.",
-  "disk.error": "could not measure the disk"
+  "disk.error": "could not measure the disk",
+  "srv.push.resumedRestartBody": "The panel restarted in the middle of a task: typed \"{text}\" so Claude continues.",
+  "srv.update.started": "Update started: the panel restarts in a few minutes. Interrupted tasks continue by themselves.",
+  "srv.update.failed": "The deploy hook failed ({status}).",
+  "srv.update.notConfigured": "Set DEPLOY_WEBHOOK_URL to update from the panel.",
+  "srv.update.cancelled": "Update cancelled.",
+  "srv.update.waiting": "Waiting for these projects to finish their task: {names}. The update starts as soon as they are idle.",
+  "settings.update": "Update the panel",
+  "settings.updateSub": "Rebuilds and restarts the panel through your deploy hook (DEPLOY_WEBHOOK_URL).",
+  "settings.updateIdle": "No project is in the middle of a task: updating now does not interrupt anything.",
+  "settings.updateBusy": "Working now: {names}. \"When idle\" waits for them to finish; tasks cut by a restart continue by themselves.",
+  "settings.updateWaiting": "Waiting for {names} to finish. The update starts as soon as every project is idle.",
+  "settings.updateIdleBtn": "Update when idle",
+  "settings.updateNowBtn": "Update now"
 }

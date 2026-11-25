@@ -44,7 +44,7 @@ fs.writeFileSync(BACKUP_SCRIPT, '#!/usr/bin/env bash\nmkdir -p "$HOME/.claude/lo
 // Anthropic FALSO (limites do plano + Admin API): o painel aponta pra ca via USAGE_API_BASE_URL.
 // Nunca chama a Anthropic de verdade nos testes. `fake.mode` muda a resposta do /api/oauth/usage.
 const FAKE_TOKEN = 'fake-oauth-token-SECRET-123', FAKE_ADMIN = 'sk-ant-admin01-FAKE-SECRET-456'
-const fake = { mode: 'ok', usageReqs: [], costReqs: [], shift: 0 } // shift: empurra o reset (novo periodo)
+const fake = { mode: 'ok', usageReqs: [], costReqs: [], shift: 0, deploys: [] } // shift: empurra o reset (novo periodo)
 const FAKE_T0 = Date.now() // reset fixo como na API real (senao virar o minuto parece novo periodo)
 const isoIn = (ms) => new Date(FAKE_T0 + ms + fake.shift).toISOString().replace('Z', '123+00:00') // formato real: microssegundos + offset
 const todayIso = new Date().toISOString().slice(0, 10)
@@ -78,6 +78,7 @@ const fakeSrv = http.createServer((req, res) => {
     }
     return send(200, { data: [{ starting_at: '2000-01-03T00:00:00Z', results: [{ amount: '50', currency: 'USD' }] }], has_more: false, next_page: null })
   }
+  if (u.pathname === '/deploy') { fake.deploys.push({ method: req.method, token: u.searchParams.get('token') }); return send(200, { ok: true }) }
   send(404, {})
 })
 await new Promise((r) => fakeSrv.listen(0, '127.0.0.1', r))
@@ -106,6 +107,8 @@ const env = {
   // in this file; the boot id is fixed so "dev-box restarted" can be checked
   PANEL_PUSH_TEST_SINK: path.join(ROOT, 'push-sink.jsonl'), PANEL_BOOT_ID: 'boot-new:1',
   // auto-resume after the usage limit: fast clock; the text is a command the fake shell runs
+  // "update the panel" through a FAKE deploy hook (server/update.js); the token must never leak
+  DEPLOY_WEBHOOK_URL: FAKE_BASE + '/deploy?token=SECRET-DEPLOY-789', UPDATE_CHECK_SECONDS: '1',
   AUTO_RESUME_FALLBACK_SECONDS: '2', AUTO_RESUME_MARGIN_SECONDS: '0', AUTO_RESUME_TICK_SECONDS: '1', AUTO_RESUME_TEXT: 'echo AUTO-RESUMED-$((40+2))',
 }
 delete env.CLAUDE_CODE_OAUTH_TOKEN
@@ -762,6 +765,38 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
     ok('tela desconhecida com "No, exit" marcado: nao aperta Enter', c.kind === 'unknown' && c.exitSelected === true, JSON.stringify(c))
     c = classify(" What's new\n press any key")
     ok('tela desconhecida sem opcao de saida: Enter permitido', c.kind === 'unknown' && c.exitSelected === false, JSON.stringify(c))
+  }
+
+  // update the panel through the deploy hook, waiting for idle sessions (server/update.js)
+  {
+    const RUN = path.join(ROOT, '.claude', 'run')
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
+    const hookLine = (o) => fs.appendFileSync(path.join(RUN, 'hooks.jsonl'), JSON.stringify({ t: Date.now(), tty: 1, src: 'user', cwd: path.join(ROOT, 'projects', 'demo'), ...o }) + '\n')
+    r = await j('GET', '/api/update')
+    ok('update: configured, nobody busy', r.data.ok && r.data.configured === true && r.data.busy.length === 0, JSON.stringify(r.data))
+    const leak = JSON.stringify(r.data) + JSON.stringify((await j('GET', '/api/state')).data) + JSON.stringify((await j('GET', '/api/settings')).data)
+    ok('update: the deploy hook token never reaches the browser', !leak.includes('SECRET-DEPLOY-789'))
+    hookLine({ ev: 'UserPromptSubmit', sid: 'up1' })
+    for (let i = 0; i < 20 && !(r.data.busy || []).includes('demo'); i++) { await sleep(250); r = await j('GET', '/api/update') }
+    ok('update: a turn in progress shows the project as busy', r.data.busy.includes('demo'), JSON.stringify(r.data))
+    r = await j('POST', '/api/update', { mode: 'idle' })
+    ok('update "when idle" with a busy project -> waits, hook not called', r.data.ok && r.data.waiting === true && fake.deploys.length === 0, JSON.stringify(r.data))
+    await sleep(1500)
+    ok('update: still waiting while the task runs', fake.deploys.length === 0 && (await j('GET', '/api/update')).data.waiting === true)
+    hookLine({ ev: 'Stop', sid: 'up1' })
+    for (let i = 0; i < 30 && !fake.deploys.length; i++) await sleep(250)
+    ok('update: task finished -> deploy hook called once (POST)', fake.deploys.length === 1 && fake.deploys[0].method === 'POST' && fake.deploys[0].token === 'SECRET-DEPLOY-789', JSON.stringify(fake.deploys))
+    r = await j('GET', '/api/update'); ok('update: no longer waiting; last call recorded', r.data.waiting === false && r.data.last && r.data.last.ok === true)
+    hookLine({ ev: 'UserPromptSubmit', sid: 'up2' })
+    for (let i = 0; i < 20 && !((await j('GET', '/api/update')).data.busy || []).includes('demo'); i++) await sleep(250)
+    r = await j('POST', '/api/update', { mode: 'idle' }); ok('update: busy again -> waits', r.data.waiting === true && fake.deploys.length === 1, JSON.stringify(r.data))
+    r = await j('POST', '/api/update', { mode: 'cancel' })
+    hookLine({ ev: 'Stop', sid: 'up2' }); await sleep(1500)
+    ok('update: cancel -> the hook is not called when idle', fake.deploys.length === 1)
+    r = await j('POST', '/api/update', { mode: 'now' })
+    ok('update "now" -> hook called at once', r.data.ok && fake.deploys.length === 2)
+    r = await j('POST', '/api/update', { mode: 'xyz' }); ok('update: unknown mode refused', r.data.ok === false && fake.deploys.length === 2)
+    fs.rmSync(path.join(RUN, 'autoresume-turns.json'), { force: true })
   }
 
   // disk use + cleanup of old agent work copies (server/disk.js): only old + clean + not in use go

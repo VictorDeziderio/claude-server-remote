@@ -26,7 +26,7 @@ const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-ui-'))
 fs.mkdirSync(path.join(ROOT, 'projects', 'demo'), { recursive: true })
 const PORT = 7900 + Math.floor(Math.random() * 90), BASE = `http://127.0.0.1:${PORT}`
 const PASS = 'ui-test-only-password'
-const env = { ...process.env, HOME: ROOT, PANEL_PORT: String(PORT), PANEL_PASSWORD: PASS, PANEL_LOGIN: 'admin', PROJECTS_DIR: path.join(ROOT, 'projects'), PANEL_CONFIG: path.join(ROOT, 'panel.json'), USAGE_MONITOR: '0', AUTO_RESUME: '0' }
+const env = { ...process.env, HOME: ROOT, PANEL_PORT: String(PORT), PANEL_PASSWORD: PASS, PANEL_LOGIN: 'admin', PROJECTS_DIR: path.join(ROOT, 'projects'), PANEL_CONFIG: path.join(ROOT, 'panel.json'), USAGE_MONITOR: '0', AUTO_RESUME: '0', DEPLOY_WEBHOOK_URL: 'http://127.0.0.1:9/never-called' }
 delete env.TMUX; delete env.TMUX_PANE
 const srv = spawn(process.execPath, ['server.js'], { cwd: PANEL, env, stdio: ['ignore', 'pipe', 'pipe'] })
 let logs = ''; srv.stdout.on('data', (d) => { logs += d }); srv.stderr.on('data', (d) => { logs += d })
@@ -127,6 +127,13 @@ try {
     for (let i = 0; i < 20 && fs.readFileSync(path.join(ROOT, 'projects', 'demo', 'same.txt'), 'utf8') !== 'new'; i++) await page.waitForTimeout(150)
     ok('"Replace" overwrites the file', fs.readFileSync(path.join(ROOT, 'projects', 'demo', 'same.txt'), 'utf8') === 'new')
   }
+  await page.goto(BASE + '/dashboard')
+
+  // ---- Settings > Update the panel (shown only with DEPLOY_WEBHOOK_URL)
+  await page.goto(BASE + '/settings')
+  await page.locator('[data-testid="update-card"]').waitFor({ timeout: 8000 }).catch(() => {})
+  ok('Settings shows "Update the panel" with a deploy hook', await page.getByRole('button', { name: /update when idle/i }).isVisible().catch(() => false))
+  ok('the deploy hook URL is not shown on the page', !(await page.content()).includes('never-called'))
   await page.goto(BASE + '/dashboard')
 
   // ---- mobile: the modal fits the screen

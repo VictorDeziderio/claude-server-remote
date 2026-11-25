@@ -723,5 +723,18 @@
   "disk.cleanAsk": "Remover {n} cópias de trabalho antigas dos agentes ({size})? Só saem as cópias sem mudanças não salvas e sem nada rodando dentro.",
   "disk.cleanYes": "Remover",
   "disk.hint": "Os agentes criam uma cópia inteira do projeto para cada tarefa. Cópias paradas há {days}+ dias, sem mudanças não salvas e sem nada rodando, podem ser removidas.",
-  "disk.error": "não deu para medir o disco"
+  "disk.error": "não deu para medir o disco",
+  "srv.push.resumedRestartBody": "O painel reiniciou no meio de uma tarefa: digitei \"{text}\" para o Claude continuar.",
+  "srv.update.started": "Atualização iniciada: o painel reinicia em alguns minutos. As tarefas interrompidas continuam sozinhas.",
+  "srv.update.failed": "O endereço de deploy falhou ({status}).",
+  "srv.update.notConfigured": "Defina DEPLOY_WEBHOOK_URL para atualizar pelo painel.",
+  "srv.update.cancelled": "Atualização cancelada.",
+  "srv.update.waiting": "Esperando estes projetos terminarem a tarefa: {names}. A atualização começa assim que estiverem parados.",
+  "settings.update": "Atualizar o painel",
+  "settings.updateSub": "Monta e reinicia o painel pelo seu endereço de deploy (DEPLOY_WEBHOOK_URL).",
+  "settings.updateIdle": "Nenhum projeto está no meio de uma tarefa: atualizar agora não interrompe nada.",
+  "settings.updateBusy": "Trabalhando agora: {names}. \"Quando parado\" espera eles terminarem; tarefas cortadas por um reinício continuam sozinhas.",
+  "settings.updateWaiting": "Esperando {names} terminar. A atualização começa assim que todos os projetos estiverem parados.",
+  "settings.updateIdleBtn": "Atualizar quando parado",
+  "settings.updateNowBtn": "Atualizar agora"
 }

@@ -5,7 +5,7 @@ const { execFile } = require('child_process');
 // sem filtrar, PANEL_PASSWORD/GH_TOKEN iam pra dentro de TODA sessao tmux (e de qualquer Claude
 // rodando nela, visivel via `env`). So o caso de tmux: outros comandos (git, npm, bash de backup)
 // continuam herdando o env normal, alguns dependem dele de proposito (ex.: GH_TOKEN no backup).
-const TMUX_STRIP_ENV = ['PANEL_PASSWORD', 'GH_TOKEN', 'ANTHROPIC_ADMIN_KEY'];
+const TMUX_STRIP_ENV = ['PANEL_PASSWORD', 'GH_TOKEN', 'ANTHROPIC_ADMIN_KEY', 'DEPLOY_WEBHOOK_URL'];
 
 // roda um comando sem shell (args separados) e nunca rejeita: {ok, stdout, stderr}
 function sh(cmd, args, opts = {}) {

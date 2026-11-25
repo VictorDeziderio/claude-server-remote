@@ -23,6 +23,10 @@ notificações push. Os projetos e o login do Claude ficam num volume, então na
   login necessário, limite de uso, reinícios em loop).
 - **Continua sozinho depois do limite de uso:** quando um projeto bate o limite do plano, o painel espera
   a renovação e digita `continue` na sessão — só se ninguém tiver digitado nada e a tela estiver parada.
+- **Atualiza sem cortar o trabalho:** tarefas interrompidas por um reinício continuam sozinhas, e
+  Configurações → *Atualizar o painel* (com `DEPLOY_WEBHOOK_URL`) pode esperar todos os projetos pararem.
+- **Disco por projeto:** veja quanto cada projeto e cada cópia de trabalho dos agentes ocupa e remova
+  as cópias antigas com segurança (só as sem mudanças não salvas e sem nada rodando dentro).
 - **Uso do plano e gasto da API:** janelas de 5 horas e semanal com horário de renovação, alertas nos
   limiares que você escolher e o gasto do mês pela Admin API.
 - **Relatório de custo:** tokens e custo estimado por dia, por modelo e por projeto, lidos das conversas do Claude.
@@ -102,6 +106,7 @@ Todas as variáveis têm valor padrão; só `PANEL_PASSWORD` é obrigatória. Li
 | `ANTHROPIC_ADMIN_KEY` / `ANTHROPIC_API_BUDGET_USD` | — | gasto da API e alertas de orçamento |
 | `USAGE_POLL_INTERVAL` / `USAGE_THRESHOLDS` | `300` / `80,95` | checagem do uso do plano e níveis de alerta |
 | `AUTO_RESUME` / `AUTO_RESUME_TEXT` | `1` / `continue` | continuar sozinho depois do limite de uso |
+| `DEPLOY_WEBHOOK_URL` | — | endereço de deploy da sua hospedagem: Configurações → **Atualizar o painel** ("quando parado" espera as tarefas) |
 | `MAX_FAST_FAILS` / `MAX_BACKOFF_S` | `6` / `60` | proteção contra reinícios em loop |
 
 Argumentos de build (`docker build --build-arg`): `CLAUDE_CODE_VERSION` (padrão: a mais recente),
