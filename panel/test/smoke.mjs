@@ -69,9 +69,10 @@ fs.writeFileSync(path.join(encDir, 'abc123def456.jsonl'), [
   JSON.stringify({ timestamp: '2026-08-01T10:00:00Z', message: { role: 'user', content: 'Cria um README' } }),
   JSON.stringify({ timestamp: '2026-08-01T10:00:05Z', message: { role: 'assistant', model: 'claude-opus-5', content: [{ type: 'text', text: 'Feito.' }], usage: { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 500 } } }),
 ].join('\n') + '\n')
-// FAIL-CLOSED: o painel expoe um shell — nao pode subir sem senha nem com o default que ja
-// esteve versionado no repo (valor PUBLICO, comprometido: fica aqui so p/ provar que e recusado)
-const LEAKED_DEFAULT = 'senha-antiga-removida'
+// FAIL-CLOSED: o painel expoe um shell — nao pode subir sem senha nem com uma senha sabidamente
+// publica. O default antigo que ja esteve versionado NAO fica no repo (o projeto e publico):
+// o auth.js guarda so o sha256 dele, e aqui conferimos que esse hash continua na lista de bloqueio.
+const LEAKED_DEFAULT_SHA256 = '98a2fc5119f2b61af6d90d9d7bb59813820e6cd43411eeb0a91484a769a0ccb9'
 const bootWith = (pass) => new Promise((resolve) => {
   const p = spawn(process.execPath, ['server.js'], { cwd: PANEL, env: { ...env, PANEL_PASSWORD: pass, PANEL_PORT: String(PORT + 1) }, stdio: ['ignore', 'pipe', 'pipe'] })
   let out = ''; p.stdout.on('data', (d) => { out += d }); p.stderr.on('data', (d) => { out += d })
@@ -79,15 +80,19 @@ const bootWith = (pass) => new Promise((resolve) => {
   p.on('exit', (code) => { clearTimeout(t); resolve({ code, out }) })
 })
 const failClosed = []
-for (const [label, pass] of [['vazia', ''], ['default publico versionado', LEAKED_DEFAULT], ['changeme', 'changeme']]) {
+for (const [label, pass] of [['vazia', ''], ['changeme', 'changeme']]) {
   const b = await bootWith(pass)
   failClosed.push([`painel NAO sobe com senha ${label}`, b.code === 1 && !b.out.includes(pass || '\u0000'), JSON.stringify({ code: b.code, out: b.out.slice(-160) })])
+}
+{
+  const authTxt = fs.readFileSync(path.join(PANEL, 'server', 'auth.js'), 'utf8')
+  failClosed.push(['auth.js ainda bloqueia o default antigo (sha256)', authTxt.includes(LEAKED_DEFAULT_SHA256), 'KNOWN_PUBLIC'])
 }
 // o default nao pode voltar a ser versionado (Dockerfile / .env.example)
 for (const f of ['Dockerfile', '.env.example']) {
   const txt = fs.readFileSync(path.join(DEVBOX, f), 'utf8')
   // nenhum PANEL_PASSWORD com valor (vazio ou ausente sao ok: o Dockerfile nao declara mais o ENV)
-  failClosed.push([`${f} sem senha default`, !txt.includes(LEAKED_DEFAULT) && !/^[ \t]*PANEL_PASSWORD=[ \t]*[^\s\\]/m.test(txt), f])
+  failClosed.push([`${f} sem senha default`, !/^[ \t]*PANEL_PASSWORD=[ \t]*[^\s\\]/m.test(txt), f])
 }
 const srv = spawn(process.execPath, ['server.js'], { cwd: PANEL, env, stdio: ['ignore', 'pipe', 'pipe'] })
 let logs = ''
