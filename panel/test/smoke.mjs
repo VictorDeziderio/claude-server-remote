@@ -26,19 +26,17 @@ const DEVBOX = path.resolve(PANEL, '..')
 const SESSION_SCRIPT = path.join(DEVBOX, 'claude-session.sh')
 const FAKE_LOOP = path.join(ROOT, 'loop.sh')
 fs.writeFileSync(FAKE_LOOP, '#!/usr/bin/env bash\necho SMOKE-READY-$2; exec bash --norc\n')
-// `claude` FALSO: simula o 1o login (tema -> metodo -> link OAuth LONGO -> codigo -> sucesso)
+// `claude` FALSO: reproduz as telas REAIS do 1o uso do Claude Code 2.1.332 (conferidas ao vivo
+// num HOME descartavel): tema -> metodo de login (cursor comeca na opcao ERRADA) -> link OAuth
+// LONGO -> codigo -> "Login successful" -> notas de seguranca -> terminal setup -> pasta confiavel
+// e aviso do bypass (default "No, exit": Enter as cegas FECHA o claude) -> uma tela que o painel
+// NAO conhece (passa com Enter) -> prompt. Ja logado, abre no prompt e espera o /login.
+// Cada escolha vai para $HOME/.fake-claude-picks (o teste confere). Script: test/fake-claude.sh.
 const BIN = path.join(ROOT, 'bin')
 fs.mkdirSync(BIN)
 const LONG = 'x'.repeat(700) // link maior que a janela de 500 colunas: testa a juncao das linhas
-fs.writeFileSync(path.join(BIN, 'claude'), `#!/usr/bin/env bash
-[ "$1" = "--version" ] && { echo "9.9.9 (Claude Code)"; exit 0; }
-echo "Choose the text style that looks best with your terminal"; read -r _
-echo "Select login method:"; echo " ❯ 1. Claude account with subscription · Pro, Max"; read -r _
-echo "Browser didn't open? Use the url below to sign in"
-echo "https://claude.ai/oauth/authorize?code=true&client_id=abc&state=${LONG}"
-printf "Paste code here if prompted > "; read -r code
-if [ "$code" = "good-code" ]; then mkdir -p "$HOME/.claude"; echo '{"ok":1}' > "$HOME/.claude/.credentials.json"; echo "Login successful. Press Enter to continue"; read -r _; fi
-`, { mode: 0o755 })
+const FAKE_CLAUDE = fs.readFileSync(path.join(PANEL, 'test', 'fake-claude.sh'), 'utf8').replace('__LONG__', LONG)
+fs.writeFileSync(path.join(BIN, 'claude'), FAKE_CLAUDE, { mode: 0o755 })
 const BACKUP_SCRIPT = path.join(ROOT, 'backup.sh')
 fs.writeFileSync(BACKUP_SCRIPT, '#!/usr/bin/env bash\nmkdir -p "$HOME/.claude/logs"; echo "[2026-01-01 00:00:00] ok    demo: snapshot enviado" | tee -a "$HOME/.claude/logs/backup.log"; if [ "$1" = "--config" ]; then mkdir -p "$HOME/.claude-backups"; tar czf "$HOME/.claude-backups/config-smoke.tgz" -C "$HOME" .claude; echo "[2026-01-01 00:00:00] ok    config: config-smoke.tgz"; fi\n')
 
@@ -387,17 +385,36 @@ try {
       r = await j('GET', '/api/term/capture?name=demo'); ok('Claude OFF: sessao so com shell', r.data.ok && /Claude DESLIGADO/.test(r.data.content) && !/SMOKE-READY/.test(r.data.content), r.data.content?.slice(0, 200))
       r = await j('POST', '/api/restart', { name: 'demo' }); ok('restart com Claude OFF', r.data.ok && /so shell/.test(r.data.msg), r.data.msg)
 
-      // login guiado (com o `claude` falso): tema e metodo avancam sozinhos, link sai INTEIRO
+      // login guiado (com o `claude` falso): TODAS as telas do 1o uso passam sozinhas, o link sai
+      // INTEIRO, e depois do codigo as telas pos-login tambem passam sozinhas (nada p/ selecionar)
       r = await j('GET', '/api/claude/login/status'); ok('login status idle', r.data.ok && r.data.phase === 'idle' && r.data.logged === false)
       r = await j('POST', '/api/claude/login/start', {}); ok('login start', r.data.ok && r.data.phase === 'starting', JSON.stringify(r.data))
       const waitPhase = async (want, ms) => { const t0 = Date.now(); let d; while (Date.now() - t0 < ms) { d = (await j('GET', '/api/claude/login/status')).data; if (want.includes(d.phase)) break; await new Promise((s) => setTimeout(s, 400)) } return d }
-      let ls = await waitPhase(['url'], 40000) // folga p/ maquina carregada (CI/Docker)
-      ok('login: avancou tema + "Claude account with subscription" ate o link', ls.phase === 'url', JSON.stringify({ phase: ls.phase, screen: ls.screen?.slice(-200) }))
+      const picks = () => { try { return fs.readFileSync(path.join(ROOT, '.fake-claude-picks'), 'utf8') } catch { return '' } }
+      const seen = new Set()
+      let ls; { const t0 = Date.now(); while (Date.now() - t0 < 40000) { ls = (await j('GET', '/api/claude/login/status')).data; seen.add(ls.phase); if (['url', 'error', 'attention'].includes(ls.phase)) break; await new Promise((s) => setTimeout(s, 300)) } }
+      ok('login: avancou tema + "Claude account with subscription" ate o link', ls.phase === 'url', JSON.stringify({ phase: ls.phase, screen: ls.screen?.slice(-300), picks: picks() }))
+      ok('login: escolheu o metodo certo (cursor comecava na opcao 2)', /method=1\. Claude account with subscription/.test(picks()), picks())
+      ok('login: nenhuma tela crua/attention antes do link', !seen.has('attention') && !ls.screen, JSON.stringify([...seen]))
       ok('login: link OAuth completo (nao cortado)', ls.url === `https://claude.ai/oauth/authorize?code=true&client_id=abc&state=${LONG}`, `len=${(ls.url || '').length}`)
       r = await j('POST', '/api/claude/login/code', { code: 'bad\u0007' }); ok('login: codigo com controle recusado', r.data.ok === false)
       r = await j('POST', '/api/claude/login/code', { code: 'good-code' }); ok('login: codigo enviado', r.data.ok, r.data.msg)
-      ls = await waitPhase(['success', 'error'], 30000)
-      ok('login: sucesso', ls.phase === 'success' && ls.logged === true, JSON.stringify({ phase: ls.phase, msg: ls.msg }))
+      ls = await waitPhase(['success', 'error', 'attention'], 60000)
+      ok('login: sucesso', ls.phase === 'success' && ls.logged === true, JSON.stringify({ phase: ls.phase, msg: ls.msg, screen: ls.screen?.slice(-300), picks: picks() }))
+      const p1 = picks()
+      ok('login: telas pos-login passadas sozinhas', /login-success/.test(p1) && /security-notes/.test(p1) && /terminal=2\. No, maybe later/.test(p1), p1)
+      ok('login: pasta confiavel e aviso do bypass aceitos (default era "No, exit")', /trust=Yes, I trust this folder/.test(p1) && /bypass=Yes, I accept/.test(p1) && !/=No, exit/.test(p1), p1)
+      ok('login: tela desconhecida passou com Enter e foi pro log', /unknown-passed/.test(p1) && /login: unknown screen/.test(logs), p1)
+      await new Promise((s) => setTimeout(s, 2000))
+      ok('login: sessao cr-login encerrada no fim', spawnSync('tmux', ['has-session', '-t', '=cr-login'], { env }).status !== 0)
+      // troca de conta: ja logado, o claude abre no prompt -> painel manda /login sozinho
+      fs.writeFileSync(path.join(ROOT, '.fake-claude-picks'), '')
+      r = await j('POST', '/api/claude/login/start', {}); ok('troca de conta: start', r.data.ok, JSON.stringify(r.data))
+      ls = await waitPhase(['url', 'error', 'attention'], 40000)
+      ok('troca de conta: /login + metodo ate o link', ls.phase === 'url' && /repl=\/login/.test(picks()), JSON.stringify({ phase: ls.phase, screen: ls.screen?.slice(-300), picks: picks() }))
+      r = await j('POST', '/api/claude/login/code', { code: 'good-code' })
+      ls = await waitPhase(['success', 'error', 'attention'], 40000)
+      ok('troca de conta: sucesso (sem pedir /login de novo)', ls.phase === 'success' && (picks().match(/repl=\/login/g) || []).length === 1, JSON.stringify({ phase: ls.phase, msg: ls.msg, picks: picks() }))
       r = await j('POST', '/api/claude/login/cancel', {}); ok('login cancel', r.data.ok)
       const auditTxt = fs.readFileSync(path.join(ROOT, '.claude', 'logs', 'audit.log'), 'utf8')
       ok('audit nao grava o codigo de login', /login\.code/.test(auditTxt) && !/good-code/.test(auditTxt))
@@ -406,6 +423,33 @@ try {
       ok('ws com cookie -> upgrade OK, fecha 4003/4004 (sem pty/tmux aqui)', o.code === 4003 || o.code === 4004, JSON.stringify({ code: o.code, reason: o.reason }))
       skip('ws PTY real (sem tmux nesta maquina)')
     }
+  }
+
+  // tabela de telas do login (funcao pura) com o texto REAL das telas do Claude Code 2.1.332
+  {
+    const { classify } = require(path.join(PANEL, 'server', 'login.js'))
+    const real = {
+      theme: [" Let's get started.\n Choose the text style that looks best with your terminal\n To change this later, run /theme\n ❯ ✔ Auto (match terminal)\n     Dark mode\n     Light mode", 'theme', 'Enter'],
+      method: [' Select login method:\n ❯ 1. Claude account with subscription · Individual, Team, or Enterprise\n   2. Anthropic Console account · API usage billing\n   3. 3rd-party platform · Bedrock, Microsoft Foundry, Google Vertex AI', 'login-method', 'Enter'],
+      methodWrong: [' Select login method:\n   1. Claude account with subscription · Individual, Team, or Enterprise\n ❯ 2. Anthropic Console account · API usage billing', 'login-method', 'Up'],
+      apiKey: ['  Detected a custom API key in your environment\n  ANTHROPIC_API_KEY: sk-ant-...fake\n  Do you want to use this API key?\n    Yes\n  ❯ No (recommended)\n  Enter to confirm · Esc to cancel', 'api-key', 'Enter'],
+      security: [" Security notes:\n 1. Claude can make mistakes.\n 2. Due to prompt injection risks, only use it with code you trust\n    Learn more: https://code.claude.com/docs/en/security\n Press Enter to continue", 'security-notes', 'Enter'],
+      trust: [" Accessing workspace:\n /home/x/work\n Quick safety check: Is this a project you created or one you trust? (Like your own code)\n Claude Code'll be able to read, edit, and execute files here.\n Security guide\n ❯ No, exit\n   Yes, I trust this folder\n Enter to confirm · Esc to cancel", 'trust-folder', 'Down'],
+      bypass: ['  WARNING: Claude Code running in Bypass Permissions mode\n  https://code.claude.com/docs/en/security\n  ❯ No, exit\n    Yes, I accept\n  Enter to confirm · Esc to cancel', 'bypass-warning', 'Down'],
+      success: [' Login successful. Press Enter to continue', 'login-success', 'Enter'],
+    }
+    for (const [name, [screen, id, key]] of Object.entries(real)) {
+      const c = classify(screen)
+      ok(`tela do login "${name}" -> ${id} + ${key}`, c.kind === 'screen' && c.id === id && c.key === key, JSON.stringify(c))
+    }
+    let c = classify(" Browser didn't open? Use the URL below to sign in (c to copy)\nhttps://claude.ai/oauth/authorize?z-abc123\n Paste code here if prompted\n Esc to go back")
+    ok('tela do login: link OAuth reconhecido', c.kind === 'url' && c.url === 'https://claude.ai/oauth/authorize?z-abc123', JSON.stringify(c))
+    c = classify('❯ Try "create a util logging.py that…"\n  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents')
+    ok('tela do login: prompt pronto (nao confunde com o aviso do bypass)', c.kind === 'repl', JSON.stringify(c))
+    c = classify(' Something new?\n ❯ No, exit\n   Yes, continue')
+    ok('tela desconhecida com "No, exit" marcado: nao aperta Enter', c.kind === 'unknown' && c.exitSelected === true, JSON.stringify(c))
+    c = classify(" What's new\n press any key")
+    ok('tela desconhecida sem opcao de saida: Enter permitido', c.kind === 'unknown' && c.exitSelected === false, JSON.stringify(c))
   }
 
   // rate limit
