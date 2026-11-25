@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 // Backup: status por projeto (lido do backup.log), "backup agora" (roda o backup.sh), e backup da
 // CONFIG (~/.claude + ~/.claude.json): tarball local rotacionado (start.sh agenda 1x/dia) +
 // download direto pelo painel (stream `tar czf -`).
@@ -52,15 +53,15 @@ async function backupStatusFull() {
 }
 async function runBackup(name) {
   const args = [cfg.BACKUP_SCRIPT];
-  if (name) { if (!validName(name)) return { ok: false, msg: 'nome invalido' }; args.push(path.join(cfg.PROJECTS_DIR, name)); }
+  if (name) { if (!validName(name)) return { ok: false, msg: tr('srv.badName') }; args.push(path.join(cfg.PROJECTS_DIR, name)); }
   const r = await sh('bash', args, { timeout: 5 * 60 * 1000, env: { ...process.env, PROJECT_FOLDER: path.basename(cfg.PROJECTS_DIR) } });
   const out = (r.stdout + r.stderr).trim().split('\n').slice(-20).join('\n');
-  return { ok: r.ok, msg: r.ok ? (out || 'backup executado (nada a enviar)') : 'backup falhou: ' + out, output: out };
+  return { ok: r.ok, msg: r.ok ? (out || tr('srv.backupNothing')) : tr('srv.backupFailed') + out, output: out };
 }
 async function runConfigBackup() {
   const r = await sh('bash', [cfg.BACKUP_SCRIPT, '--config'], { timeout: 5 * 60 * 1000 });
   const out = (r.stdout + r.stderr).trim().split('\n').slice(-10).join('\n');
-  return { ok: r.ok, msg: r.ok ? (out || 'backup da config gerado') : 'falhou: ' + out, backups: listConfigBackups() };
+  return { ok: r.ok, msg: r.ok ? (out || tr('srv.configBackupDone')) : tr('srv.failed') + out, backups: listConfigBackups() };
 }
 function listConfigBackups() {
   try {
@@ -72,9 +73,9 @@ function listConfigBackups() {
 // download de um tarball ja gerado (nome validado) ou de um NOVO gerado na hora (stream)
 function downloadConfig(res, file, full) {
   if (file) {
-    if (!/^config-[A-Za-z0-9_.-]+\.tgz$/.test(file)) { res.writeHead(400); return res.end('nome invalido'); }
+    if (!/^config-[A-Za-z0-9_.-]+\.tgz$/.test(file)) { res.writeHead(400); return res.end(tr('srv.badName')); }
     const p = path.join(cfg.CONFIG_BACKUP_DIR, file);
-    let st; try { st = fs.statSync(p); } catch { res.writeHead(404); return res.end('nao encontrado'); }
+    let st; try { st = fs.statSync(p); } catch { res.writeHead(404); return res.end(tr('srv.notFound')); }
     res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': st.size, 'Content-Disposition': `attachment; filename="${file}"`, 'Cache-Control': 'no-store' });
     return fs.createReadStream(p).pipe(res);
   }

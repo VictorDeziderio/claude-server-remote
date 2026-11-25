@@ -136,7 +136,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
     for (const f of files) {
       const target = joinPath(cur, f.name)
       let r = await api.fsUpload(target, f, false)
-      if (!r.ok && /ja existe/.test(r.msg) && window.confirm(t('files.overwrite', { name: f.name }))) r = await api.fsUpload(target, f, true)
+      if (!r.ok && r.code === 'EXISTS' && window.confirm(t('files.overwrite', { name: f.name }))) r = await api.fsUpload(target, f, true)
       if (r.ok) okN++
       else onFlash?.(r)
     }

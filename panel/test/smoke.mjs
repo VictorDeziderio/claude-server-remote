@@ -649,7 +649,12 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
       r = await j('POST', '/api/config', { name: 'demo', key: 'autoStartClaude', value: false }); ok('Claude OFF aplica na hora', r.data.ok && has(), r.data.msg)
       await new Promise((s) => setTimeout(s, 600))
       r = await j('GET', '/api/term/capture?name=demo'); ok('Claude OFF: sessao so com shell', r.data.ok && /Claude DESLIGADO/.test(r.data.content) && !/SMOKE-READY/.test(r.data.content), r.data.content?.slice(0, 200))
-      r = await j('POST', '/api/restart', { name: 'demo' }); ok('restart com Claude OFF', r.data.ok && /so shell/.test(r.data.msg), r.data.msg)
+      r = await j('POST', '/api/restart', { name: 'demo' }); ok('restart com Claude OFF', r.data.ok && /shell only/.test(r.data.msg), r.data.msg)
+      // mensagens do servidor no idioma de quem pede (cookie cr_lang > Accept-Language > ingles)
+      r = await j('POST', '/api/restart', { name: 'demo' }, { headers: { cookie: cookie + '; cr_lang=pt-BR' } }); ok('i18n: cookie cr_lang=pt-BR -> mensagem em portugues', /só shell/.test(r.data.msg), r.data.msg)
+      r = await j('POST', '/api/restart', { name: 'demo' }, { headers: { 'accept-language': 'pt-PT,pt;q=0.9' } }); ok('i18n: Accept-Language pt -> pt-BR', /só shell/.test(r.data.msg), r.data.msg)
+      r = await j('POST', '/api/restart', { name: 'demo' }, { headers: { cookie: cookie + '; cr_lang=xx', 'accept-language': 'ja' } }); ok('i18n: idioma sem arquivo -> ingles', /shell only/.test(r.data.msg), r.data.msg)
+      r = await j('POST', '/api/restart', { name: 'nao-existe-xyz' }, { headers: { cookie: cookie + '; cr_lang=pt-BR' } }); ok('i18n: erro simples traduzido', r.data.ok === false && r.data.msg === 'projeto inexistente', r.data.msg)
 
       // login guiado (com o `claude` falso): TODAS as telas do 1o uso passam sozinhas, o link sai
       // INTEIRO, e depois do codigo as telas pos-login tambem passam sozinhas (nada p/ selecionar)
@@ -722,7 +727,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
   cookie = ''
   let last
   for (let i = 0; i < 9; i++) last = (await j('POST', '/api/login', { login: 'admin', password: 'x' })).data
-  ok('rate-limit apos 8 falhas', /muitas tentativas/.test(last.msg), last.msg)
+  ok('rate-limit apos 8 falhas', /too many attempts/.test(last.msg), last.msg)
 
   // logout
   r = await j('POST', '/api/logout'); ok('logout limpa cookie', /Max-Age=0/.test(r.headers.get('set-cookie') || ''))

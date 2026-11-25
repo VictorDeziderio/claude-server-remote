@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 // Alertas do ecossistema de scripts (claude-loop.sh, backup.sh, memory guard...): eles anexam
 // linhas JSON em RUN_DIR/alerts.jsonl ({t, level, kind, project?, msg}). O servidor le so os
 // bytes NOVOS (offset incremental), guarda os ultimos 100 em memoria e distribui por SSE.
@@ -69,7 +70,7 @@ function maybeDiskAlert(pct) {
   lastDiskAlertAt = now;
   try {
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
-    fs.appendFileSync(FILE, JSON.stringify({ t: now, level: 'warn', kind: 'disk', msg: `disco em ${pct}% de uso` }) + '\n');
+    fs.appendFileSync(FILE, JSON.stringify({ t: now, level: 'warn', kind: 'disk', msg: tr('srv.diskFull', { pct }) }) + '\n');
   } catch (e) { log('error', 'disk alert', { err: e.message }); }
 }
 

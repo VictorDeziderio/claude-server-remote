@@ -11,7 +11,7 @@ function audit(action, extra) {
     fs.mkdirSync(path.dirname(cfg.AUDIT_LOG), { recursive: true });
     fs.appendFileSync(cfg.AUDIT_LOG, line);
   } catch (e) {
-    if (!warned) { warned = true; console.error('[audit] nao consegui gravar:', e.message); }
+    if (!warned) { warned = true; console.error('[audit] could not write:', e.message); }
   }
 }
 

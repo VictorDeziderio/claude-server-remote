@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 /*
  * Auth do painel: pagina de login propria + cookie de sessao ASSINADO + store de sessoes.
  *
@@ -34,8 +35,8 @@ const KNOWN_PUBLIC = new Set([
 const passHash = crypto.createHash('sha256').update(String(cfg.PANEL_PASSWORD)).digest('hex');
 if (!cfg.PANEL_PASSWORD || KNOWN_PUBLIC.has(passHash)) {
   log('error', cfg.PANEL_PASSWORD
-    ? 'PANEL_PASSWORD e uma senha PUBLICA (default que ja esteve no repo) — o painel expoe um shell e NAO sobe com ela.'
-    : 'PANEL_PASSWORD nao definido — o painel expoe um shell e NAO sobe sem senha.',
+    ? 'PANEL_PASSWORD is a PUBLIC password (an old default) — the panel exposes a shell and will NOT start with it.'
+    : 'PANEL_PASSWORD is not set — the panel exposes a shell and will NOT start without a password.',
   { fix: 'defina uma PANEL_PASSWORD forte no Environment do servico e suba de novo.' });
   process.exit(1);
 }
@@ -135,17 +136,17 @@ setInterval(() => { const now = Date.now(); for (const [ip, a] of attempts) if (
 function doLogin(body, req, res) {
   const ip = clientIp(req);
   const wait = limited(ip);
-  if (wait) return { ok: false, msg: `muitas tentativas — aguarde ${wait}s` };
+  if (wait) return { ok: false, msg: tr('srv.tooManyTries', { s: wait }) };
   const okUser = safeEq(String(body.login || ''), cfg.PANEL_LOGIN);
   const okPass = safeEq(String(body.password || ''), cfg.PANEL_PASSWORD);
   if (!(okUser && okPass)) {
     fail(ip);
     audit('login.fail', { ip, loginHash: loginHashOf(body.login) });
-    return { ok: false, msg: 'login ou senha incorretos' };
+    return { ok: false, msg: tr('srv.wrongLogin') };
   }
   if (totp.isEnabled()) {
-    if (!body.code) return { ok: false, need2fa: true, msg: 'informe o codigo do autenticador' };
-    if (!totp.check(body.code)) { fail(ip); audit('login.fail2fa', { ip }); return { ok: false, need2fa: true, msg: 'codigo 2FA invalido' }; }
+    if (!body.code) return { ok: false, need2fa: true, msg: tr('srv.need2fa') };
+    if (!totp.check(body.code)) { fail(ip); audit('login.fail2fa', { ip }); return { ok: false, need2fa: true, msg: tr('srv.bad2fa') }; }
   }
   attempts.delete(ip);
   const s = sessions.create(ip, req.headers['user-agent']);
@@ -164,15 +165,15 @@ function doLogout(req, res) {
 function listSessions(req) { return { ok: true, sessions: sessions.list(sessionId(req)).map(({ _id, ...s }) => s), twofa: totp.status() }; }
 function revokeSession(req, prefix) {
   const id = sessions.resolve(prefix);
-  if (!id) return { ok: false, msg: 'sessao nao encontrada' };
-  if (id === sessionId(req)) return { ok: false, msg: 'use "sair" para encerrar a sessao atual' };
+  if (!id) return { ok: false, msg: tr('srv.sessionNotFound') };
+  if (id === sessionId(req)) return { ok: false, msg: tr('srv.useLogout') };
   sessions.revoke(id); audit('session.revoke', { ip: clientIp(req), sid: prefix });
-  return { ok: true, msg: 'sessao encerrada' };
+  return { ok: true, msg: tr('srv.sessionEnded') };
 }
 function revokeOthers(req) {
   const n = sessions.revokeAll(sessionId(req));
   audit('session.revokeAll', { ip: clientIp(req), n });
-  return { ok: true, msg: n ? `${n} sessao(oes) encerrada(s) nos outros dispositivos` : 'nenhuma outra sessao ativa' };
+  return { ok: true, msg: n ? tr('srv.othersEnded', { n }) : tr('srv.noOthers') };
 }
 
 // CSRF: request mutante/WS precisa vir do mesmo site. Navegadores modernos mandam

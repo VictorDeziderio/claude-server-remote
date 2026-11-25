@@ -27,3 +27,5 @@ export function setLang(code) {
 export const t = (key, vars) => lookup(LOCALES, lang, DEFAULT_LANG, key, vars)
 // texto que vem do servidor (ex.: nome de um log): usa a chave se existir, senao o texto dele
 export const tOr = (key, fallback, vars) => (key in (LOCALES[lang] || {}) || key in (LOCALES[DEFAULT_LANG] || {}) ? t(key, vars) : fallback)
+// o servidor responde no mesmo idioma (server/i18n.js le este cookie em toda requisicao)
+try { document.cookie = `cr_lang=${encodeURIComponent(lang)}; path=/; max-age=31536000; SameSite=Lax` } catch { /* sem DOM (testes) */ }

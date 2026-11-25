@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 // Historico de conversas do Claude por projeto (lendo ~/.claude/projects/<cwd codificado>/*.jsonl)
 // + "continuar" uma conversa (claude --resume <id>) via flag lida pelo claude-loop.sh.
 const fs = require('fs');
@@ -50,13 +51,13 @@ async function summarizeFile(file, wantMessages) {
     if (wantMessages && text) msgs.push({ role: m.role, text: text.slice(0, 4000), ts, model: m.model || '' });
   }
   if (!count) return null;
-  const out = { id, title: title || '(sem titulo)', first, last, messages: count, model, tokens };
+  const out = { id, title: title || tr('srv.untitled'), first, last, messages: count, model, tokens };
   if (wantMessages) out.items = msgs.slice(-400);
   return out;
 }
 
 async function listHistory(name) {
-  if (!validName(name)) return { ok: false, msg: 'nome invalido' };
+  if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
   const dir = dirOf(name);
   let files = [];
   try { files = (await fsp.readdir(dir)).filter((f) => f.endsWith('.jsonl')).map((f) => path.join(dir, f)); } catch { return { ok: true, sessions: [], dir }; }
@@ -67,7 +68,7 @@ async function readConversation(name, id) {
   if (!validName(name) || !/^[A-Za-z0-9_-]{6,80}$/.test(String(id || ''))) return { ok: false, msg: 'parametros invalidos' };
   const file = path.join(dirOf(name), id + '.jsonl');
   const s = await summarizeFile(file, true);
-  if (!s) return { ok: false, msg: 'conversa nao encontrada' };
+  if (!s) return { ok: false, msg: tr('srv.convNotFound') };
   return { ok: true, conversation: s };
 }
 // Continuar: grava ~/.claude/run/<sess>.resume com o id e RECRIA a sessao; o claude-loop.sh, ao
@@ -76,16 +77,16 @@ async function readConversation(name, id) {
 async function resumeConversation(name, id, running) {
   if (!validName(name) || !/^[A-Za-z0-9_-]{6,80}$/.test(String(id || ''))) return { ok: false, msg: 'parametros invalidos' };
   const sess = sessionName(name);
-  if (!(await sh('tmux', ['has-session', '-t', '=' + sess])).ok) return { ok: false, msg: 'sessao tmux nao esta de pe' };
+  if (!(await sh('tmux', ['has-session', '-t', '=' + sess])).ok) return { ok: false, msg: tr('srv.tmuxDown') };
   if (running) {
     fs.mkdirSync(cfg.RUN_DIR, { recursive: true });
     fs.writeFileSync(path.join(cfg.RUN_DIR, sess + '.resume'), id + '\n');
     await require('./projects').recreateSession(name); // lazy: evita ciclo de require
-    return { ok: true, msg: `"${name}": Claude reaberto continuando a conversa ${id.slice(0, 8)}…` };
+    return { ok: true, msg: tr('srv.resumed', { name, id: id.slice(0, 8) }) };
   }
   await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', `claude --resume ${id}`]);
   await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-m']);
-  return { ok: true, msg: `"${name}": claude --resume enviado ao shell da sessao` };
+  return { ok: true, msg: tr('srv.resumeSent', { name }) };
 }
 
 module.exports = { listHistory, readConversation, resumeConversation };

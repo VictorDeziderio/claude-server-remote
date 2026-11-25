@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 /*
  * Tempo real: watcher + SSE (/api/events).
  *
@@ -53,7 +54,7 @@ function attach(req, res, sid) {
     const n = sidCounts.get(sid) || 0;
     if (n >= MAX_SSE_PER_SID) {
       res.writeHead(429, { 'Content-Type': 'text/plain; charset=utf-8' });
-      return res.end('muitas conexoes de eventos abertas nesta sessao');
+      return res.end(tr('srv.tooManyEvents'));
     }
     sidCounts.set(sid, n + 1);
   }
@@ -133,9 +134,9 @@ async function tickSession(name, running, idlePauseHours) {
     // sai de 'busy' (o reset de a.busySince abaixo so acontece DEPOIS deste broadcast)
     broadcast('activity', { name, session: sess, state: next, since: now, busySince: next === 'busy' ? a.busySince : 0, remoteUrl: a.remoteUrl || '' });
     if (next === 'prompt') {
-      broadcast('notify', { kind: 'prompt', name, title: `Claude está esperando você — ${name}`, body: 'Há uma pergunta/permissão pendente no terminal.' });
+      broadcast('notify', { kind: 'prompt', name, title: tr('srv.waitingTitle', { name }), body: tr('srv.waitingBody') });
     } else if (next === 'idle' && prevState === 'busy' && busyFor >= 5000) {
-      broadcast('notify', { kind: 'done', name, title: `Claude terminou — ${name}`, body: `Ficou ${Math.round(busyFor / 1000)}s trabalhando e agora está aguardando.` });
+      broadcast('notify', { kind: 'done', name, title: `Claude terminou — ${name}`, body: tr('srv.doneBody', { s: Math.round(busyFor / 1000) }) });
     }
     if (next !== 'busy') a.busySince = 0;
   }

@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 // Configuracoes do painel: defaults do panel.json (autoStartClaude/autoRemote), preferencias
 // (settings.*) e visualizacao das variaveis de ambiente (sensiveis mascaradas).
 const cfg = require('./config');
@@ -29,13 +30,13 @@ function getSettings() {
 function setDefaults(patch) {
   const c = projects.loadConfig();
   for (const k of ['autoStartClaude', 'autoRemote']) if (patch && k in patch) c.defaults[k] = truthy(patch[k]);
-  return projects.saveConfig(c) ? { ok: true, msg: 'defaults salvos (valem p/ projetos sem config propria, na proxima recriacao da sessao)', defaults: c.defaults } : { ok: false, msg: 'falha ao salvar' };
+  return projects.saveConfig(c) ? { ok: true, msg: tr('srv.defaultsSaved'), defaults: c.defaults } : { ok: false, msg: tr('srv.saveFailed') };
 }
 function setSettings(patch) {
   const c = projects.loadConfig();
   c.settings = c.settings || {};
   for (const k of ['notifications', 'notifyDone', 'notifyPrompt']) if (patch && k in patch) c.settings[k] = truthy(patch[k]);
-  return projects.saveConfig(c) ? { ok: true, msg: 'preferencias salvas', settings: c.settings } : { ok: false, msg: 'falha ao salvar' };
+  return projects.saveConfig(c) ? { ok: true, msg: tr('srv.prefsSaved'), settings: c.settings } : { ok: false, msg: tr('srv.saveFailed') };
 }
 
 module.exports = { getSettings, setDefaults, setSettings };

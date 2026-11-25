@@ -31,6 +31,8 @@ const settings = require('./server/settings');
 const alerts = require('./server/alerts');
 const limits = require('./server/limits');
 const notify = require('./server/notify');
+const i18n = require('./server/i18n');
+const { tr } = i18n;
 const { serveStatic } = require('./server/static');
 
 fs.mkdirSync(cfg.PROJECTS_DIR, { recursive: true });
@@ -52,7 +54,7 @@ const GET = {
   '/api/state': async () => events.currentState(),
   '/api/report': async (q) => {
     const from = q.get('from') || '', to = q.get('to') || '';
-    if (!usage.isDay(from) || !usage.isDay(to)) return { ok: false, msg: 'data invalida (YYYY-MM-DD)' };
+    if (!usage.isDay(from) || !usage.isDay(to)) return { ok: false, msg: tr('srv.badDate') };
     return { ok: true, usage: usage.aggregateRange(from, to) };
   },
   '/api/fs/stat': async (q) => files.fsStat(q.get('path') || ''),
@@ -128,7 +130,7 @@ const AUDITED = new Set(['/api/create', '/api/rename', '/api/delete', '/api/conf
   '/api/sessions/revoke', '/api/sessions/revoke-others', '/api/totp/enable', '/api/totp/disable',
   '/api/session-mode', '/api/pause', '/api/unpause', '/api/alerts/clear', ...notify.routes.AUDITED]);
 
-const server = http.createServer(async (req, res) => {
+async function handle(req, res) {
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
   try {
     const u = new URL(req.url, 'http://x');
@@ -138,39 +140,39 @@ const server = http.createServer(async (req, res) => {
 
     // --- endpoints livres ---
     if (req.method === 'POST' && url === '/api/login') {
-      if (!auth.sameOrigin(req)) return sendJson(res, 403, { ok: false, msg: 'origem invalida' });
+      if (!auth.sameOrigin(req)) return sendJson(res, 403, { ok: false, msg: tr('srv.badOrigin') });
       const body = await readJson(req);
-      if (!body) return sendJson(res, 400, { ok: false, msg: 'corpo invalido' });
+      if (!body) return sendJson(res, 400, { ok: false, msg: tr('srv.badBody') });
       return sendJson(res, 200, auth.doLogin(body, req, res));
     }
     if (req.method === 'POST' && url === '/api/logout') {
-      if (!auth.sameOrigin(req)) return sendJson(res, 403, { ok: false, msg: 'origem invalida' });
+      if (!auth.sameOrigin(req)) return sendJson(res, 403, { ok: false, msg: tr('srv.badOrigin') });
       return sendJson(res, 200, auth.doLogout(req, res));
     }
     if (req.method === 'GET' && url === '/api/login/info') return sendJson(res, 200, { ok: true, twofa: totp.isEnabled(), panelVersion: cfg.PANEL_VERSION });
 
     // --- API protegida ---
     if (url.startsWith('/api/')) {
-      if (!auth.isAuthed(req)) return sendJson(res, 401, { ok: false, msg: 'nao autenticado' });
+      if (!auth.isAuthed(req)) return sendJson(res, 401, { ok: false, msg: tr('srv.notAuthed') });
       if (req.method === 'GET') {
         if (url === '/api/events') return events.attach(req, res, auth.sessionId(req));
         if (url === '/api/fs/download') return files.fsDownload(u.searchParams.get('path') || '', res);
         if (url === '/api/backup/download') return backup.downloadConfig(res, u.searchParams.get('file') || '', u.searchParams.get('full') === '1');
         const h = GET[url];
-        if (!h) return sendJson(res, 404, { ok: false, msg: 'rota desconhecida' });
+        if (!h) return sendJson(res, 404, { ok: false, msg: tr('srv.unknownRoute') });
         return sendJson(res, 200, await h(u.searchParams, req));
       }
       if (req.method === 'POST') {
-        if (!auth.sameOrigin(req)) return sendJson(res, 403, { ok: false, msg: 'origem invalida' });
+        if (!auth.sameOrigin(req)) return sendJson(res, 403, { ok: false, msg: tr('srv.badOrigin') });
         if (url === '/api/fs/upload') {
           const r = await files.fsUploadStream(u.searchParams.get('path') || '', req, u.searchParams.get('overwrite') === '1');
           audit('fs.upload', { ip: auth.clientIp(req), path: u.searchParams.get('path') || '', ok: r.ok, size: r.size || 0 });
           return sendJson(res, r.status || 200, r);
         }
         const h = POST[url];
-        if (!h) return sendJson(res, 404, { ok: false, msg: 'rota desconhecida' });
+        if (!h) return sendJson(res, 404, { ok: false, msg: tr('srv.unknownRoute') });
         const body = await readJson(req);
-        if (!body) return sendJson(res, 400, { ok: false, msg: 'corpo invalido' });
+        if (!body) return sendJson(res, 400, { ok: false, msg: tr('srv.badBody') });
         const r = await h(body, req);
         if (AUDITED.has(url)) audit(url.replace('/api/', '').replace(/\//g, '.'), { ip: auth.clientIp(req), ...summarize(body), ok: !!(r && r.ok) });
         return sendJson(res, 200, r);
@@ -183,10 +185,12 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 405, { ok: false, msg: 'method not allowed' });
   } catch (e) {
     log('error', 'erro na request', { url: req.url, err: e.message });
-    if (!res.headersSent) sendJson(res, 500, { ok: false, msg: 'erro interno' });
+    if (!res.headersSent) sendJson(res, 500, { ok: false, msg: tr('srv.internal') });
     else res.end();
   }
-});
+}
+// cada requisicao responde no idioma de quem pediu (server/i18n.js: cookie cr_lang / Accept-Language)
+const server = http.createServer((req, res) => i18n.withLang(req, () => handle(req, res)));
 
 // WebSocket do terminal: mesma auth (cookie) + mesma origem
 server.on('upgrade', (req, socket, head) => {
@@ -195,7 +199,7 @@ server.on('upgrade', (req, socket, head) => {
   if (u.pathname !== '/ws/term') return reject(404, 'Not Found');
   if (!auth.sameOrigin(req)) return reject(403, 'Forbidden');
   if (!auth.isAuthed(req)) return reject(401, 'Unauthorized');
-  term.handleUpgrade(req, socket, head, u.searchParams, auth.clientIp(req), auth.sessionId(req));
+  i18n.withLang(req, () => term.handleUpgrade(req, socket, head, u.searchParams, auth.clientIp(req), auth.sessionId(req)));
 });
 
 server.listen(cfg.PORT, cfg.BIND, () => {

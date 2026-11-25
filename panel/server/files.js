@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 // Gerenciador de arquivos CONFINADO a FS_BASE (=/root): listar, stat, ler, salvar, criar,
 // excluir, renomear, download e upload.
 //
@@ -53,7 +54,7 @@ function realOf(full) {
 // entao um symlink no fim do caminho e aceito e so o diretorio-pai precisa ser real-dentro.
 function guard(rel, { self = false } = {}) {
   const full = path.resolve(BASE, String(rel == null ? '' : rel).replace(/^[/\\]+/, ''));
-  if (!inside(full, BASE)) return { err: 'caminho invalido' };
+  if (!inside(full, BASE)) return { err: tr('srv.badPath') };
   let real;
   try {
     if (self && full !== BASE) {
@@ -71,7 +72,7 @@ function guard(rel, { self = false } = {}) {
       try { lst = fs.lstatSync(full); } catch { lst = null; }
       if (lst && lst.isSymbolicLink()) {
         try { real = fs.realpathSync(full); }
-        catch { return { err: 'recusado: symlink quebrado (aponta para um alvo que nao existe)' }; }
+        catch { return { err: tr('srv.brokenLink') }; }
       } else {
         real = realOf(full);
       }
@@ -112,7 +113,7 @@ function fsStat(rel) {
   try {
     const st = fs.statSync(full);
     return { ok: true, path: relOf(full), type: st.isDirectory() ? 'dir' : 'file', size: st.size, mtime: st.mtimeMs };
-  } catch (e) { return { ok: false, msg: e.code === 'ENOENT' ? 'nao encontrado' : e.message, code: e.code }; }
+  } catch (e) { return { ok: false, msg: e.code === 'ENOENT' ? tr('srv.notFound') : e.message, code: e.code }; }
 }
 function fsList(rel) {
   const { full, err } = guard(rel);
@@ -122,26 +123,26 @@ function fsList(rel) {
       .map((d) => statEntry(path.join(full, d.name), d.name))
       .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1));
     return { ok: true, path: relOf(full), entries };
-  } catch (e) { return { ok: false, msg: e.code === 'ENOTDIR' ? 'nao e uma pasta' : e.message, code: e.code }; }
+  } catch (e) { return { ok: false, msg: e.code === 'ENOTDIR' ? tr('srv.notADir') : e.message, code: e.code }; }
 }
 function fsRead(rel) {
   const { full, err } = guard(rel);
   if (err) return { ok: false, msg: err };
   try {
     const st = fs.statSync(full);
-    if (!st.isFile()) return { ok: false, msg: 'nao e um arquivo' };
-    if (st.size > MAX_TEXT) return { ok: false, msg: 'arquivo muito grande p/ editar aqui (>2MB) — use download', code: 'TOOBIG' };
+    if (!st.isFile()) return { ok: false, msg: tr('srv.notAFile') };
+    if (st.size > MAX_TEXT) return { ok: false, msg: tr('srv.tooBig'), code: 'TOOBIG' };
     const buf = fs.readFileSync(full);
     const ext = path.extname(full).toLowerCase();
-    if (!TEXT_EXT.has(ext) && buf.subarray(0, 8000).includes(0)) return { ok: false, msg: 'arquivo binario (nao editavel aqui) — use download', code: 'BINARY' };
+    if (!TEXT_EXT.has(ext) && buf.subarray(0, 8000).includes(0)) return { ok: false, msg: tr('srv.binary'), code: 'BINARY' };
     return { ok: true, path: relOf(full), content: buf.toString('utf8'), size: st.size, mtime: st.mtimeMs };
   } catch (e) { return { ok: false, msg: e.message }; }
 }
 function fsSave(rel, content) {
   const { full, err } = guard(rel);
   if (err) return { ok: false, msg: err };
-  if (full === BASE) return { ok: false, msg: 'caminho invalido' };
-  if (typeof content !== 'string') return { ok: false, msg: 'conteudo invalido' };
+  if (full === BASE) return { ok: false, msg: tr('srv.badPath') };
+  if (typeof content !== 'string') return { ok: false, msg: tr('srv.badContent') };
   if (content.length > MAX_SAVE) return { ok: false, msg: 'conteudo muito grande (>5MB)' };
   try {
     fs.mkdirSync(path.dirname(full), { recursive: true });
@@ -152,18 +153,18 @@ function fsSave(rel, content) {
 function fsCreate(rel, kind) {
   const { full, err } = guard(rel);
   if (err) return { ok: false, msg: err };
-  if (full === BASE) return { ok: false, msg: 'caminho invalido' };
-  if (fs.existsSync(full)) return { ok: false, msg: 'ja existe' };
+  if (full === BASE) return { ok: false, msg: tr('srv.badPath') };
+  if (fs.existsSync(full)) return { ok: false, msg: tr('srv.exists') };
   try {
     if (kind === 'dir') fs.mkdirSync(full, { recursive: true });
     else { fs.mkdirSync(path.dirname(full), { recursive: true }); writeFileNoFollow(full, ''); }
-    return { ok: true, msg: `${kind === 'dir' ? 'pasta' : 'arquivo'} criado: ${relOf(full)}`, path: relOf(full) };
+    return { ok: true, msg: tr(kind === 'dir' ? 'srv.dirCreated' : 'srv.fileCreated', { path: relOf(full) }), path: relOf(full) };
   } catch (e) { return { ok: false, msg: e.message }; }
 }
 function fsDelete(rel) {
   const { full, err } = guard(rel, { self: true }); // apagar um link remove o LINK, nunca o alvo
   if (err) return { ok: false, msg: err };
-  if (full === BASE) return { ok: false, msg: 'caminho invalido' };
+  if (full === BASE) return { ok: false, msg: tr('srv.badPath') };
   // protege o coracao do volume (login do Claude, config do painel)
   if (full === path.join(BASE, '.claude') || full === path.join(BASE, '.claude.json')) return { ok: false, msg: 'protegido' };
   try { fs.rmSync(full, { recursive: true, force: true }); return { ok: true, msg: `excluido: ${relOf(full)}` }; }
@@ -173,8 +174,8 @@ function fsRename(rel, newRel) {
   const ga = guard(rel, { self: true }), gb = guard(newRel);
   if (ga.err || gb.err) return { ok: false, msg: ga.err || gb.err };
   const a = ga.full, b = gb.full;
-  if (a === BASE || b === BASE) return { ok: false, msg: 'caminho invalido' };
-  if (fs.existsSync(b)) return { ok: false, msg: 'o destino ja existe' };
+  if (a === BASE || b === BASE) return { ok: false, msg: tr('srv.badPath') };
+  if (fs.existsSync(b)) return { ok: false, msg: tr('srv.destExists') };
   try { fs.mkdirSync(path.dirname(b), { recursive: true }); fs.renameSync(a, b); return { ok: true, msg: `renomeado: ${relOf(b)}`, path: relOf(b) }; }
   catch (e) { return { ok: false, msg: e.message }; }
 }
@@ -186,7 +187,7 @@ function fsDownload(rel, res) {
   try { st = fs.statSync(full); } catch { /* */ }
   if (!st || !st.isFile()) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-    return res.end('arquivo nao encontrado');
+    return res.end(tr('srv.fileNotFound'));
   }
   const name = path.basename(full);
   res.writeHead(200, {
@@ -210,9 +211,9 @@ let activeUploads = 0;
 function fsUploadStream(rel, req, overwrite) {
   const { full, err } = guard(rel);
   if (err) return Promise.resolve({ ok: false, msg: err });
-  if (full === BASE) return Promise.resolve({ ok: false, msg: 'caminho invalido' });
+  if (full === BASE) return Promise.resolve({ ok: false, msg: tr('srv.badPath') });
   if (activeUploads >= MAX_CONCURRENT_UPLOADS) {
-    return Promise.resolve({ ok: false, status: 429, msg: 'muitos uploads simultaneos — tente novamente em alguns segundos' });
+    return Promise.resolve({ ok: false, status: 429, msg: tr('srv.tooManyUploads') });
   }
   activeUploads++;
   const tmp = full + '.upload-' + crypto.randomBytes(8).toString('hex') + '.tmp';
@@ -239,7 +240,7 @@ function fsUploadStream(rel, req, overwrite) {
     req.on('end', () => {
       if (writeErr) return finish({ ok: false, msg: writeErr.message });
       if (over) return finish({ ok: false, msg: `upload muito grande (>${MAX_UPLOAD / 1024 / 1024}MB) ou interrompido` });
-      if (!overwrite && fs.existsSync(full)) return finish({ ok: false, msg: 'ja existe (marque sobrescrever)' });
+      if (!overwrite && fs.existsSync(full)) return finish({ ok: false, code: 'EXISTS', msg: tr('srv.existsOverwrite') });
       try { fs.closeSync(fd); fd = null; fs.renameSync(tmp, full); }
       catch (e) { return finish({ ok: false, msg: e.message }); }
       finish({ ok: true, msg: `enviado: ${relOf(full)} (${size} bytes)`, path: relOf(full), size });

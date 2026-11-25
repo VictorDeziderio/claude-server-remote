@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 // Projetos: config (panel.json), sessoes tmux por projeto, acoes (criar/renomear/excluir/
 // reiniciar/remote/primeira linha) e o estado consolidado do dashboard.
 const fs = require('fs');
@@ -103,37 +104,37 @@ function pausedFlag(sess) {
 
 // ---------- acoes ----------
 async function createProject(name, autoStartClaude, autoRemote) {
-  if (!validName(name)) return { ok: false, msg: 'nome invalido (use letras, numeros, . _ -)' };
+  if (!validName(name)) return { ok: false, msg: tr('srv.badNameHint') };
   const dir = path.join(cfg.PROJECTS_DIR, name);
-  if (fs.existsSync(dir)) return { ok: false, msg: 'ja existe' };
+  if (fs.existsSync(dir)) return { ok: false, msg: tr('srv.exists') };
   fs.mkdirSync(dir, { recursive: true });
   await sh('git', ['-C', dir, 'init', '-q']);
   setProjConfig(name, { enabled: true, autoStartClaude: !!autoStartClaude, autoRemote: !!autoRemote });
   await ensureSession(name);
   events.poke();
-  return { ok: true, msg: `projeto "${name}" criado e sessao iniciada (Claude ${autoStartClaude ? 'ON' : 'OFF'}, remote ${autoRemote ? 'ON' : 'OFF'})` };
+  return { ok: true, msg: tr('srv.created', { name, claude: autoStartClaude ? 'ON' : 'OFF', remote: autoRemote ? 'ON' : 'OFF' }) };
 }
 // Reiniciar = LIGA (se estava desligado) + mata a sessao inteira + recria do zero. O supervisor
 // reabre o Claude, re-emite o remote-control e envia a primeira linha.
 async function restartProject(name) {
-  if (!projectExists(name)) return { ok: false, msg: 'projeto inexistente' };
-  if (!projConfig(name).enabled && !setProjConfig(name, { enabled: true })) return { ok: false, msg: 'falha ao salvar panel.json' };
+  if (!projectExists(name)) return { ok: false, msg: tr('srv.noProject') };
+  if (!projConfig(name).enabled && !setProjConfig(name, { enabled: true })) return { ok: false, msg: tr('srv.saveConfigFailed') };
   await recreateSession(name);
   events.poke();
   const c = projConfig(name);
-  if (!c.autoStartClaude) return { ok: true, msg: `"${name}": sessao reiniciada (so shell — Claude esta OFF)` };
-  return { ok: true, msg: `"${name}": sessao reiniciada — Claude reaberto${c.autoRemote ? ', remote religado' : ''}${c.initLine ? ' e primeira linha enviada' : ''}` };
+  if (!c.autoStartClaude) return { ok: true, msg: tr('srv.restartedShell', { name }) };
+  return { ok: true, msg: tr('srv.restarted', { name }) + (c.autoRemote ? tr('srv.restartedRemote') : '') + (c.initLine ? tr('srv.restartedInit') : '') };
 }
 // Ligar/desligar o PROJETO. Desligado = sem sessao tmux, e continua assim no boot do container
 // e no watchdog (antes o watchdog recriava tudo em ~10s e o "desligar" nao durava).
 async function setPower(name, on) {
-  if (!projectExists(name)) return { ok: false, msg: 'projeto inexistente' };
+  if (!projectExists(name)) return { ok: false, msg: tr('srv.noProject') };
   const val = truthy(on);
-  if (!setProjConfig(name, { enabled: val })) return { ok: false, msg: 'falha ao salvar panel.json' };
+  if (!setProjConfig(name, { enabled: val })) return { ok: false, msg: tr('srv.saveConfigFailed') };
   if (val) await ensureSession(name);
   else await killSession(name);
   events.poke();
-  return { ok: true, msg: val ? `"${name}": LIGADO — sessao iniciada` : `"${name}": DESLIGADO — sessao encerrada (nao volta no restart do container)` };
+  return { ok: true, msg: val ? tr('srv.powerOn', { name }) : tr('srv.powerOff', { name }) };
 }
 // Claude guarda o historico em ~/.claude/projects/<cwd codificado> (nao-alfanumerico -> "-").
 function migrateClaudeHistory(oldDir, newDir) {
@@ -147,15 +148,15 @@ function migrateClaudeHistory(oldDir, newDir) {
   return false;
 }
 async function renameProject(oldName, newName) {
-  if (!validName(oldName) || !validName(newName)) return { ok: false, msg: 'nome invalido' };
-  if (oldName === newName) return { ok: false, msg: 'o nome e o mesmo' };
+  if (!validName(oldName) || !validName(newName)) return { ok: false, msg: tr('srv.badName') };
+  if (oldName === newName) return { ok: false, msg: tr('srv.sameName') };
   const oldDir = path.join(cfg.PROJECTS_DIR, oldName);
   const newDir = path.join(cfg.PROJECTS_DIR, newName);
-  if (!fs.existsSync(oldDir)) return { ok: false, msg: 'pasta inexistente' };
-  if (fs.existsSync(newDir)) return { ok: false, msg: `ja existe um projeto "${newName}"` };
+  if (!fs.existsSync(oldDir)) return { ok: false, msg: tr('srv.noFolder') };
+  if (fs.existsSync(newDir)) return { ok: false, msg: tr('srv.projectExists', { name: newName }) };
   await killSession(oldName);
   try { fs.renameSync(oldDir, newDir); }
-  catch (e) { return { ok: false, msg: 'falha ao renomear: ' + e.message }; }
+  catch (e) { return { ok: false, msg: tr('srv.renameFailed') + e.message }; }
   const histMoved = migrateClaudeHistory(oldDir, newDir);
   const c = loadConfig();
   if (c.projects && c.projects[oldName]) {
@@ -165,12 +166,12 @@ async function renameProject(oldName, newName) {
   }
   await ensureSession(newName);
   events.poke();
-  return { ok: true, msg: `"${oldName}" -> "${newName}"${histMoved ? ' (historico migrado)' : ''} (sessao recriada)` };
+  return { ok: true, msg: `"${oldName}" -> "${newName}"` + (histMoved ? tr('srv.histMoved') : '') + tr('srv.sessionRecreated') };
 }
 async function deleteProject(name) {
-  if (!validName(name)) return { ok: false, msg: 'nome invalido' };
+  if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
   const dir = path.join(cfg.PROJECTS_DIR, name);
-  if (!fs.existsSync(dir)) return { ok: false, msg: 'pasta inexistente' };
+  if (!fs.existsSync(dir)) return { ok: false, msg: tr('srv.noFolder') };
   // lock durante kill + rm: sem ele o watchdog (a cada 10s) via a pasta ainda la e a sessao
   // morta e subia tudo de novo no meio da exclusao (bug do projeto "codigo", 2026-11-24)
   const lock = path.join(cfg.RUN_DIR, sessionName(name) + '.lock');
@@ -178,22 +179,22 @@ async function deleteProject(name) {
   try {
     await killSession(name);
     try { fs.rmSync(dir, { recursive: true, force: true }); }
-    catch (e) { return { ok: false, msg: 'falha ao excluir: ' + e.message }; }
+    catch (e) { return { ok: false, msg: tr('srv.deleteFailed') + e.message }; }
   } finally {
     try { fs.rmSync(lock, { force: true }); } catch { /* */ }
   }
   const c = loadConfig();
   if (c.projects && c.projects[name]) { delete c.projects[name]; saveConfig(c); }
   events.poke();
-  return { ok: true, msg: `projeto "${name}" excluido (pasta + sessao). O historico do Claude foi mantido.` };
+  return { ok: true, msg: tr('srv.deleted', { name }) };
 }
 async function sendRemote(name) {
-  if (!validName(name)) return { ok: false, msg: 'nome invalido' };
+  if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
   const sess = sessionName(name);
-  if (!(await sessionUp(sess))) return { ok: false, msg: 'sessao tmux nao esta de pe' };
-  if (!loginInfo().logged) return { ok: false, msg: 'Claude nao esta logado' };
+  if (!(await sessionUp(sess))) return { ok: false, msg: tr('srv.tmuxDown') };
+  if (!loginInfo().logged) return { ok: false, msg: tr('srv.notLogged') };
   // sem o Claude rodando o texto cairia no bash (ou num vim) da sessao
-  if (!claudeRunningFlag(sess)) return { ok: false, msg: 'o Claude nao esta rodando nessa sessao' };
+  if (!claudeRunningFlag(sess)) return { ok: false, msg: tr('srv.claudeNotRunning') };
   const cmd = remoteCmdFor(name);
   // Mesmo metodo do claude-loop.sh: texto literal, pausa p/ a TUI processar, depois Enter (C-m).
   await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', cmd]);
@@ -222,68 +223,68 @@ async function sendRemote(name) {
   return { ok: true, msg: `remote reenviado: ${cmd} — o link aparece no card em alguns segundos` };
 }
 async function setConfig(name, key, value) {
-  if (!validName(name)) return { ok: false, msg: 'nome invalido' };
+  if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
   if (key === 'enabled') return setPower(name, value);
-  if (!FLAGS.includes(key)) return { ok: false, msg: 'chave invalida' };
+  if (!FLAGS.includes(key)) return { ok: false, msg: tr('srv.badKey') };
   const val = truthy(value);
-  if (!setProjConfig(name, { [key]: val })) return { ok: false, msg: 'falha ao salvar panel.json' };
+  if (!setProjConfig(name, { [key]: val })) return { ok: false, msg: tr('srv.saveConfigFailed') };
   events.poke();
   if (key === 'autoStartClaude') {
     // aplica NA HORA: ON sobe o Claude, OFF encerra o Claude e deixa so o shell na pasta
     const c = projConfig(name);
-    if (!c.enabled) return { ok: true, msg: `"${name}": Claude ${val ? 'ON' : 'OFF'} (projeto desligado — vale quando ligar)` };
+    if (!c.enabled) return { ok: true, msg: tr('srv.claudeWhenOn', { name, v: val ? 'ON' : 'OFF' }) };
     await recreateSession(name);
     events.poke();
-    return { ok: true, msg: val ? `"${name}": Claude ON — iniciado` : `"${name}": Claude OFF — encerrado (sessao ficou so com o shell)` };
+    return { ok: true, msg: val ? tr('srv.claudeOn', { name }) : tr('srv.claudeOff', { name }) };
   }
   if (key === 'autoRemote') {
     if (val) {
       const r = await sendRemote(name);
       return {
         ok: true,
-        msg: r.ok ? `"${name}": remote LIGADO e reenviado (${remoteCmdFor(name)})`
-                  : `"${name}": remote LIGADO (sera enviado quando sessao/login estiver pronto)`,
+        msg: r.ok ? tr('srv.remoteOnSent', { name, cmd: remoteCmdFor(name) })
+                  : tr('srv.remoteOnLater', { name }),
       };
     }
-    return { ok: true, msg: `"${name}": remote DESLIGADO (nao religa mais; o atual encerra ao reiniciar a sessao)` };
+    return { ok: true, msg: tr('srv.remoteOff', { name }) };
   }
   return { ok: true };
 }
 async function setInitLine(name, text) {
-  if (!validName(name)) return { ok: false, msg: 'nome invalido' };
+  if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
   const t = String(text == null ? '' : text).replace(/[\r\n]+/g, ' ').slice(0, 1000);
-  if (!setProjConfig(name, { initLine: t })) return { ok: false, msg: 'falha ao salvar panel.json' };
+  if (!setProjConfig(name, { initLine: t })) return { ok: false, msg: tr('srv.saveConfigFailed') };
   events.poke();
   return { ok: true, msg: t ? `"${name}": primeira linha salva (vale no proximo inicio do Claude)` : `"${name}": primeira linha removida` };
 }
 // modo de sessao: 'new' | 'continue' | 'pinned' (precisa de um id que exista no historico do projeto)
 async function setSessionMode(name, mode, id) {
-  if (!validName(name)) return { ok: false, msg: 'nome invalido' };
-  if (!projectExists(name)) return { ok: false, msg: 'projeto inexistente' };
-  if (!SESSION_MODES.has(mode)) return { ok: false, msg: 'modo invalido (use new, continue ou pinned)' };
+  if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
+  if (!projectExists(name)) return { ok: false, msg: tr('srv.noProject') };
+  if (!SESSION_MODES.has(mode)) return { ok: false, msg: tr('srv.badMode') };
   let pinnedSession = '';
   if (mode === 'pinned') {
-    if (!PINNED_ID_RX.test(String(id || ''))) return { ok: false, msg: 'id de conversa invalido' };
+    if (!PINNED_ID_RX.test(String(id || ''))) return { ok: false, msg: tr('srv.badConvId') };
     const h = await history.listHistory(name);
-    if (!h.ok || !h.sessions.some((s) => s.id === id)) return { ok: false, msg: 'conversa nao encontrada no historico desse projeto' };
+    if (!h.ok || !h.sessions.some((s) => s.id === id)) return { ok: false, msg: tr('srv.convNotInHistory') };
     pinnedSession = id;
   }
   if (!setProjConfig(name, { sessionMode: mode, pinnedSession: mode === 'pinned' ? pinnedSession : undefined })) {
-    return { ok: false, msg: 'falha ao salvar panel.json' };
+    return { ok: false, msg: tr('srv.saveConfigFailed') };
   }
   events.poke();
-  return { ok: true, msg: `"${name}": modo de sessao = ${mode}${mode === 'pinned' ? ` (${pinnedSession.slice(0, 8)}…)` : ''}` };
+  return { ok: true, msg: tr('srv.sessionMode', { name, mode }) + (mode === 'pinned' ? ` (${pinnedSession.slice(0, 8)}…)` : '') };
 }
 // pausa manual: grava o flag sempre; so manda /exit se o Claude estiver parado no prompt
 // (nao interrompe trabalho em andamento) — o claude-loop.sh nao reabre enquanto o flag existir
 async function pauseProject(name) {
-  if (!validName(name)) return { ok: false, msg: 'nome invalido' };
-  if (!projectExists(name)) return { ok: false, msg: 'projeto inexistente' };
+  if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
+  if (!projectExists(name)) return { ok: false, msg: tr('srv.noProject') };
   const sess = sessionName(name);
   try {
     fs.mkdirSync(cfg.RUN_DIR, { recursive: true });
     fs.writeFileSync(pausedFlagPath(sess), 'manual');
-  } catch (e) { return { ok: false, msg: 'falha ao gravar flag: ' + e.message }; }
+  } catch (e) { return { ok: false, msg: tr('srv.flagFailed') + e.message }; }
   let exited = false;
   if (claudeRunningFlag(sess) && ['idle', 'prompt'].includes(events.activityOf(sess))) {
     await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', '/exit']);
@@ -291,11 +292,11 @@ async function pauseProject(name) {
     exited = true;
   }
   events.poke();
-  return { ok: true, msg: `"${name}": pausado${exited ? ' — /exit enviado' : ''} (o Claude nao reabre nessa sessao enquanto pausado)` };
+  return { ok: true, msg: tr('srv.paused', { name }) + (exited ? tr('srv.pausedExit') : '') + tr('srv.pausedNote') };
 }
 function unpauseProject(name) {
-  if (!validName(name)) return { ok: false, msg: 'nome invalido' };
-  if (!projectExists(name)) return { ok: false, msg: 'projeto inexistente' };
+  if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
+  if (!projectExists(name)) return { ok: false, msg: tr('srv.noProject') };
   const sess = sessionName(name);
   try { fs.rmSync(pausedFlagPath(sess), { force: true }); } catch (e) { return { ok: false, msg: e.message }; }
   events.poke();

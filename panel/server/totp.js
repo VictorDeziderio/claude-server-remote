@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 // 2FA por TOTP (RFC 6238) sem dependencias: base32, HMAC-SHA1, passo de 30s, janela +-1.
 // Segredo persistido em ~/.claude/.panel-totp.json (modo 600). Fluxo: setup -> enable(code) -> login exige code.
 const fs = require('fs');
@@ -72,7 +73,7 @@ const issuer = 'Claude Remote';
 // invasor controla — exige o codigo do segredo ATUAL antes de abrir um novo setup.
 function setup(host, code) {
   if (isEnabled() && !verifyCode(state.secret, code)) {
-    return { ok: false, msg: '2FA ja esta ativo — informe o codigo atual do autenticador para gerar um novo QR' };
+    return { ok: false, msg: tr('srv.2faActive') };
   }
   state.pending = b32encode(crypto.randomBytes(20));
   const label = encodeURIComponent(`${issuer}:${cfg.PANEL_LOGIN}@${host || 'devbox'}`);
@@ -81,14 +82,14 @@ function setup(host, code) {
 }
 function enable(code) {
   if (!state.pending) return { ok: false, msg: 'gere o QR primeiro (setup)' };
-  if (!verifyCode(state.pending, code)) return { ok: false, msg: 'codigo invalido — confira o relogio do celular e tente de novo' };
+  if (!verifyCode(state.pending, code)) return { ok: false, msg: tr('srv.badCodeClock') };
   state.secret = state.pending; state.pending = ''; state.enabled = true; state.enabledAt = Date.now();
   save();
-  return { ok: true, msg: '2FA ativado — a partir de agora o login pede o codigo' };
+  return { ok: true, msg: tr('srv.2faOn') };
 }
 function disable(code) {
-  if (!isEnabled()) return { ok: false, msg: '2FA nao esta ativo' };
-  if (!verifyCode(state.secret, code)) return { ok: false, msg: 'codigo invalido' };
+  if (!isEnabled()) return { ok: false, msg: tr('srv.2faNotOn') };
+  if (!verifyCode(state.secret, code)) return { ok: false, msg: tr('srv.badCode') };
   state = { enabled: false, secret: '', pending: '', enabledAt: 0, lastUsed: '' };
   save();
   return { ok: true, msg: '2FA desativado' };

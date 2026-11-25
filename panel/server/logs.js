@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 // Logs do dev-box: tail dos arquivos em ~/.claude/logs (painel, backup, audit) — so leitura.
 const fs = require('fs');
 const path = require('path');
@@ -6,9 +7,9 @@ const cfg = require('./config');
 
 const FILES = {
   panel: { file: 'panel.log', label: 'Painel (server.js)' },
-  backup: { file: 'backup.log', label: 'Backup dos projetos' },
+  backup: { file: 'backup.log', label: tr('srv.log.backup') },
   audit: { file: 'audit.log', label: 'Auditoria (quem fez o que)' },
-  sessions: { file: 'sessions.log', label: 'Sessões (supervisor do Claude / remote)' },
+  sessions: { file: 'sessions.log', label: tr('srv.log.sessions') },
 };
 
 function listLogs() {

@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 // Saude do host: disco, memoria, load, uptime, versoes (Claude Code atual x ultima no npm),
 // e atualizacao do Claude Code (npm i -g, via sudo sem senha do usuario ubuntu). Tem tambem o
 // sampler de 60s (CPU/memoria/alertas) — ver o fim do arquivo.
@@ -128,7 +129,7 @@ sample().catch(() => { /* 1a amostra: so popula o ring, sem alarme se falhar */ 
 
 let updating = null; // promise em andamento
 async function updateClaude() {
-  if (updating) return { ok: false, msg: 'atualizacao ja em andamento' };
+  if (updating) return { ok: false, msg: tr('srv.updateRunning') };
   updating = (async () => {
     log('info', 'atualizando Claude Code');
     // npm global e do root -> sudo -n (NOPASSWD no Dockerfile). Timeout generoso (baixa o pacote).
@@ -139,11 +140,11 @@ async function updateClaude() {
     // desde a 2.1.28x o `claude` e um binario nativo (dependencia opcional): se o download dele
     // falhou, o npm "passa" mas o claude nao roda -> reprova em vez de dizer "atualizado"
     if (r.ok && !/\d+\.\d+\.\d+/.test(v)) {
-      return { ok: false, msg: 'npm instalou, mas o binario nativo do Claude Code nao veio (download falhou) — clique em Atualizar de novo', output: (r.stdout + r.stderr).slice(-2000) };
+      return { ok: false, msg: tr('srv.npmNoBinary'), output: (r.stdout + r.stderr).slice(-2000) };
     }
     return r.ok
       ? { ok: true, msg: `Claude Code atualizado: ${v}. As sessoes em execucao continuam na versao antiga ate reiniciar.`, output: (r.stdout + r.stderr).slice(-2000) }
-      : { ok: false, msg: 'falha ao atualizar: ' + (r.stderr || '').slice(-500), output: (r.stdout + r.stderr).slice(-2000) };
+      : { ok: false, msg: tr('srv.updateFailed') + (r.stderr || '').slice(-500), output: (r.stdout + r.stderr).slice(-2000) };
   })();
   try { return await updating; } finally { updating = null; }
 }

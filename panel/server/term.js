@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 /*
  * Terminal do painel.
  *
@@ -59,44 +60,44 @@ const isDisabled = (name) => !!name && name !== 'shell' && validName(name) && !p
 const CAPTURE_MAX = 5000;
 async function termCapture(name, lines) {
   const sess = await targetSession(name, { create: false });
-  if (!sess) return { ok: false, msg: 'alvo invalido' };
-  if (!(await hasSession(sess))) return { ok: false, msg: 'sessao nao esta de pe' };
+  if (!sess) return { ok: false, msg: tr('srv.badTarget') };
+  if (!(await hasSession(sess))) return { ok: false, msg: tr('srv.sessionDown') };
   const n = clampInt(lines, 0, CAPTURE_MAX, 200);
   // -J junta as linhas quebradas pela largura do terminal (URL longa sai inteira)
   const r = await sh('tmux', ['capture-pane', '-t', paneOf(sess), '-p', '-J', '-S', '-' + n]);
   // sem as linhas vazias do fim da tela (o tmux preenche ate a ultima linha do painel)
   const content = (r.stdout || '').replace(/\s+$/, '') + (r.stdout ? '\n' : '');
-  return { ok: r.ok, content, lines: n, msg: r.ok ? '' : 'falha ao capturar a tela' };
+  return { ok: r.ok, content, lines: n, msg: r.ok ? '' : tr('srv.captureFailed') };
 }
 const KEYS = new Set(['Enter', 'Escape', 'Tab', 'Space', 'BSpace', 'Up', 'Down', 'Left', 'Right', 'PageUp', 'PageDown', 'Home', 'End', 'IC', 'DC']);
 async function termSend(name, text, key) {
   const sess = await targetSession(name);
-  if (!sess) return { ok: false, msg: 'alvo invalido' };
-  if (!(await hasSession(sess))) return { ok: false, msg: 'sessao nao esta de pe' };
+  if (!sess) return { ok: false, msg: tr('srv.badTarget') };
+  if (!(await hasSession(sess))) return { ok: false, msg: tr('srv.sessionDown') };
   if (typeof text === 'string' && text.length) {
     if (text.length > 4096) return { ok: false, msg: 'texto muito longo' };
     await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', text]);
   }
   if (typeof key === 'string' && key.length) {
-    if (!KEYS.has(key) && !/^C-[a-z]$/.test(key)) return { ok: false, msg: 'tecla nao permitida' };
+    if (!KEYS.has(key) && !/^C-[a-z]$/.test(key)) return { ok: false, msg: tr('srv.keyNotAllowed') };
     await sh('tmux', ['send-keys', '-t', paneOf(sess), key]);
   }
   return { ok: true };
 }
 // Sai do Claude da sessao (Ctrl-C duas vezes). Com autoStart ON o supervisor reabre em ~3s.
 async function termExit(name) {
-  if (!validName(name)) return { ok: false, msg: 'projeto invalido' };
+  if (!validName(name)) return { ok: false, msg: tr('srv.badProject') };
   const sess = sessionName(name);
-  if (!(await hasSession(sess))) return { ok: false, msg: 'sessao nao esta de pe' };
+  if (!(await hasSession(sess))) return { ok: false, msg: tr('srv.sessionDown') };
   await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-c']);
   await new Promise((r) => setTimeout(r, 400));
   await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-c']);
-  return { ok: true, msg: `Claude encerrado em ${sess} — o supervisor abre uma nova conversa` };
+  return { ok: true, msg: tr('srv.claudeKilled', { sess }) };
 }
 // janelas do tmux da sessao
 async function listWindows(name) {
   const sess = await targetSession(name, { create: false });
-  if (!sess) return { ok: false, msg: 'alvo invalido' };
+  if (!sess) return { ok: false, msg: tr('srv.badTarget') };
   if (!(await hasSession(sess))) return { ok: true, session: sess, windows: [], clients: 0 };
   const [w, c] = await Promise.all([
     sh('tmux', ['list-windows', '-t', '=' + sess, '-F', '#{window_index}\t#{window_name}\t#{window_active}\t#{pane_current_command}']),
@@ -110,17 +111,17 @@ async function listWindows(name) {
 }
 async function windowAction(name, action, index) {
   const sess = await targetSession(name, { create: false });
-  if (!sess) return { ok: false, msg: 'alvo invalido' };
-  if (!(await hasSession(sess))) return { ok: false, msg: 'sessao nao esta de pe' };
+  if (!sess) return { ok: false, msg: tr('srv.badTarget') };
+  if (!(await hasSession(sess))) return { ok: false, msg: tr('srv.sessionDown') };
   const idx = clampInt(index, 0, 99, -1);
   if (action === 'new') { const r = await sh('tmux', ['new-window', '-t', '=' + sess, '-c', cfg.HOME]); return { ok: r.ok, msg: r.ok ? 'nova janela aberta (Ctrl+b n/p alterna)' : r.stderr }; }
-  if (idx < 0) return { ok: false, msg: 'indice invalido' };
+  if (idx < 0) return { ok: false, msg: tr('srv.badIndex') };
   if (action === 'select') { const r = await sh('tmux', ['select-window', '-t', `=${sess}:${idx}`]); return { ok: r.ok, msg: r.ok ? '' : r.stderr }; }
   if (action === 'kill') {
     const r = await sh('tmux', ['kill-window', '-t', `=${sess}:${idx}`]);
     return { ok: r.ok, msg: r.ok ? `janela ${idx} fechada` : r.stderr };
   }
-  return { ok: false, msg: 'acao invalida' };
+  return { ok: false, msg: tr('srv.badAction') };
 }
 
 // ---------- WebSocket + PTY ----------
@@ -152,16 +153,16 @@ function attach(ws, params, ip, sid) {
 
   if (sid) {
     const n = sidCounts.get(sid) || 0;
-    if (n >= MAX_PTY_PER_SID) return closeWith(4009, 'muitos terminais abertos nesta sessao — feche algum antes de abrir outro');
+    if (n >= MAX_PTY_PER_SID) return closeWith(4009, tr('srv.tooManyTerms'));
     sidCounts.set(sid, n + 1);
   }
 
   (async () => {
-    if (!pty) return closeWith(4003, 'node-pty indisponivel no servidor');
+    if (!pty) return closeWith(4003, tr('srv.noPty'));
     const sess = await targetSession(name);
-    if (!sess) return closeWith(4000, 'alvo invalido');
+    if (!sess) return closeWith(4000, tr('srv.badTarget'));
     if (!(await hasSession(sess))) {
-      return isDisabled(name) ? closeWith(4006, 'projeto desligado — ligue no Dashboard') : closeWith(4004, 'sessao nao esta de pe');
+      return isDisabled(name) ? closeWith(4006, tr('srv.projectOff')) : closeWith(4004, tr('srv.sessionDown'));
     }
     if (!alive) return;
     try {
@@ -173,7 +174,7 @@ function attach(ws, params, ip, sid) {
       proc = pty.spawn('tmux', args, { name: 'xterm-256color', cols, rows, cwd: cfg.HOME, env });
     } catch (e) {
       log('error', 'falha abrindo PTY', { err: e.message });
-      return closeWith(4005, 'falha ao abrir o terminal');
+      return closeWith(4005, tr('srv.termFail'));
     }
     live.add(proc);
     log('info', 'terminal aberto', { ip, sess, cols, rows, detach });
@@ -192,7 +193,7 @@ function attach(ws, params, ip, sid) {
       flush();
       live.delete(proc); proc = null;
       sendCtl({ type: 'exit', code: exitCode });
-      closeWith(1000, 'sessao encerrada');
+      closeWith(1000, tr('srv.sessionEnded'));
     });
   })();
 
