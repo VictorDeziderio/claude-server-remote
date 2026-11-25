@@ -43,6 +43,13 @@ try {
   await page.keyboard.press('Enter')
   await page.waitForURL(/dashboard/, { timeout: 15000 })
 
+  // ---- light first load: the terminal (xterm), editor and QR code are NOT downloaded on the dashboard
+  const loaded = async () => page.evaluate(() => performance.getEntriesByType('resource').map((e) => e.name.split('/').pop()))
+  const first = await loaded()
+  ok('dashboard does not download the terminal / editor / account code', !first.some((n) => /^(TerminalPage|CodeEditor|Account|xterm)-/.test(n)), first.filter((n) => n.endsWith('.js')).join(' '))
+  const mainJs = await page.evaluate(() => performance.getEntriesByType('resource').filter((e) => /\/assets\/index-.*\.js$/.test(e.name)).reduce((s, e) => s + (e.decodedBodySize || 0), 0))
+  ok(`main bundle under 600 KB (${Math.round(mainJs / 1024)} KB)`, mainJs > 0 && mainJs < 600 * 1024, String(mainJs))
+
   // ---- Modal "New project"
   const openBtn = page.getByRole('button', { name: /new project/i }).first()
   await openBtn.click()

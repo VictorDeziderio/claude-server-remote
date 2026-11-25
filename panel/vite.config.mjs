@@ -26,11 +26,8 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    rollupOptions: {
-      output: {
-        manualChunks: { xterm: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links'] },
-      },
-    },
+    // no manualChunks: a forced "xterm" chunk was preloaded on EVERY page (index.html
+    // modulepreload). Without it xterm goes with the lazy TerminalPage and loads only there.
   },
   server: {
     proxy: {

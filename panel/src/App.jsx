@@ -6,14 +6,17 @@ import Login from './components/Login.jsx'
 import { Btn, Toast, Skeleton } from './components/ui.jsx'
 import useEvents from './hooks/useEvents.js'
 import Dashboard from './pages/Dashboard.jsx'
-import Report from './pages/Report.jsx'
-import FilesPage from './pages/FilesPage.jsx'
-import TerminalPage from './pages/TerminalPage.jsx'
-import Account from './pages/Account.jsx'
 import * as api from './api.js'
 import { t, tOr } from './lib/i18n.js'
 import { noticeText, noticeLine } from './lib/notice.js'
 
+// Only the dashboard (the first screen) is in the main bundle: the terminal (xterm), files
+// (the editor loads on top of it), account (QR code) and report load when opened, so the phone
+// downloads much less on the first visit. test/ui.test.mjs checks that xterm is not loaded on the dashboard.
+const TerminalPage = lazy(() => import('./pages/TerminalPage.jsx'))
+const FilesPage = lazy(() => import('./pages/FilesPage.jsx'))
+const Account = lazy(() => import('./pages/Account.jsx'))
+const Report = lazy(() => import('./pages/Report.jsx'))
 const HistoryPage = lazy(() => import('./pages/History.jsx'))
 const LogsPage = lazy(() => import('./pages/Logs.jsx'))
 const BackupPage = lazy(() => import('./pages/Backup.jsx'))
