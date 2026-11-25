@@ -43,7 +43,20 @@ const D = {
   sessionUp: async (sess) => { try { return await require('./projects').sessionUp(sess); } catch { return false; } },
   running: (sess) => fs.existsSync(path.join(cfg.RUN_DIR, sess + '.running')),
   paused: (sess) => fs.existsSync(path.join(cfg.RUN_DIR, sess + '.paused')),
-  activity: (sess) => { try { return require('./events').activityOf(sess); } catch { return 'off'; } },
+  // olha a tela AGORA (o vigia do events.js so captura com navegador conectado — painel fechado
+  // deixaria a atividade congelada): duas capturas com 2,5s de intervalo; igual e sem pergunta/
+  // permissao na tela = 'idle'
+  activity: async (sess) => {
+    const cap = async () => { const r = await sh('tmux', ['capture-pane', '-t', paneOf(sess), '-p', '-J', '-S', '-60']); return r.ok ? r.stdout : null; };
+    const a = await cap();
+    if (a == null) return 'off';
+    await new Promise((r) => setTimeout(r, 2500));
+    const b = await cap();
+    if (b == null) return 'off';
+    if (a !== b) return 'busy';
+    const rx = require('./events').PROMPT_RX;
+    return rx && rx.test(b.split('\n').slice(-60).join('\n')) ? 'prompt' : 'idle';
+  },
   type: async (sess, text) => {
     // same method as sendRemote: literal text, a pause for the TUI, then Enter
     const a = await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', text]);
@@ -114,7 +127,7 @@ async function tick() {
       if (now < p.at) continue;
       if (!D.enabled()) { delete pending[project]; changed = true; continue; }
       const sess = sessionName(project);
-      if (!(await D.sessionUp(sess)) || !D.running(sess) || D.paused(sess) || D.activity(sess) !== 'idle') {
+      if (!(await D.sessionUp(sess)) || !D.running(sess) || D.paused(sess) || (await D.activity(sess)) !== 'idle') {
         p.at = now + 60e3; changed = true; continue; // try again in a minute
       }
       // the window may still be full (limits polled late): ask again right before typing

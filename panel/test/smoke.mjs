@@ -611,6 +611,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
       r = await j('POST', '/api/term/window', { name: 'demo', action: 'kill', index: r.data.windows[1].index }); ok('term window kill', r.data.ok, r.data.msg)
       r = await j('GET', '/api/term/capture?name=demo'); ok('term capture', r.data.ok && /SMOKE-READY/.test(r.data.content))
       // auto-resume: limit hit (hook StopFailure rate_limit) -> after the reset the panel types the text alone
+      // (no browser/SSE connected here: the panel watcher is idle, so autoresume must read the screen itself)
       {
         const RUN = path.join(ROOT, '.claude', 'run')
         const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
@@ -622,7 +623,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
         ok('auto-resume: Dashboard shows when it continues', st && st.autoResumeAt > Date.now() - 5000, JSON.stringify(st && st.autoResumeAt))
         ok('auto-resume: saved in run/autoresume.json', /"demo"/.test(fs.readFileSync(path.join(RUN, 'autoresume.json'), 'utf8')))
         for (let i = 0; i < 60 && !/AUTO-RESUMED-42/.test(cap); i++) { await sleep(500); cap = (await j('GET', '/api/term/capture?name=demo')).data.content || '' }
-        ok('auto-resume: text typed + Enter in the session after the reset', /AUTO-RESUMED-42/.test(cap), cap.slice(-300))
+        ok('auto-resume: text typed + Enter in the session after the reset', /AUTO-RESUMED-42/.test(cap), cap.slice(-300) + ' | state=' + JSON.stringify(((await j('GET', '/api/state')).data.projects || []).find((p) => p.name === 'demo')) + ' | file=' + fs.readFileSync(path.join(RUN, 'autoresume.json'), 'utf8') + ' | now=' + Date.now())
         const rec = (await j('GET', '/api/push/info')).data.recent || []
         ok('auto-resume: push "resumed automatically" (sent or logged)', rec.some((e) => e.event === 'usage' && e.project === 'demo' && /resumed automatically/.test(e.title)), JSON.stringify(rec.slice(0, 3)))
         fs.appendFileSync(path.join(RUN, 'hooks.jsonl'), JSON.stringify({ t: Date.now(), tty: 1, ev: 'Stop', sid: 'ar1', cwd: path.join(ROOT, 'projects', 'demo') }) + '\n')

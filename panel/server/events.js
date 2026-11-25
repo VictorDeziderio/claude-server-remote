@@ -209,4 +209,4 @@ function stop() {
   clients.clear();
 }
 
-module.exports = { attach, broadcast, onNotify, start, stop, poke, remoteUrlOf, currentState, activitySnapshot, activityOf, clientCount: () => clients.size };
+module.exports = { attach, broadcast, onNotify, start, stop, poke, remoteUrlOf, currentState, activitySnapshot, activityOf, PROMPT_RX, clientCount: () => clients.size };
