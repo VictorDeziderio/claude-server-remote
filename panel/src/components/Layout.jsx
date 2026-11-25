@@ -21,6 +21,7 @@ export const NAV = [
   { to: '/backup', label: 'Backup', icon: DatabaseBackup },
   { to: '/logs', label: 'Logs', icon: ScrollText },
   { to: '/settings', label: 'Configurações', icon: Settings },
+  { to: '/notifications', label: 'Notifications', icon: BellRing },
   { to: '/account', label: 'Conta', icon: UserRound },
 ]
 const titleOf = (path) => (NAV.find((n) => path === n.to || path.startsWith(n.to + '/')) || {}).label || 'Claude Remote'

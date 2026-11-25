@@ -44,8 +44,9 @@ fs.writeFileSync(BACKUP_SCRIPT, '#!/usr/bin/env bash\nmkdir -p "$HOME/.claude/lo
 // Anthropic FALSO (limites do plano + Admin API): o painel aponta pra ca via USAGE_API_BASE_URL.
 // Nunca chama a Anthropic de verdade nos testes. `fake.mode` muda a resposta do /api/oauth/usage.
 const FAKE_TOKEN = 'fake-oauth-token-SECRET-123', FAKE_ADMIN = 'sk-ant-admin01-FAKE-SECRET-456'
-const fake = { mode: 'ok', usageReqs: [], costReqs: [] }
-const isoIn = (ms) => new Date(Date.now() + ms).toISOString().replace('Z', '123+00:00') // formato real: microssegundos + offset
+const fake = { mode: 'ok', usageReqs: [], costReqs: [], shift: 0 } // shift: empurra o reset (novo periodo)
+const FAKE_T0 = Date.now() // reset fixo como na API real (senao virar o minuto parece novo periodo)
+const isoIn = (ms) => new Date(FAKE_T0 + ms + fake.shift).toISOString().replace('Z', '123+00:00') // formato real: microssegundos + offset
 const todayIso = new Date().toISOString().slice(0, 10)
 const fakeSrv = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x')
@@ -100,8 +101,14 @@ const env = {
   // limites do plano / gasto da API contra o Anthropic FALSO (poll automatico raro; o teste usa o refresh)
   USAGE_API_BASE_URL: FAKE_BASE, USAGE_CREDENTIALS_FILE: CREDS, ANTHROPIC_ADMIN_KEY: FAKE_ADMIN, ANTHROPIC_API_BUDGET_USD: '20',
   USAGE_POLL_INTERVAL: '600', USAGE_MIN_REFRESH_SECONDS: '0', USAGE_THRESHOLDS: '80,95',
+  // Web Push: nothing goes to the network — deliveries (encrypted + VAPID-signed for real) land
+  // in this file; the boot id is fixed so "dev-box restarted" can be checked
+  PANEL_PUSH_TEST_SINK: path.join(ROOT, 'push-sink.jsonl'), PANEL_BOOT_ID: 'boot-new:1',
 }
 delete env.CLAUDE_CODE_OAUTH_TOKEN
+// previous run of the panel was on another boot -> the server must report a restart
+fs.mkdirSync(path.join(ROOT, '.claude', 'run'), { recursive: true })
+fs.writeFileSync(path.join(ROOT, '.claude', '.panel-push.json'), JSON.stringify({ lastBoot: 'boot-old:1' }))
 // Run from inside tmux, the inherited $TMUX points at the REAL server and wins over TMUX_TMPDIR:
 // the final `tmux kill-server` would kill every live session on the box. Isolate the socket.
 delete env.TMUX
@@ -419,6 +426,126 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
   r = await j('POST', '/api/totp/disable', { code: wrong() }); ok('totp disable codigo errado', r.data.ok === false)
   r = await j('POST', '/api/totp/disable', { code: codeNow() }); ok('totp disable', r.data.ok, r.data.msg)
 
+  // ---------- Web Push / Notifications tab ----------
+  {
+    const SINK = env.PANEL_PUSH_TEST_SINK
+    const HOOKS = path.join(ROOT, '.claude', 'run', 'hooks.jsonl')
+    const sinkLines = () => (fs.existsSync(SINK) ? fs.readFileSync(SINK, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [])
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
+    const waitSink = async (n, ms = 6000) => { const t0 = Date.now(); while (Date.now() - t0 < ms && sinkLines().length < n) await sleep(200); return sinkLines() }
+    const hook = (o) => fs.appendFileSync(HOOKS, JSON.stringify({ t: Date.now(), tty: 1, cwd: path.join(ROOT, 'projects', 'demo'), ...o }) + '\n')
+    const recentOf = async () => (await j('GET', '/api/push/info')).data.recent
+    const crypto = await import('node:crypto')
+    const fakeSub = (endpoint) => {
+      const ecdh = crypto.createECDH('prime256v1'); ecdh.generateKeys()
+      return { endpoint, keys: { p256dh: ecdh.getPublicKey().toString('base64url'), auth: crypto.randomBytes(16).toString('base64url') } }
+    }
+
+    r = await j('GET', '/api/push/info')
+    ok('push info: VAPID public key + no devices', r.data.ok && r.data.supported && /^[A-Za-z0-9_-]{80,90}$/.test(r.data.publicKey) && r.data.devices.length === 0, JSON.stringify(r.data).slice(0, 200))
+    ok('push info: per-event toggles (all on by default)', ['done', 'waiting', 'crash', 'boot', 'login', 'usage'].every((k) => r.data.events[k] && r.data.prefs.events[k] === true))
+    ok('push: restart detected at boot (boot id changed)', r.data.recent.some((e) => e.event === 'boot' && /rebooted/i.test(e.title)), JSON.stringify(r.data.recent))
+    const pushFile = path.join(ROOT, '.claude', '.panel-push.json')
+    const pf = JSON.parse(fs.readFileSync(pushFile, 'utf8'))
+    ok('push: VAPID private key only in the volume file (0600), never in the API', pf.vapid.privateKey && !JSON.stringify(r.data).includes(pf.vapid.privateKey) && (process.platform === 'win32' || (fs.statSync(pushFile).mode & 0o077) === 0))
+    ok('push: boot id remembered', pf.lastBoot === 'boot-new:1')
+
+    r = await j('POST', '/api/push/subscribe', { subscription: fakeSub('http://127.0.0.1:1/x'), name: 'x' }); ok('push: http endpoint refused', r.data.ok === false)
+    r = await j('POST', '/api/push/subscribe', { subscription: fakeSub('https://evil.example/x'), name: 'x' }); ok('push: unknown push service refused (no SSRF)', r.data.ok === false && /unknown/.test(r.data.msg))
+    r = await j('POST', '/api/push/subscribe', { subscription: { endpoint: 'https://push.test/a', keys: { p256dh: 'bad key!', auth: 'x' } } }); ok('push: invalid keys refused', r.data.ok === false)
+    r = await j('POST', '/api/push/subscribe', { subscription: fakeSub('https://push.test/sub/phone'), name: 'iPhone · Safari (app)' })
+    ok('push: device registered', r.data.ok && r.data.device && r.data.device.name === 'iPhone · Safari (app)', JSON.stringify(r.data))
+    const phoneId = r.data.device && r.data.device.id
+    r = await j('POST', '/api/push/subscribe', { subscription: fakeSub('https://push.test/gone/old'), name: 'old laptop' }); ok('push: 2nd device', r.data.ok)
+    r = await j('POST', '/api/push/subscribe', { subscription: fakeSub('https://push.test/sub/phone'), name: 'iPhone · Safari (app)' })
+    r = await j('GET', '/api/push/info'); ok('push: same endpoint again = same device (upsert)', r.data.devices.length === 2)
+
+    r = await j('POST', '/api/push/test', {})
+    ok('push test: delivered to the live device, expired one (410) removed', r.data.sent === 1 && r.data.failed === 1 && r.data.removed === 1, JSON.stringify(r.data))
+    let sl = await waitSink(2)
+    const live = sl.find((x) => x.endpoint.endsWith('/sub/phone'))
+    ok('push test: encrypted (aes128gcm) + VAPID signed', live && live.headers['Content-Encoding'] === 'aes128gcm' && /^vapid t=[\w-]+\.[\w-]+\.[\w-]+, k=/.test(live.headers.Authorization) && live.bodyLen > 0, JSON.stringify(live && live.headers))
+    ok('push test: payload opens the Notifications tab', live && live.payload.title.includes('test') && live.payload.url === '/notifications')
+    r = await j('GET', '/api/push/info'); ok('push: device list after cleanup', r.data.devices.length === 1 && r.data.devices[0].lastOkAt > 0 && !('keys' in r.data.devices[0]))
+    r = await j('POST', '/api/push/test', { id: 'nope' }); ok('push test: unknown device', r.data.ok === false)
+
+    // Claude Code hooks (lines written by devbox-hook.sh) -> notifications
+    const before = sinkLines().length
+    hook({ ev: 'UserPromptSubmit', sid: 's1', src: 'user', t: Date.now() - 60000 })
+    hook({ ev: 'Stop', sid: 's1', msg: 'Refactor finished, all tests pass.' })
+    sl = await waitSink(before + 1)
+    const done = sl[before]
+    ok('hook Stop -> "finished" push for the project', done && done.payload.event === 'done' && /finished — demo/.test(done.payload.title) && done.payload.body.includes('tests pass'), JSON.stringify(done && done.payload))
+    ok('tap opens the project terminal', done && done.payload.url === '/terminal/demo')
+    hook({ ev: 'Notification', sid: 's1', type: 'idle_prompt', msg: 'Claude is waiting for your input' })
+    hook({ ev: 'UserPromptSubmit', sid: 's2', src: 'sdk', t: Date.now() - 60000 })
+    hook({ ev: 'Stop', sid: 's2', msg: 'headless' })
+    hook({ ev: 'UserPromptSubmit', sid: 's3', src: 'user', t: Date.now() - 2000 })
+    hook({ ev: 'Stop', sid: 's3', msg: 'short' })
+    hook({ ev: 'Stop', sid: 's4', tty: 0, msg: 'claude -p from a script' })
+    hook({ ev: 'Stop', sid: 's5', bg: 2, msg: 'waiting on background tasks' })
+    hook({ ev: 'Stop', sid: 's6', t: Date.now() - 3600e3, msg: 'stale line' })
+    hook({ ev: 'Notification', sid: 's1', type: 'permission_prompt', msg: 'Claude needs your permission to use Bash' })
+    await waitSink(before + 2)
+    await sleep(2500)
+    sl = sinkLines()
+    const later = sl.slice(before + 1)
+    ok('hook permission_prompt -> "waiting" push (high urgency)', later.length >= 1 && later[0].payload.event === 'waiting' && /permission/.test(later[0].payload.title) && later[0].headers.Urgency === 'high', JSON.stringify(later.map((x) => x.payload.title)))
+    ok('no push for: idle right after done, `claude -p`/SDK, short turns, no tty, background work, stale lines', later.length === 1, JSON.stringify(later.map((x) => x.payload.title)))
+    hook({ ev: 'UserPromptSubmit', sid: 's7', src: 'user', t: Date.now() - 60000 })
+    hook({ ev: 'Stop', sid: 's7', msg: 'again' })
+    await sleep(2600)
+    ok('repeat "finished" for the same project within minutes -> merged', sinkLines().length === before + 2 && (await recentOf()).some((e) => e.event === 'done' && e.skipped === 'duplicate'))
+    hook({ ev: 'StopFailure', sid: 's8', err: 'authentication_failed', msg: 'OAuth token has expired' })
+    hook({ ev: 'StopFailure', sid: 's9', err: 'rate_limit', cwd: path.join(ROOT, 'projects', 'other'), msg: '5-hour limit reached' })
+    sl = await waitSink(before + 4)
+    const fails2 = sl.slice(before + 2).map((x) => x.payload)
+    ok('StopFailure auth -> "needs login" (opens Account)', fails2.some((p) => p.event === 'login' && p.url === '/account'), JSON.stringify(fails2))
+    ok('StopFailure rate_limit -> "usage limit" push', fails2.some((p) => p.event === 'usage' && /limit/.test(p.title)))
+
+    // toggles
+    r = await j('POST', '/api/push/prefs', { events: { waiting: false }, doneMinSeconds: 5 }); ok('prefs saved', r.data.ok && r.data.prefs.events.waiting === false && r.data.prefs.doneMinSeconds === 5 && r.data.prefs.events.done === true)
+    const n0 = sinkLines().length
+    hook({ ev: 'Notification', sid: 's10', type: 'elicitation_dialog', cwd: path.join(ROOT, 'projects', 'q'), msg: 'Which option?' })
+    await sleep(2600)
+    ok('event switched off -> not sent', sinkLines().length === n0 && (await recentOf()).some((e) => e.event === 'waiting' && e.skipped === 'disabled'))
+    r = await j('POST', '/api/push/prefs', { events: { waiting: true } }); ok('prefs toggle back', r.data.ok && r.data.prefs.events.waiting === true)
+
+    // crash-loop alert (claude-loop.sh -> alerts.jsonl) -> push, even with no browser tab open
+    fs.appendFileSync(path.join(ROOT, '.claude', 'run', 'alerts.jsonl'), JSON.stringify({ t: Date.now(), level: 'error', kind: 'crash-loop', project: 'demo', msg: 'Claude caiu 6 vezes' }) + '\n')
+    await j('GET', '/api/alerts')
+    sl = await waitSink(n0 + 1)
+    ok('crash-loop alert -> push', sl.slice(n0).some((x) => x.payload.event === 'crash' && /demo/.test(x.payload.title) && x.payload.url === '/terminal/demo'), JSON.stringify(sl.slice(n0).map((x) => x.payload)))
+
+    // limits.js threshold (plan window crossed 80/95%) -> push; new reset period = fires again
+    const nu0 = sinkLines().length
+    fake.shift = 86400e3
+    await j('POST', '/api/limits/refresh', {})
+    sl = await waitSink(nu0 + 1)
+    const up = sl.slice(nu0).map((x) => x.payload).filter((p) => p.event === 'usage')
+    ok('limits threshold -> "usage at N%" push (5h 85%, Fable 96%)', up.some((p) => /85%/.test(p.title)) && up.some((p) => /96%.*Fable/.test(p.title)), JSON.stringify(up))
+    r = await j('POST', '/api/push/prefs', { usagePct: 90 }); fake.shift = 2 * 86400e3
+    const nu1 = sinkLines().length
+    await j('POST', '/api/limits/refresh', {}); await sleep(1500)
+    const up2 = sinkLines().slice(nu1).map((x) => x.payload).filter((p) => p.event === 'usage')
+    ok('limits threshold below the chosen % (85 < 90) -> no push; 96% still sent', !up2.some((p) => /85%/.test(p.title)) && up2.some((p) => /96%/.test(p.title)), JSON.stringify(up2))
+    await j('POST', '/api/push/prefs', { usagePct: 80 }); fake.shift = 0
+
+    const auditTxt2 = fs.readFileSync(path.join(ROOT, '.claude', 'logs', 'audit.log'), 'utf8')
+    ok('audit logs push actions without subscription keys', /push\.subscribe/.test(auditTxt2) && !auditTxt2.includes('p256dh'))
+    r = await j('POST', '/api/push/unsubscribe', { id: phoneId }); ok('push: remove device', r.data.ok)
+    r = await j('POST', '/api/push/unsubscribe', { id: phoneId }); ok('push: remove again -> not found', r.data.ok === false)
+    const keep = cookie
+    cookie = ''
+    r = await j('GET', '/api/push/info'); ok('push API requires login', r.status === 401)
+    r = await j('POST', '/api/push/subscribe', { subscription: fakeSub('https://push.test/sub/x') }); ok('push subscribe requires login', r.status === 401)
+    cookie = keep
+    // Claude Code runs devbox-hook.sh from the managed settings baked into the image
+    const ms = JSON.parse(fs.readFileSync(path.join(DEVBOX, 'managed-settings.json'), 'utf8'))
+    ok('managed-settings: hook on Stop/StopFailure/Notification/UserPromptSubmit', ['Stop', 'StopFailure', 'Notification', 'UserPromptSubmit'].every((e) => JSON.stringify(ms.hooks[e]).includes(`devbox-hook.sh ${e}`)))
+    ok('Dockerfile installs devbox-hook.sh', /COPY devbox-hook\.sh \/usr\/local\/bin\/devbox-hook\.sh/.test(fs.readFileSync(path.join(DEVBOX, 'Dockerfile'), 'utf8')))
+  }
+
   // static
   r = await fetch(BASE + '/'); ok('index', r.status === 200 && /text\/html/.test(r.headers.get('content-type')) && r.headers.get('cache-control') === 'no-store')
   ok('CSP presente', /default-src 'self'/.test(r.headers.get('content-security-policy') || ''))
@@ -428,6 +555,11 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
   const asset = assets.find((f) => f.startsWith('xterm-') && f.endsWith('.js'))
   if (asset) { r = await fetch(BASE + '/assets/' + asset); ok('asset imutavel', r.status === 200 && /immutable/.test(r.headers.get('cache-control'))) } else skip('asset imutavel (sem dist)')
   r = await fetch(BASE + '/manifest.webmanifest'); if (assets.length) ok('manifest PWA', r.status === 200); else skip('manifest (sem dist)')
+  if (assets.length) {
+    r = await fetch(BASE + '/sw.js'); const swTxt = await r.text()
+    ok('sw.js never cached (push handlers always current)', r.status === 200 && r.headers.get('cache-control') === 'no-store')
+    ok('sw.js handles push + notification tap (same-origin paths only)', swTxt.includes("addEventListener('push'") && swTxt.includes('notificationclick') && swTxt.includes('const localPath'))
+  } else skip('sw.js (sem dist)')
 
   // SSE
   {

@@ -16,6 +16,7 @@ const HistoryPage = lazy(() => import('./pages/History.jsx'))
 const LogsPage = lazy(() => import('./pages/Logs.jsx'))
 const BackupPage = lazy(() => import('./pages/Backup.jsx'))
 const SettingsPage = lazy(() => import('./pages/Settings.jsx'))
+const NotificationsPage = lazy(() => import('./pages/Notifications.jsx'))
 
 const Loading = () => <div className="flex h-40 items-center justify-center text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin text-primary" /> carregando…</div>
 function DashboardSkeleton() {
@@ -113,6 +114,7 @@ export default function App() {
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/backup" element={<BackupPage data={data} onFlash={setFlash} />} />
             <Route path="/settings" element={<SettingsPage data={data} onFlash={setFlash} refresh={refresh} notif={notifPerm} onToggleNotif={toggleNotif} />} />
+            <Route path="/notifications" element={<NotificationsPage onFlash={setFlash} />} />
             <Route path="/account" element={<Account data={data} onFlash={setFlash} refresh={refresh} />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

@@ -30,6 +30,7 @@ const backup = require('./server/backup');
 const settings = require('./server/settings');
 const alerts = require('./server/alerts');
 const limits = require('./server/limits');
+const notify = require('./server/notify');
 const { serveStatic } = require('./server/static');
 
 fs.mkdirSync(cfg.PROJECTS_DIR, { recursive: true });
@@ -117,12 +118,15 @@ const POST = {
   '/api/alerts/clear': () => { alerts.clear(); return { ok: true }; },
   '/api/limits/refresh': () => limits.refresh(),
 };
+// Web Push / notifications tab (routes live in server/notify.js)
+Object.assign(GET, notify.routes.GET);
+Object.assign(POST, notify.routes.POST);
 // acoes que entram no audit log (as de leitura nao)
 const AUDITED = new Set(['/api/create', '/api/rename', '/api/delete', '/api/config', '/api/initline', '/api/restart', '/api/power', '/api/remote',
   '/api/fs/save', '/api/fs/create', '/api/fs/delete', '/api/fs/rename', '/api/term/exit', '/api/term/window', '/api/claude/logout',
   '/api/claude/update', '/api/claude/login/start', '/api/claude/login/code', '/api/claude/login/cancel', '/api/history/resume', '/api/backup/run', '/api/backup/config', '/api/settings/defaults', '/api/settings',
   '/api/sessions/revoke', '/api/sessions/revoke-others', '/api/totp/enable', '/api/totp/disable',
-  '/api/session-mode', '/api/pause', '/api/unpause', '/api/alerts/clear']);
+  '/api/session-mode', '/api/pause', '/api/unpause', '/api/alerts/clear', ...notify.routes.AUDITED]);
 
 const server = http.createServer(async (req, res) => {
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
@@ -198,13 +202,14 @@ server.listen(cfg.PORT, cfg.BIND, () => {
   log('info', 'painel no ar', { bind: `${cfg.BIND}:${cfg.PORT}`, projects: cfg.PROJECTS_DIR, dist: cfg.DIST, pty: term.ptyAvailable, twofa: totp.isEnabled() });
   events.start(projects.buildState); // watcher + SSE
   limits.start(); // poller de limites do plano / gasto da API (server/limits.js)
+  notify.start(); // Web Push: hooks, alerts, login, boot
 });
 
 // shutdown limpo (tini/EasyPanel mandam SIGTERM): fecha PTYs/SSE (os tmux continuam vivos)
 for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => {
     log('info', 'encerrando', { sig });
-    term.shutdown(); events.stop(); limits.stop();
+    term.shutdown(); events.stop(); limits.stop(); notify.stop();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();
   });

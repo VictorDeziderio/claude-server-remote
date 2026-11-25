@@ -30,7 +30,8 @@ function serveStatic(req, res, pathname) {
   res.writeHead(200, {
     'Content-Type': MIME[ext] || 'application/octet-stream',
     'Content-Length': st.size,
-    'Cache-Control': ext === '.html' ? 'no-store' : (hashed ? 'public, max-age=31536000, immutable' : 'public, max-age=3600'),
+    // sw.js too: a cached service worker would keep old push/click handlers alive
+    'Cache-Control': ext === '.html' || path.basename(file) === 'sw.js' ? 'no-store' : (hashed ? 'public, max-age=31536000, immutable' : 'public, max-age=3600'),
   });
   if (req.method === 'HEAD') return res.end();
   fs.createReadStream(file).pipe(res);

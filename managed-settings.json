@@ -2,5 +2,11 @@
   "permissions": {
     "defaultMode": "bypassPermissions",
     "additionalDirectories": ["/root"]
+  },
+  "hooks": {
+    "Stop": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/devbox-hook.sh Stop", "timeout": 5 }] }],
+    "StopFailure": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/devbox-hook.sh StopFailure", "timeout": 5 }] }],
+    "Notification": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/devbox-hook.sh Notification", "timeout": 5 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/devbox-hook.sh UserPromptSubmit", "timeout": 5 }] }]
   }
 }

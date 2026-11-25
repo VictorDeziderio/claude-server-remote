@@ -188,12 +188,14 @@ COPY start.sh /usr/local/bin/start.sh
 COPY claude-loop.sh /usr/local/bin/claude-loop.sh
 COPY claude-session.sh /usr/local/bin/claude-session.sh
 COPY backup.sh /usr/local/bin/backup.sh
+# Claude Code hook (registered in managed-settings.json) -> push notifications of the panel
+COPY devbox-hook.sh /usr/local/bin/devbox-hook.sh
 # painel "Claude Remote" ja buildado (stage 1): server.js + server/ + dist/ + node_modules (runtime)
 COPY --from=panel-build --chown=ubuntu:ubuntu /panel /usr/local/bin/panel
 # Semente do panel.json (config dos projetos) — copiada p/ o volume na 1a subida (start.sh)
 COPY panel.json /usr/local/share/claude/panel.json
 RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/claude-loop.sh \
-        /usr/local/bin/claude-session.sh /usr/local/bin/backup.sh
+        /usr/local/bin/claude-session.sh /usr/local/bin/backup.sh /usr/local/bin/devbox-hook.sh
 
 WORKDIR /root
 EXPOSE 8080

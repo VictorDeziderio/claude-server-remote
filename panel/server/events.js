@@ -40,7 +40,13 @@ const REMOTE_RX = /https:\/\/claude\.ai\/code\/[^\s'"()\]]+/g;
 function send(res, event, data) {
   try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { /* cliente sumiu */ }
 }
-function broadcast(event, data) { for (const res of clients) send(res, event, data); }
+// 'notify' also goes to in-process listeners (notify.js -> Web Push), with or without SSE clients
+const notifyListeners = [];
+const onNotify = (cb) => { if (typeof cb === 'function') notifyListeners.push(cb); };
+function broadcast(event, data) {
+  for (const res of clients) send(res, event, data);
+  if (event === 'notify') for (const cb of notifyListeners) { try { cb(data); } catch (e) { log('error', 'notify listener', { err: e.message }); } }
+}
 
 function attach(req, res, sid) {
   if (sid) {
@@ -201,4 +207,4 @@ function stop() {
   clients.clear();
 }
 
-module.exports = { attach, broadcast, start, stop, poke, remoteUrlOf, currentState, activitySnapshot, activityOf, clientCount: () => clients.size };
+module.exports = { attach, broadcast, onNotify, start, stop, poke, remoteUrlOf, currentState, activitySnapshot, activityOf, clientCount: () => clients.size };
