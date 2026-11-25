@@ -138,7 +138,7 @@ async function tick() {
       const ok = await D.type(sess, S.text);
       p.tries += 1; p.sentAt = D.now(); p.at = p.sentAt + S.fallbackMs; changed = true;
       log('info', 'autoresume: sent', { project, ok, tries: p.tries });
-      if (ok) D.notify({ event: 'usage', project, key: 'resumed:' + project + ':' + p.sentAt, url: '/terminal/' + encodeURIComponent(project), title: `Claude resumed automatically — ${project}`, body: `The usage limit was reset; sent "${S.text}".` });
+      if (ok) D.notify({ event: 'usage', project, key: 'resumed:' + project + ':' + p.sentAt, url: '/terminal/' + encodeURIComponent(project), title: ['srv.push.resumed', { name: project }], body: ['srv.push.resumedBody', { text: S.text }] });
     }
     if (changed) save();
   } catch (e) { log('error', 'autoresume: tick', { err: e.message }); }

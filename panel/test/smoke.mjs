@@ -476,6 +476,18 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
     ok('push test: payload opens the Notifications tab', live && live.payload.title.includes('test') && live.payload.url === '/notifications')
     r = await j('GET', '/api/push/info'); ok('push: device list after cleanup', r.data.devices.length === 1 && r.data.devices[0].lastOkAt > 0 && !('keys' in r.data.devices[0]))
     r = await j('POST', '/api/push/test', { id: 'nope' }); ok('push test: unknown device', r.data.ok === false)
+    // each device gets the push in ITS language (saved from the cr_lang cookie at subscribe)
+    {
+      r = await j('POST', '/api/push/subscribe', { subscription: fakeSub('https://push.test/sub/tablet'), name: 'tablet' }, { headers: { cookie: cookie + '; cr_lang=pt-BR' } })
+      const tabId = r.data.device && r.data.device.id
+      ok('push: device language saved at subscribe', r.data.ok && r.data.device.lang === 'pt-BR', JSON.stringify(r.data.device))
+      const before = sinkLines().length
+      await j('POST', '/api/push/test', {})
+      const got = (await waitSink(before + 2)).slice(before)
+      const tab = got.find((x) => x.endpoint.endsWith('/sub/tablet')), ph = got.find((x) => x.endpoint.endsWith('/sub/phone'))
+      ok('push: pt-BR device gets Portuguese, the other English', tab && tab.payload.title === 'Claude Remote — teste' && ph && ph.payload.title === 'Claude Remote — test', JSON.stringify([tab && tab.payload.title, ph && ph.payload.title]))
+      await j('POST', '/api/push/unsubscribe', { id: tabId })
+    }
 
     // Claude Code hooks (lines written by devbox-hook.sh) -> notifications
     const before = sinkLines().length

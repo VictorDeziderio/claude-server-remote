@@ -32,6 +32,9 @@ const cfg = require('./config');
 const autoresume = require('./autoresume');
 const { log, validName, clampInt } = require('./util');
 const push = require('./push');
+// titulo/corpo: texto pronto ou [chave srv.*, vars] — traduzido no idioma de CADA aparelho
+const L = (key, vars) => [key, vars || {}];
+const txt = (x, lang) => (Array.isArray(x) ? tr(x[0], x[1], lang) : String(x || ''));
 
 const EVENTS = {
   done: { label: 'Claude finished a task', gapMs: 2 * 60e3 },
@@ -77,7 +80,7 @@ async function notify(ev = {}) {
   const now = Date.now();
   const def = EVENTS[ev.event];
   const project = ev.project && validName(ev.project) ? ev.project : '';
-  const entry = { t: now, event: ev.event, project, title: String(ev.title || '').slice(0, 120) };
+  const entry = { t: now, event: ev.event, project, title: txt(ev.title, 'en').slice(0, 120) };
   const skip = (why) => { entry.skipped = why; remember(entry); return { ok: true, sent: 0, skipped: why }; };
   if (!def) return { ok: false, msg: 'unknown event' };
   if (!prefs().events[ev.event]) return skip('disabled');
@@ -87,12 +90,13 @@ async function notify(ev = {}) {
   if (sentTimes.length >= RATE_MAX) return skip('rate limit');
   if (!push.devices().length) return skip('no devices');
   lastSent.set(key, now); sentTimes.push(now);
-  const payload = {
-    title: entry.title || 'Claude Remote', body: String(ev.body || '').slice(0, 240),
+  const tag = 'cr-' + ev.event + (project ? '-' + project : '');
+  const payload = (lang) => ({
+    title: txt(ev.title, lang).slice(0, 120) || 'Claude Remote', body: txt(ev.body, lang).slice(0, 240),
     url: typeof ev.url === 'string' && ev.url.startsWith('/') ? ev.url : urlFor(project),
-    tag: 'cr-' + ev.event + (project ? '-' + project : ''), event: ev.event, project, t: now,
-  };
-  const r = await push.sendAll(payload, { topic: payload.tag, urgency: ev.event === 'waiting' || ev.event === 'crash' ? 'high' : 'normal' });
+    tag, event: ev.event, project, t: now,
+  });
+  const r = await push.sendAll(payload, { topic: tag, urgency: ev.event === 'waiting' || ev.event === 'crash' ? 'high' : 'normal' });
   entry.sent = r.sent; entry.failed = r.failed;
   remember(entry);
   return { ok: true, sent: r.sent, failed: r.failed };
@@ -134,17 +138,17 @@ function handleHook(h, now = Date.now()) {
     const err = String(h.err || '');
     const ar = autoresume.onHook({ ev: h.ev, err }, project, t); // schedules "continue" after the reset
     if (h.ev === 'StopFailure' && AUTH_ERR.has(err)) {
-      return { event: 'login', project, url: '/account', title: 'Claude needs login', body: `${name}: ${clip(h.msg || err.replace(/_/g, ' '), 160)}` };
+      return { event: 'login', project, url: '/account', title: L('srv.push.needLogin'), body: `${name}: ${clip(h.msg || err.replace(/_/g, ' '), 160)}` };
     }
     if (h.ev === 'StopFailure' && LIMIT_ERR.has(err)) {
-      return { event: 'usage', project, key: 'limit', url: urlFor(project), title: 'Claude usage limit reached', body: `${name}: ${clip(h.msg || err.replace(/_/g, ' '), 160)}` + (ar ? ` — it continues by itself at ${new Date(ar.at).toISOString().slice(0, 16).replace('T', ' ')} UTC.` : '') };
+      return { event: 'usage', project, key: 'limit', url: urlFor(project), title: L('srv.push.limit'), body: ar ? L('srv.push.limitResume', { name, msg: clip(h.msg || err.replace(/_/g, ' '), 160), time: new Date(ar.at).toISOString().slice(0, 16).replace('T', ' ') }) : `${name}: ${clip(h.msg || err.replace(/_/g, ' '), 160)}` };
     }
     if (h.ev === 'Stop' && h.bg > 0) return null; // waiting on background work: not finished yet
     const secs = turn ? Math.round((t - turn.start) / 1000) : null;
     if (h.ev === 'Stop' && secs != null && secs < prefs().doneMinSeconds) return null;
     lastDone.set(project, t);
-    if (h.ev === 'StopFailure') return { event: 'done', project, title: `Claude stopped with an error — ${name}`, body: clip(h.msg || err.replace(/_/g, ' '), 200) };
-    return { event: 'done', project, title: `Claude finished — ${name}`, body: clip(h.msg, 200) || (secs != null ? `Worked for ${secs}s. Ready for your next instruction.` : 'Ready for your next instruction.') };
+    if (h.ev === 'StopFailure') return { event: 'done', project, title: L('srv.push.error', { name }), body: clip(h.msg || err.replace(/_/g, ' '), 200) };
+    return { event: 'done', project, title: L('srv.doneTitle', { name }), body: clip(h.msg, 200) || (secs != null ? L('srv.push.workedFor', { s: secs }) : L('srv.push.ready')) };
   }
   if (h.ev === 'Notification') {
     if (nonInteractive) return null;
@@ -152,8 +156,8 @@ function handleHook(h, now = Date.now()) {
     if (type === 'auth_success') return null;
     const idle = type === 'idle_prompt' || (!type && /waiting for your input/i.test(h.msg || ''));
     if (idle && t - (lastDone.get(project) || 0) < 10 * 60e3) return null; // already told "finished"
-    const what = type === 'permission_prompt' ? 'needs your permission' : type === 'elicitation_dialog' ? 'has a question for you' : idle ? 'is waiting for your input' : 'needs your attention';
-    return { event: 'waiting', project, key: project + ':' + (idle ? 'idle' : type || 'other'), title: `Claude ${what} — ${name}`, body: clip(h.msg, 200) };
+    const what = type === 'permission_prompt' ? 'permission' : type === 'elicitation_dialog' ? 'question' : idle ? 'input' : 'attention';
+    return { event: 'waiting', project, key: project + ':' + (idle ? 'idle' : type || 'other'), title: L('srv.push.wait.' + what, { name }), body: clip(h.msg, 200) };
   }
   return null;
 }
@@ -195,12 +199,12 @@ async function pollHooks() {
 function onPanelNotify(n) {
   if (!n || typeof n !== 'object') return;
   if (n.kind === 'alert') {
-    if (n.alertKind === 'crash-loop') notify({ event: 'crash', project: n.project, title: `Crash-loop — ${n.project || 'dev-box'}`, body: n.body || 'Claude keeps exiting; the supervisor stopped restarting it.' }).catch(() => {});
+    if (n.alertKind === 'crash-loop') notify({ event: 'crash', project: n.project, title: L('srv.push.crash', { name: n.project || 'dev-box' }), body: n.key ? L(n.key, n.vars) : (n.body || L('srv.push.crashBody')) }).catch(() => {});
     return;
   }
   if (Date.now() - hooksSeenAt < 24 * 3600e3) return; // hooks are active: they are exact
-  if (n.kind === 'done') notify({ event: 'done', project: n.name, title: `Claude finished — ${n.name}`, body: 'Ready for your next instruction.' }).catch(() => {});
-  else if (n.kind === 'prompt') notify({ event: 'waiting', project: n.name, title: `Claude is waiting for you — ${n.name}`, body: 'A question or permission is pending in the terminal.' }).catch(() => {});
+  if (n.kind === 'done') notify({ event: 'done', project: n.name, title: L('srv.doneTitle', { name: n.name }), body: L('srv.push.ready') }).catch(() => {});
+  else if (n.kind === 'prompt') notify({ event: 'waiting', project: n.name, title: L('srv.waitingTitle', { name: n.name }), body: L('srv.waitingBody') }).catch(() => {});
 }
 
 // ---------- login ----------
@@ -208,7 +212,7 @@ let wasLogged = null;
 function checkLogin() {
   let logged = true;
   try { logged = !!require('./claude').loginInfo().logged; } catch { return; }
-  if (wasLogged !== false && !logged) notify({ event: 'login', url: '/account', title: 'Claude is logged out', body: 'Sessions cannot run until you log in again (Account page).' }).catch(() => {});
+  if (wasLogged !== false && !logged) notify({ event: 'login', url: '/account', title: L('srv.push.loggedOut'), body: L('srv.push.loggedOutBody') }).catch(() => {});
   wasLogged = logged;
 }
 
@@ -228,7 +232,7 @@ function checkBoot() {
   push.setMeta('lastBoot', id);
   if (!prev) return; // first run ever: nothing restarted
   const hostRebooted = prev.split(':')[0] !== id.split(':')[0];
-  notify({ event: 'boot', title: hostRebooted ? 'Server rebooted' : 'Dev-box restarted', body: 'The panel is back online. Projects marked "on" are starting again.' }).catch(() => {});
+  notify({ event: 'boot', title: L(hostRebooted ? 'srv.push.rebooted' : 'srv.push.restarted'), body: L('srv.push.bootBody') }).catch(() => {});
 }
 
 // ---------- usage (server/limits.js: plan windows + API spend) ----------
@@ -240,7 +244,7 @@ function onThreshold(ev) {
   const pct = Math.round(Number(ev.percent));
   const label = String(ev.label || ev.id || 'usage').slice(0, 40);
   notify({ event: 'usage', key: `${ev.source}:${ev.id}:${ev.threshold}:${ev.resetsAt || ''}`, url: '/',
-    title: `Claude usage at ${pct}% (${label})`, body: ev.resetsAt ? `Resets ${new Date(ev.resetsAt).toLocaleString()}.` : 'Close to the limit.' }).catch(() => {});
+    title: L('srv.push.usagePct', { pct, label }), body: ev.resetsAt ? L('srv.push.resets', { when: new Date(ev.resetsAt).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' }) : L('srv.push.nearLimit') }).catch(() => {});
 }
 function hookUsage() {
   try { require('./limits').onThreshold(onThreshold); return true; } catch (e) { log('error', 'notify: limits hook', { err: e.message }); }
@@ -274,7 +278,8 @@ const routes = {
     '/api/push/unsubscribe': (b) => push.unsubscribe({ id: b.id, endpoint: b.endpoint }),
     '/api/push/prefs': (b) => setPrefs(b),
     '/api/push/test': async (b) => {
-      const r = await push.sendAll({ title: 'Claude Remote — test', body: 'Notifications are working on this device.', url: '/notifications', tag: 'cr-test', event: 'test', t: Date.now() }, { id: b.id || '', TTL: 120, topic: 'cr-test' });
+      const t0 = Date.now();
+      const r = await push.sendAll((lang) => ({ title: tr('srv.push.testTitle', {}, lang), body: tr('srv.push.testBody', {}, lang), url: '/notifications', tag: 'cr-test', event: 'test', t: t0 }), { id: b.id || '', TTL: 120, topic: 'cr-test' });
       remember({ t: Date.now(), event: 'test', project: '', title: 'test', sent: r.sent, failed: r.failed });
       return r;
     },
