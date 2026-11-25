@@ -74,7 +74,7 @@ const item = (p = 'demo') => AR.list().find((x) => x.project === p);
   windows = [{ id: 'five_hour', percent: 3, resetsAt: iso(now + 5 * H) }]; // window renewed
   await AR.tick();
   ok('after the reset: types "continue" in the project session', typed.length === 1 && typed[0][0] === 'claude-demo' && typed[0][1] === S.text, JSON.stringify(typed));
-  ok('push "resumed automatically"', notes.length === 1 && /resumed automatically/.test(notes[0].title) && notes[0].url === '/terminal/demo');
+  ok('push "resumed automatically" (key + vars, translated per device)', notes.length === 1 && notes[0].title[0] === 'srv.push.resumed' && notes[0].title[1].name === 'demo' && notes[0].body[1].text === S.text && notes[0].url === '/terminal/demo', JSON.stringify(notes[0]));
   AR.onHook({ ev: 'UserPromptSubmit' }, 'demo', now + 2000);
   ok('our own prompt does not cancel the entry', !!item());
   AR.onHook({ ev: 'Stop' }, 'demo', now + 60e3);
