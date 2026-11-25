@@ -24,7 +24,7 @@ export function applyTheme(pref) {
 }
 export function saveTheme(pref) {
   const p = normTheme(pref)
-  try { localStorage.setItem(THEME_KEY, p) } catch { /* modo privado */ }
+  try { localStorage.setItem(THEME_KEY, p) } catch { /* private mode */ }
   applyTheme(p)
   return p
 }

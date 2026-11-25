@@ -21,7 +21,7 @@ export const getLang = () => lang
 export const languages = () => Object.entries(LOCALES).map(([code, d]) => ({ code, name: d._name || code }))
 // changes the language and reloads (simple: no component needs to "listen" to the change)
 export function setLang(code) {
-  try { localStorage.setItem(LANG_KEY, code) } catch { /* modo privado */ }
+  try { localStorage.setItem(LANG_KEY, code) } catch { /* private mode */ }
   location.reload()
 }
 export const t = (key, vars) => lookup(LOCALES, lang, DEFAULT_LANG, key, vars)
