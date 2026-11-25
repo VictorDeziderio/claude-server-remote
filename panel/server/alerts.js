@@ -18,15 +18,19 @@ let list = [];      // ultimos MAX_KEEP alertas (mais recente no fim)
 let offset = 0;      // bytes do arquivo ja processados
 let lastDiskAlertAt = 0;
 
-const LABELS = { 'crash-loop': 'reinicios em loop', usage: 'limites de uso', backup: 'backup', memory: 'memoria', disk: 'disco', 'claude-update': 'atualizacao do Claude' };
+// titulo = rotulo do tipo (o navegador traduz 'alert.kind.<kind>'); este e so a reserva em ingles
+const LABELS = { 'crash-loop': 'crash loop', usage: 'usage limits', backup: 'backup', memory: 'memory', disk: 'disk', 'claude-update': 'Claude update' };
 const titleFor = (a) => (LABELS[a.kind] || a.kind) + (a.project ? ` — ${a.project}` : '');
+
+const plainVars = (v) => Object.fromEntries(Object.entries(v && typeof v === 'object' ? v : {}).slice(0, 10)
+  .filter(([k, x]) => /^\w{1,30}$/.test(k) && ['string', 'number'].includes(typeof x)).map(([k, x]) => [k, String(x).slice(0, 200)]));
 
 function pushAndBroadcast(a) {
   list.push(a);
   if (list.length > MAX_KEEP) list.splice(0, list.length - MAX_KEEP);
   // lazy (evita ciclo: events.js e' quem inicia o sampler que chama ate aqui)
   try {
-    require('./events').broadcast('notify', { kind: 'alert', t: a.t, level: a.level, alertKind: a.kind, project: a.project || '', title: titleFor(a), body: a.msg || '' });
+    require('./events').broadcast('notify', { kind: 'alert', t: a.t, level: a.level, alertKind: a.kind, project: a.project || '', title: titleFor(a), body: a.msg || '', msg: a.msg || '', ...(a.key ? { key: a.key, vars: a.vars } : {}) });
   } catch { /* */ }
 }
 
@@ -57,6 +61,8 @@ function poll() {
       kind: String(raw.kind).slice(0, 40),
       project: raw.project ? String(raw.project).slice(0, 80) : '',
       msg: String(raw.msg || '').slice(0, 500),
+      // texto traduzivel (opcional): chave srv.* + variaveis simples; msg fica como reserva
+      ...(typeof raw.key === 'string' && /^srv\.[\w.-]{1,60}$/.test(raw.key) ? { key: raw.key, vars: plainVars(raw.vars) } : {}),
     });
   }
 }
@@ -70,7 +76,7 @@ function maybeDiskAlert(pct) {
   lastDiskAlertAt = now;
   try {
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
-    fs.appendFileSync(FILE, JSON.stringify({ t: now, level: 'warn', kind: 'disk', msg: tr('srv.diskFull', { pct }) }) + '\n');
+    fs.appendFileSync(FILE, JSON.stringify({ t: now, level: 'warn', kind: 'disk', msg: tr('srv.diskFull', { pct }, 'en'), key: 'srv.diskFull', vars: { pct } }) + '\n');
   } catch (e) { log('error', 'disk alert', { err: e.message }); }
 }
 

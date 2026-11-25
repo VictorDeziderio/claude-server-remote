@@ -81,7 +81,7 @@ function setup(host, code) {
   return { ok: true, secret: state.pending, otpauth: url };
 }
 function enable(code) {
-  if (!state.pending) return { ok: false, msg: 'gere o QR primeiro (setup)' };
+  if (!state.pending) return { ok: false, msg: tr('srv.qrFirst') };
   if (!verifyCode(state.pending, code)) return { ok: false, msg: tr('srv.badCodeClock') };
   state.secret = state.pending; state.pending = ''; state.enabled = true; state.enabledAt = Date.now();
   save();
@@ -92,7 +92,7 @@ function disable(code) {
   if (!verifyCode(state.secret, code)) return { ok: false, msg: tr('srv.badCode') };
   state = { enabled: false, secret: '', pending: '', enabledAt: 0, lastUsed: '' };
   save();
-  return { ok: true, msg: '2FA desativado' };
+  return { ok: true, msg: tr('srv.2faOff') };
 }
 // usado no login. Bloqueia reuso do MESMO codigo dentro da janela (replay).
 function check(code) {

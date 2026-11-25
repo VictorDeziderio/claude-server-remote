@@ -134,9 +134,10 @@ async function tickSession(name, running, idlePauseHours) {
     // sai de 'busy' (o reset de a.busySince abaixo so acontece DEPOIS deste broadcast)
     broadcast('activity', { name, session: sess, state: next, since: now, busySince: next === 'busy' ? a.busySince : 0, remoteUrl: a.remoteUrl || '' });
     if (next === 'prompt') {
-      broadcast('notify', { kind: 'prompt', name, title: tr('srv.waitingTitle', { name }), body: tr('srv.waitingBody') });
+      broadcast('notify', { kind: 'prompt', name, title: tr('srv.waitingTitle', { name }), body: tr('srv.waitingBody'), i18n: { title: ['srv.waitingTitle', { name }], body: ['srv.waitingBody'] } });
     } else if (next === 'idle' && prevState === 'busy' && busyFor >= 5000) {
-      broadcast('notify', { kind: 'done', name, title: `Claude terminou — ${name}`, body: tr('srv.doneBody', { s: Math.round(busyFor / 1000) }) });
+      const secs = Math.round(busyFor / 1000);
+      broadcast('notify', { kind: 'done', name, title: tr('srv.doneTitle', { name }), body: tr('srv.doneBody', { s: secs }), i18n: { title: ['srv.doneTitle', { name }], body: ['srv.doneBody', { s: secs }] } });
     }
     if (next !== 'busy') a.busySince = 0;
   }

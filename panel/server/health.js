@@ -143,7 +143,7 @@ async function updateClaude() {
       return { ok: false, msg: tr('srv.npmNoBinary'), output: (r.stdout + r.stderr).slice(-2000) };
     }
     return r.ok
-      ? { ok: true, msg: `Claude Code atualizado: ${v}. As sessoes em execucao continuam na versao antiga ate reiniciar.`, output: (r.stdout + r.stderr).slice(-2000) }
+      ? { ok: true, msg: tr('srv.updated', { v }), output: (r.stdout + r.stderr).slice(-2000) }
       : { ok: false, msg: tr('srv.updateFailed') + (r.stderr || '').slice(-500), output: (r.stdout + r.stderr).slice(-2000) };
   })();
   try { return await updating; } finally { updating = null; }

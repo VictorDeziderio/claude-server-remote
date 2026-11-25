@@ -12,6 +12,7 @@ const K = await load('src/lib/termkeys.js')
 const C = await load('src/lib/clipboard.js')
 const T = await load('src/lib/theme.js')
 const I = await load('src/lib/i18n-core.js')
+const N = await load('src/lib/notice.js')
 
 let fails = 0, passes = 0
 const eq = (name, got, want) => {
@@ -133,7 +134,32 @@ for (const f of walk(path.join(PANEL, 'src'))) {
   for (const m of src.matchAll(/<TR k="([\w.-]+)"/g)) used.add(m[1])
   for (const m of src.matchAll(/'((?:smode|period|login\.(?:phase|screen|step))\.[\w-]+)'/g)) used.add(m[1])
 }
+// altura em % so funciona se o pai tiver altura: o <div> logo acima de um style={{ height: x + '%' }}
+// precisa de uma classe h-* (senao a barra fica com 0px — o grafico do Relatorio saiu vazio assim)
+const pctNoParent = []
+for (const f of walk(path.join(PANEL, 'src'))) {
+  const lines = fs.readFileSync(f, 'utf8').split('\n')
+  lines.forEach((l, i) => {
+    if (!/style=\{\{[^}]*height:\s*[^}]*'%'/.test(l)) return
+    let j = i - 1
+    while (j >= 0 && !/<div\b/.test(lines[j])) j--
+    if (j < 0 || !/className="[^"]*\bh-(full|\d+|\[)/.test(lines[j])) pctNoParent.push(path.basename(f) + ':' + (i + 1))
+  })
+}
+eq('altura em % tem pai com altura (h-*)', pctNoParent, [])
 eq('chaves usadas no codigo existem no en.json', [...used].filter((k) => !(k in (locs.en || {}))), [])
 
+// avisos do servidor traduzidos no navegador (lib/notice.js): chave + vars, ingles como reserva
+{
+  const pt = JSON.parse(fs.readFileSync(path.join(PANEL, 'src/locales/pt-BR.json'), 'utf8'))
+  const tOrPt = (k, fb, v) => (k in pt ? I.format(pt[k], v || {}) : fb)
+  eq('aviso: titulo/corpo pela chave no idioma de quem ve', N.noticeText({ kind: 'done', title: 'Claude finished — app', body: 'Worked for 7s and is now waiting.', i18n: { title: ['srv.doneTitle', { name: 'app' }], body: ['srv.doneBody', { s: 7 }] } }, tOrPt),
+    { title: 'Claude terminou — app', body: 'Ficou 7s trabalhando e agora está aguardando.' })
+  eq('aviso sem chave: usa o texto que veio', N.noticeText({ kind: 'done', title: 'X', body: 'Y' }, tOrPt), { title: 'X', body: 'Y' })
+  eq('alerta: rotulo do tipo traduzido + projeto, corpo pela chave', N.noticeLine({ level: 'error', kind: 'crash-loop', project: 'demo', msg: 'Claude crashed 3 times', key: 'srv.alert.crashLoop', vars: { n: '3', rc: '1' } }, tOrPt),
+    'reinícios em loop — demo — O Claude caiu 3 vezes seguidas (último código 1) — parei de reabrir. Veja Logs → Sessões.')
+  eq('alerta (SSE) com alertKind', N.noticeText({ kind: 'alert', alertKind: 'disk', level: 'warn', msg: 'disk at 93% used', key: 'srv.diskFull', vars: { pct: 93 } }, tOrPt).body, 'disco em 93% de uso')
+  eq('alerta de tipo desconhecido: mostra o tipo e a msg', N.noticeLine({ level: 'info', kind: 'custom', msg: 'hello' }, tOrPt), 'custom — hello')
+}
 console.log(`\n${passes} PASS, ${fails} FAIL${fails ? '' : ' — TUDO OK'}`)
 process.exit(fails ? 1 : 0)

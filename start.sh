@@ -142,10 +142,10 @@ mem_guard() {
   local p; p="$(mem_pct)"
   if [ "$p" -ge "$MEM_HIGH_PCT" ] && [ ! -e "$RUN_DIR/lowmem" ]; then
     : > "$RUN_DIR/lowmem"
-    alert warn memory "" "Container memory at ${p}% — backup postponed and panel slowed down until it drops."
+    alert warn memory "" "Container memory at ${p}% — backup postponed and panel slowed down until it drops." srv.alert.memHigh "pct=$p"
   elif [ "$p" -lt "$MEM_OK_PCT" ] && [ -e "$RUN_DIR/lowmem" ]; then
     rm -f "$RUN_DIR/lowmem"
-    alert info memory "" "Memory is back to normal (${p}%)."
+    alert info memory "" "Memory is back to normal (${p}%)." srv.alert.memOk "pct=$p"
   fi
 }
 ( while sleep 10; do

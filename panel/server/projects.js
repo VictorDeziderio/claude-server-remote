@@ -220,7 +220,7 @@ async function sendRemote(name) {
     events.poke();
   }, 10000);
   events.poke();
-  return { ok: true, msg: `remote reenviado: ${cmd} — o link aparece no card em alguns segundos` };
+  return { ok: true, msg: tr('srv.remoteResent', { cmd }) };
 }
 async function setConfig(name, key, value) {
   if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
@@ -300,7 +300,7 @@ function unpauseProject(name) {
   const sess = sessionName(name);
   try { fs.rmSync(pausedFlagPath(sess), { force: true }); } catch (e) { return { ok: false, msg: e.message }; }
   events.poke();
-  return { ok: true, msg: `"${name}": despausado` };
+  return { ok: true, msg: tr('srv.unpaused', { name }) };
 }
 
 // ---------- estado consolidado (dashboard) ----------

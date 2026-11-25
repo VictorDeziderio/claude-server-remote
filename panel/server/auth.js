@@ -153,7 +153,7 @@ function doLogin(body, req, res) {
   res.setHeader('Set-Cookie',
     `${COOKIE}=${issueToken(s.id, s.exp)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${cfg.SESSION_DAYS * 86400}${secureAttr(req)}`);
   audit('login.ok', { ip, ua: String(req.headers['user-agent'] || '').slice(0, 120), twofa: totp.isEnabled() });
-  return { ok: true, msg: 'autenticado' };
+  return { ok: true, msg: tr('srv.signedIn') };
 }
 function doLogout(req, res) {
   const sid = sessionId(req);

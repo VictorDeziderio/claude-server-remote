@@ -143,11 +143,11 @@ function fsSave(rel, content) {
   if (err) return { ok: false, msg: err };
   if (full === BASE) return { ok: false, msg: tr('srv.badPath') };
   if (typeof content !== 'string') return { ok: false, msg: tr('srv.badContent') };
-  if (content.length > MAX_SAVE) return { ok: false, msg: 'conteudo muito grande (>5MB)' };
+  if (content.length > MAX_SAVE) return { ok: false, msg: tr('srv.contentTooBig') };
   try {
     fs.mkdirSync(path.dirname(full), { recursive: true });
     writeFileNoFollow(full, content);
-    return { ok: true, msg: `salvo: ${relOf(full)}` };
+    return { ok: true, msg: tr('srv.saved', { path: relOf(full) }) };
   } catch (e) { return { ok: false, msg: e.message }; }
 }
 function fsCreate(rel, kind) {
@@ -166,8 +166,8 @@ function fsDelete(rel) {
   if (err) return { ok: false, msg: err };
   if (full === BASE) return { ok: false, msg: tr('srv.badPath') };
   // protege o coracao do volume (login do Claude, config do painel)
-  if (full === path.join(BASE, '.claude') || full === path.join(BASE, '.claude.json')) return { ok: false, msg: 'protegido' };
-  try { fs.rmSync(full, { recursive: true, force: true }); return { ok: true, msg: `excluido: ${relOf(full)}` }; }
+  if (full === path.join(BASE, '.claude') || full === path.join(BASE, '.claude.json')) return { ok: false, msg: tr('srv.protected') };
+  try { fs.rmSync(full, { recursive: true, force: true }); return { ok: true, msg: tr('srv.removed', { path: relOf(full) }) }; }
   catch (e) { return { ok: false, msg: e.message }; }
 }
 function fsRename(rel, newRel) {
@@ -176,7 +176,7 @@ function fsRename(rel, newRel) {
   const a = ga.full, b = gb.full;
   if (a === BASE || b === BASE) return { ok: false, msg: tr('srv.badPath') };
   if (fs.existsSync(b)) return { ok: false, msg: tr('srv.destExists') };
-  try { fs.mkdirSync(path.dirname(b), { recursive: true }); fs.renameSync(a, b); return { ok: true, msg: `renomeado: ${relOf(b)}`, path: relOf(b) }; }
+  try { fs.mkdirSync(path.dirname(b), { recursive: true }); fs.renameSync(a, b); return { ok: true, msg: tr('srv.renamed', { path: relOf(b) }), path: relOf(b) }; }
   catch (e) { return { ok: false, msg: e.message }; }
 }
 // download: stream do arquivo com Content-Disposition (qualquer tipo/tamanho)
@@ -239,14 +239,14 @@ function fsUploadStream(rel, req, overwrite) {
     });
     req.on('end', () => {
       if (writeErr) return finish({ ok: false, msg: writeErr.message });
-      if (over) return finish({ ok: false, msg: `upload muito grande (>${MAX_UPLOAD / 1024 / 1024}MB) ou interrompido` });
+      if (over) return finish({ ok: false, msg: tr('srv.uploadTooBig', { mb: MAX_UPLOAD / 1024 / 1024 }) });
       if (!overwrite && fs.existsSync(full)) return finish({ ok: false, code: 'EXISTS', msg: tr('srv.existsOverwrite') });
       try { fs.closeSync(fd); fd = null; fs.renameSync(tmp, full); }
       catch (e) { return finish({ ok: false, msg: e.message }); }
-      finish({ ok: true, msg: `enviado: ${relOf(full)} (${size} bytes)`, path: relOf(full), size });
+      finish({ ok: true, msg: tr('srv.uploaded', { path: relOf(full), size }), path: relOf(full), size });
     });
-    req.on('error', () => finish({ ok: false, msg: 'upload interrompido' }));
-    req.on('close', () => finish({ ok: false, msg: 'upload interrompido' }));
+    req.on('error', () => finish({ ok: false, msg: tr('srv.uploadBroken') }));
+    req.on('close', () => finish({ ok: false, msg: tr('srv.uploadBroken') }));
   });
 }
 

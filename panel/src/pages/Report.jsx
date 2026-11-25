@@ -91,7 +91,7 @@ function DailyChart({ daily, metric }) {
               const v = val(d)
               const h = Math.max(2, Math.round((v / max) * 100))
               return (
-                <div key={d.date} className="group relative flex-1" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+                <div key={d.date} className="group relative flex h-full flex-1 items-end" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
                   <div className={`w-full rounded-t transition ${hover === i ? 'bg-primary' : 'bg-primary/70'}`} style={{ height: h + '%' }} />
                 </div>
               )

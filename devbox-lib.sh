@@ -91,11 +91,14 @@ is_logged_in() {
 remote_cmd() { printf '/remote-control %s' "${REMOTE_CONTROL_NAME:-$1}"; }
 
 # Alerta p/ o painel (RUN_DIR/alerts.jsonl -> toast/notificacao). Uma linha JSON por evento.
-alert() {  # $1=level(info|warn|error) $2=kind $3=projeto(ou "") $4=mensagem
+# $5 (opcional) = chave srv.* do texto e $6.. = variaveis "nome=valor": o painel mostra o texto no
+# idioma de quem esta vendo ($4, em ingles, fica como reserva).
+alert() {  # $1=level(info|warn|error) $2=kind $3=projeto(ou "") $4=mensagem [$5=chave [$6..=k=v]]
   mkdir -p "$RUN_DIR"
-  "$NODE_BIN" -e 'const [, l, k, p, m] = process.argv;
-    process.stdout.write(JSON.stringify({ t: Date.now(), level: l, kind: k, ...(p ? { project: p } : {}), msg: m }) + "\n");' \
-    "$1" "$2" "${3:-}" "$4" >> "$RUN_DIR/alerts.jsonl" 2>/dev/null || true
+  "$NODE_BIN" -e 'const [, l, k, p, m, key, ...kv] = process.argv;
+    const vars = Object.fromEntries(kv.map((x) => [x.slice(0, x.indexOf("=")), x.slice(x.indexOf("=") + 1)]).filter(([n]) => n));
+    process.stdout.write(JSON.stringify({ t: Date.now(), level: l, kind: k, ...(p ? { project: p } : {}), msg: m, ...(key ? { key, vars } : {}) }) + "\n");' \
+    "$1" "$2" "${3:-}" "$4" "${@:5}" >> "$RUN_DIR/alerts.jsonl" 2>/dev/null || true
 }
 
 # Sem logrotate na imagem: corta o log acima de ~5MB mantendo o final. Trunca NO LUGAR (nao

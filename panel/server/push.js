@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 // Web Push transport (VAPID): device subscriptions + delivery.
 //
 // State lives in CLAUDE_DIR/.panel-push.json (persistent volume, mode 0600, never in the repo):
@@ -88,13 +89,13 @@ function checkEndpoint(endpoint) {
 
 // registers (or refreshes) a device. sub = PushSubscription.toJSON()
 function subscribe(sub, meta = {}) {
-  if (!webpush) return { ok: false, msg: 'web push unavailable on the server (web-push not installed)' };
-  if (!sub || typeof sub !== 'object') return { ok: false, msg: 'missing subscription' };
+  if (!webpush) return { ok: false, msg: tr('srv.pushMissing') };
+  if (!sub || typeof sub !== 'object') return { ok: false, msg: tr('srv.noSub') };
   const bad = checkEndpoint(sub.endpoint);
   if (bad) return { ok: false, msg: bad };
   const keys = sub.keys || {};
   if (typeof keys.p256dh !== 'string' || !B64URL.test(keys.p256dh) || keys.p256dh.length > 200
-    || typeof keys.auth !== 'string' || !B64URL.test(keys.auth) || keys.auth.length > 64) return { ok: false, msg: 'invalid subscription keys' };
+    || typeof keys.auth !== 'string' || !B64URL.test(keys.auth) || keys.auth.length > 64) return { ok: false, msg: tr('srv.badSubKeys') };
   const s = load();
   rememberHost(meta.host);
   let oldName = '';
@@ -106,21 +107,22 @@ function subscribe(sub, meta = {}) {
   const name = String(oldName || meta.name || 'Device').replace(/[\u0000-\u001f]/g, '').slice(0, 60) || 'Device';
   const now = Date.now();
   let d = s.devices.find((x) => x.endpoint === sub.endpoint);
-  if (d) { d.keys = { p256dh: keys.p256dh, auth: keys.auth }; d.name = name; d.fails = 0; d.lastError = ''; }
+  const lang = require('./i18n').current(); // idioma de quem inscreveu (cookie cr_lang): o push sai nele
+  if (d) { d.keys = { p256dh: keys.p256dh, auth: keys.auth }; d.name = name; d.fails = 0; d.lastError = ''; d.lang = lang; }
   else {
-    d = { id: idOf(sub.endpoint), endpoint: sub.endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth }, name, createdAt: now, lastOkAt: 0, lastError: '', fails: 0 };
+    d = { id: idOf(sub.endpoint), endpoint: sub.endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth }, name, lang, createdAt: now, lastOkAt: 0, lastError: '', fails: 0 };
     s.devices.push(d);
     if (s.devices.length > MAX_DEVICES) s.devices.sort((a, b) => (b.lastOkAt || b.createdAt) - (a.lastOkAt || a.createdAt)).splice(MAX_DEVICES);
   }
-  return save() ? { ok: true, msg: 'device registered', device: publicDevice(d) } : { ok: false, msg: 'could not save' };
+  return save() ? { ok: true, msg: tr('srv.deviceAdded'), device: publicDevice(d) } : { ok: false, msg: tr('srv.saveFailed') };
 }
 
 function unsubscribe(b = {}) {
   const s = load();
   const before = s.devices.length;
   s.devices = s.devices.filter((d) => !(b.id && d.id === b.id) && !(b.endpoint && d.endpoint === b.endpoint));
-  if (s.devices.length === before) return { ok: false, msg: 'device not found' };
-  return save() ? { ok: true, msg: 'device removed' } : { ok: false, msg: 'could not save' };
+  if (s.devices.length === before) return { ok: false, msg: tr('srv.deviceNotFound') };
+  return save() ? { ok: true, msg: tr('srv.deviceRemoved') } : { ok: false, msg: tr('srv.saveFailed') };
 }
 
 const SERVICE = [[/apple\.com$/, 'Apple'], [/googleapis\.com$/, 'Google'], [/mozilla\.com$/, 'Mozilla'], [/windows\.com$/, 'Microsoft']];
@@ -128,7 +130,7 @@ function publicDevice(d) {
   let host = '';
   try { host = new URL(d.endpoint).hostname; } catch { /* */ }
   const svc = (SERVICE.find(([rx]) => rx.test(host)) || [null, host])[1];
-  return { id: d.id, name: d.name, service: svc, endpoint: d.endpoint, createdAt: d.createdAt, lastOkAt: d.lastOkAt || 0, lastError: d.lastError || '', fails: d.fails || 0 };
+  return { id: d.id, name: d.name, lang: d.lang || 'en', service: svc, endpoint: d.endpoint, createdAt: d.createdAt, lastOkAt: d.lastOkAt || 0, lastError: d.lastError || '', fails: d.fails || 0 };
 }
 const devices = () => load().devices.map(publicDevice);
 
@@ -152,18 +154,19 @@ async function deliver(d, body, opts) {
 }
 
 // sends `payload` ({title, body, url, tag, ...}) to every device (or only `opts.id`).
+// `payload` can be a function (lang) => payload: each device gets it in its own language.
 // 404/410 = subscription gone (uninstalled app, revoked permission) -> device removed.
 async function sendAll(payload, opts = {}) {
-  if (!webpush) return { ok: false, msg: 'web push unavailable', sent: 0, failed: 0, removed: 0 };
+  if (!webpush) return { ok: false, msg: tr('srv.pushUnavailable'), sent: 0, failed: 0, removed: 0 };
   const s = load();
   const targets = s.devices.filter((d) => !opts.id || d.id === opts.id);
-  if (opts.id && !targets.length) return { ok: false, msg: 'device not found', sent: 0, failed: 0, removed: 0 };
-  const body = JSON.stringify(payload);
+  if (opts.id && !targets.length) return { ok: false, msg: tr('srv.deviceNotFound'), sent: 0, failed: 0, removed: 0 };
+  const bodyFor = (d) => JSON.stringify(typeof payload === 'function' ? payload(d.lang || 'en') : payload);
   let sent = 0, failed = 0;
   const gone = new Set();
   await Promise.all(targets.map(async (d) => {
     let status = 0;
-    try { status = await deliver(d, body, opts); } catch (e) { log('error', 'push: send', { err: e.message }); }
+    try { status = await deliver(d, bodyFor(d), opts); } catch (e) { log('error', 'push: send', { err: e.message }); }
     if (status >= 200 && status < 300) { sent++; d.lastOkAt = Date.now(); d.fails = 0; d.lastError = ''; return; }
     failed++;
     if (status === 404 || status === 410) { gone.add(d.id); return; }

@@ -401,6 +401,11 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
   ok('alerta anexado pelo script aparece em /api/alerts', r.data.ok && r.data.alerts.some((a) => a.kind === 'backup' && a.project === 'demo' && a.msg === 'backup atrasado'), JSON.stringify(r.data).slice(0, 300))
   ok('alerta: t em epoch ms', typeof r.data.alerts.find((a) => a.kind === 'backup')?.t === 'number' && r.data.alerts.find((a) => a.kind === 'backup').t > 1e12)
   r = await j('POST', '/api/alerts/clear', {}); ok('alerts/clear ok', r.data.ok)
+  // texto traduzivel: chave srv.* + vars passam; chave estranha e vars nao-simples sao descartadas
+  fs.appendFileSync(path.join(ROOT, '.claude', 'run', 'alerts.jsonl'), JSON.stringify({ t: Date.now(), level: 'error', kind: 'crash-loop', project: 'demo', msg: 'Claude crashed 3 times', key: 'srv.alert.crashLoop', vars: { n: '3', rc: 1, evil: { x: 1 } } }) + '\n' + JSON.stringify({ t: Date.now(), level: 'info', kind: 'x', msg: 'm', key: '<script>' }) + '\n')
+  r = await j('GET', '/api/alerts')
+  { const [a1, a2] = r.data.alerts.slice(-2); ok('alerta com chave + vars simples (o navegador traduz)', a1.key === 'srv.alert.crashLoop' && a1.vars.n === '3' && a1.vars.rc === '1' && !('evil' in a1.vars) && !a2.key, JSON.stringify([a1, a2])) }
+  await j('POST', '/api/alerts/clear', {})
   r = await j('GET', '/api/alerts'); ok('lista vazia apos clear', r.data.ok && r.data.alerts.length === 0)
 
   r = await j('GET', '/api/report'); ok('report custo por modelo', r.data.ok && r.data.usage.byModel['claude-opus-5'] && r.data.usage.total.cost > 0, JSON.stringify(r.data.usage.byModel))

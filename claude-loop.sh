@@ -125,10 +125,10 @@ rollback_claude() {
   slog "rollback: Claude $cur in a crash-loop — going back to $good (last healthy)"
   if ( flock 8; timeout 300 sudo -n npm install -g --include=optional "@anthropic-ai/claude-code@$good" ) \
        8>"$RUN_DIR/claude-rollback.lock" >>"$LOG_DIR/sessions.log" 2>&1 && [ "$(claude_ver)" = "$good" ]; then
-    alert warn claude-update "$PROJ_NAME" "Claude $cur kept crashing — automatically went back to $good."
+    alert warn claude-update "$PROJ_NAME" "Claude $cur kept crashing — automatically went back to $good." srv.alert.rolledBack "cur=$cur" "good=$good"
     return 0
   fi
-  alert error claude-update "$PROJ_NAME" "Claude $cur kept crashing and going back to $good failed — see Logs → Sessions."
+  alert error claude-update "$PROJ_NAME" "Claude $cur kept crashing and going back to $good failed — see Logs → Sessions." srv.alert.rollbackFailed "cur=$cur" "good=$good"
   return 1
 }
 
@@ -249,7 +249,7 @@ while true; do
   fi
   if [ "$FAILS" -ge "$MAX_FAST_FAILS" ]; then
     slog "crash-loop: claude exited $FAILS times in a row too fast — no longer restarting it"
-    alert error crash-loop "$PROJ_NAME" "Claude crashed $FAILS times in a row (last code $rc) — stopped restarting it. See Logs → Sessions."
+    alert error crash-loop "$PROJ_NAME" "Claude crashed $FAILS times in a row (last code $rc) — stopped restarting it. See Logs → Sessions." srv.alert.crashLoop "n=$FAILS" "rc=$rc"
     drop_to_shell "[dev-box] Claude exited $FAILS times in a row too fast — stopped restarting it so the VM is not overloaded. Free shell; run  claude  whenever you want (or 'Restart' in the panel to start over)."
   fi
   WAIT="$(backoff_sleep "$FAILS")"

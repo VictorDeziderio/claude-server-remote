@@ -65,7 +65,7 @@ async function listHistory(name) {
   return { ok: true, sessions, dir };
 }
 async function readConversation(name, id) {
-  if (!validName(name) || !/^[A-Za-z0-9_-]{6,80}$/.test(String(id || ''))) return { ok: false, msg: 'parametros invalidos' };
+  if (!validName(name) || !/^[A-Za-z0-9_-]{6,80}$/.test(String(id || ''))) return { ok: false, msg: tr('srv.badParams') };
   const file = path.join(dirOf(name), id + '.jsonl');
   const s = await summarizeFile(file, true);
   if (!s) return { ok: false, msg: tr('srv.convNotFound') };
@@ -75,7 +75,7 @@ async function readConversation(name, id) {
 // abrir o Claude, usa `claude --resume <id>`. (Antes mandava Ctrl-C x2, que falhava com o Claude
 // ocupado ou com texto no prompt.) Sessao so com shell (Claude OFF): manda o comando direto.
 async function resumeConversation(name, id, running) {
-  if (!validName(name) || !/^[A-Za-z0-9_-]{6,80}$/.test(String(id || ''))) return { ok: false, msg: 'parametros invalidos' };
+  if (!validName(name) || !/^[A-Za-z0-9_-]{6,80}$/.test(String(id || ''))) return { ok: false, msg: tr('srv.badParams') };
   const sess = sessionName(name);
   if (!(await sh('tmux', ['has-session', '-t', '=' + sess])).ok) return { ok: false, msg: tr('srv.tmuxDown') };
   if (running) {

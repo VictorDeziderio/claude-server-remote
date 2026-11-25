@@ -11,7 +11,8 @@ import FilesPage from './pages/FilesPage.jsx'
 import TerminalPage from './pages/TerminalPage.jsx'
 import Account from './pages/Account.jsx'
 import * as api from './api.js'
-import { t } from './lib/i18n.js'
+import { t, tOr } from './lib/i18n.js'
+import { noticeText, noticeLine } from './lib/notice.js'
 
 const HistoryPage = lazy(() => import('./pages/History.jsx'))
 const LogsPage = lazy(() => import('./pages/Logs.jsx'))
@@ -47,11 +48,13 @@ export default function App() {
     if (n.kind === 'done' && s.notifyDone === false) return
     if (n.kind === 'prompt' && s.notifyPrompt === false) return
     const isAlert = n.kind === 'alert'
-    if (isAlert) setAlerts((a) => [{ t: Date.now(), level: n.level, kind: n.alertKind, project: n.project, msg: `${n.title}${n.body ? ' — ' + n.body : ''}` }, ...a].slice(0, 50))
-    setFlash({ ok: isAlert ? n.level !== 'error' && n.level !== 'critical' : n.kind !== 'prompt', msg: `${n.title}${n.body ? ' — ' + n.body : ''}` })
+    const { title, body } = noticeText(n, tOr) // no idioma de quem esta vendo
+    const line = body ? `${title} — ${body}` : title
+    if (isAlert) setAlerts((a) => [{ t: Date.now(), level: n.level, kind: n.alertKind, project: n.project, msg: line }, ...a].slice(0, 50))
+    setFlash({ ok: isAlert ? n.level !== 'error' && n.level !== 'critical' : n.kind !== 'prompt', msg: line })
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
       try {
-        const note = new Notification(n.title, { body: n.body, tag: 'cr-' + (n.name || n.project) + '-' + n.kind, icon: '/icon.svg' })
+        const note = new Notification(title, { body, tag: 'cr-' + (n.name || n.project) + '-' + n.kind, icon: '/icon.svg' })
         note.onclick = () => { window.focus(); window.location.hash = ''; window.history.pushState({}, '', n.name ? '/terminal/' + encodeURIComponent(n.name) : '/dashboard'); window.dispatchEvent(new PopStateEvent('popstate')); note.close() }
       } catch { /* */ }
     }
@@ -65,7 +68,7 @@ export default function App() {
   // alertas ja registrados no servidor (o SSE so traz os novos a partir de agora)
   useEffect(() => {
     if (authed !== true) return
-    api.alerts().then((r) => { if (r.ok) setAlerts(r.alerts) }).catch(() => {})
+    api.alerts().then((r) => { if (r.ok) setAlerts(r.alerts.map((a) => ({ ...a, msg: noticeLine(a, tOr) }))) }).catch(() => {})
   }, [authed])
   const clearAlerts = useCallback(() => { api.alertsClear().catch(() => {}); setAlerts([]) }, [])
 

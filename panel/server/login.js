@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 /*
  * Login do Claude Code GUIADO pelo painel (Conta -> Logar no Claude).
  *
@@ -221,7 +222,7 @@ async function start() {
   stopTimer();
   await sh('tmux', ['kill-session', '-t', '=' + SESS]);
   const r = await sh('tmux', ['new-session', '-d', '-s', SESS, '-x', '500', '-y', '50', '-c', cfg.HOME, 'claude']);
-  if (!r.ok) { st = { ...idle(), phase: 'error', msg: 'could not start Claude Code: ' + r.stderr.trim() }; return status(); }
+  if (!r.ok) { st = { ...idle(), phase: 'error', msg: tr('srv.loginStartFailed') + r.stderr.trim() }; return status(); }
   // largura FIXA: sem cliente anexado a janela nunca encolhe
   await sh('tmux', ['set-option', '-t', '=' + SESS, 'window-size', 'manual']);
   await sh('tmux', ['set-option', '-t', '=' + SESS, 'status', 'off']);
@@ -234,20 +235,20 @@ async function start() {
 
 async function sendCode(code) {
   const c = String(code || '').trim();
-  if (!c || c.length > 2000 || /[\x00-\x1f\x7f]/.test(c)) return { ok: false, msg: 'invalid code' };
-  if (!(await hasSess())) return { ok: false, msg: 'no login in progress — tap Connect Claude' };
+  if (!c || c.length > 2000 || /[\x00-\x1f\x7f]/.test(c)) return { ok: false, msg: tr('srv.badCode') };
+  if (!(await hasSess())) return { ok: false, msg: tr('srv.noLoginTap') };
   await keys('-l', c);
   await new Promise((r) => setTimeout(r, 400));
   await keys('Enter');
   st.codeAt = Date.now(); st.phase = 'code-sent'; st.msg = ''; st.lastActAt = Date.now();
-  return { ok: true, msg: 'code sent — checking…' };
+  return { ok: true, msg: tr('srv.codeSent') };
 }
 
 // teclas manuais p/ a fase "attention" (ultimo recurso)
 const KEYS = new Set(['Enter', 'Escape', 'Up', 'Down', 'Tab', '1', '2', '3']);
 async function sendKey(key) {
-  if (!KEYS.has(key)) return { ok: false, msg: 'key not allowed' };
-  if (!(await hasSess())) return { ok: false, msg: 'no login in progress' };
+  if (!KEYS.has(key)) return { ok: false, msg: tr('srv.keyNotAllowed') };
+  if (!(await hasSess())) return { ok: false, msg: tr('srv.noLogin') };
   await keys(key);
   st.lastActAt = Date.now();
   return { ok: true };

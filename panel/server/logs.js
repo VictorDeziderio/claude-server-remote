@@ -6,9 +6,9 @@ const path = require('path');
 const cfg = require('./config');
 
 const FILES = {
-  panel: { file: 'panel.log', label: 'Painel (server.js)' },
+  panel: { file: 'panel.log', label: 'Panel (server.js)' },
   backup: { file: 'backup.log', label: tr('srv.log.backup') },
-  audit: { file: 'audit.log', label: 'Auditoria (quem fez o que)' },
+  audit: { file: 'audit.log', label: 'Audit (who did what)' },
   sessions: { file: 'sessions.log', label: tr('srv.log.sessions') },
 };
 
@@ -25,7 +25,7 @@ function listLogs() {
 // le so o FIM do arquivo (ate 512KB) e devolve as ultimas N linhas
 function tailLog(key, lines) {
   const f = FILES[key];
-  if (!f) return { ok: false, msg: 'log desconhecido' };
+  if (!f) return { ok: false, msg: tr('srv.unknownLog') };
   const n = Math.min(5000, Math.max(10, parseInt(lines, 10) || 300));
   const p = path.join(cfg.LOGS_DIR, f.file);
   let fd = null;

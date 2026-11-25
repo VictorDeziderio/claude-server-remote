@@ -118,7 +118,7 @@ backup_repo() {
     log "ok    $name: snapshot pushed"
   else
     log "WARN  $name: local commit done, push failed (remote/credentials/branch?)"
-    alert warn backup "$name" "Backup of \"$name\": local commit done, but the push failed (remote/credentials/network?)."
+    alert warn backup "$name" "Backup of \"$name\": local commit done, but the push failed (remote/credentials/network?)." srv.alert.pushFailed "name=$name"
   fi
 }
 

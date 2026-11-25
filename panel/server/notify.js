@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 /*
  * Push notifications: events -> policy (per-event toggles, dedupe, rate limit) -> push.js.
  *
@@ -65,7 +66,7 @@ function setPrefs(b = {}) {
   if (b.events && typeof b.events === 'object') for (const k of Object.keys(EVENTS)) if (k in b.events) p.events[k] = !!b.events[k];
   if ('doneMinSeconds' in b) p.doneMinSeconds = clampInt(b.doneMinSeconds, 0, 3600, DEFAULT_PREFS.doneMinSeconds);
   if ('usagePct' in b) p.usagePct = clampInt(b.usagePct, 50, 100, DEFAULT_PREFS.usagePct);
-  return push.setPref('notify', p) ? { ok: true, msg: 'notification preferences saved', prefs: p } : { ok: false, msg: 'could not save' };
+  return push.setPref('notify', p) ? { ok: true, msg: tr('srv.notifPrefsSaved'), prefs: p } : { ok: false, msg: tr('srv.saveFailed') };
 }
 
 // ---------- the API other modules call ----------

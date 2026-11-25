@@ -75,7 +75,7 @@ function parseLinesInto(text, pname, perDay, stats) {
     const day = String(o.timestamp || '').slice(0, 10);
     if (!/^\d{4}-\d\d-\d\d$/.test(day)) continue;
     stats.messages++;
-    const model = (o.message && o.message.model) || 'desconhecido';
+    const model = (o.message && o.message.model) || 'unknown';
     const b = {
       in: usg.input_tokens || 0, out: usg.output_tokens || 0,
       cacheW: usg.cache_creation_input_tokens || 0, cacheR: usg.cache_read_input_tokens || 0, messages: 1, cost: 0,

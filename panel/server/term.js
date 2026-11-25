@@ -75,7 +75,7 @@ async function termSend(name, text, key) {
   if (!sess) return { ok: false, msg: tr('srv.badTarget') };
   if (!(await hasSession(sess))) return { ok: false, msg: tr('srv.sessionDown') };
   if (typeof text === 'string' && text.length) {
-    if (text.length > 4096) return { ok: false, msg: 'texto muito longo' };
+    if (text.length > 4096) return { ok: false, msg: tr('srv.textTooLong') };
     await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', text]);
   }
   if (typeof key === 'string' && key.length) {

@@ -1,4 +1,5 @@
 'use strict';
+const { tr } = require('./i18n');
 /*
  * Plan limits + API spend monitor (polls in the background, caches to the volume).
  *
@@ -346,7 +347,7 @@ function stop() { if (timer) clearTimeout(timer); timer = null; }
 
 // POST /api/limits/refresh — coalesced with an in-flight poll; min gap against button mashing
 async function refresh() {
-  if (!S.enabled) return { ...snapshot(), ok: false, msg: 'usage monitor disabled (USAGE_MONITOR=0)' };
+  if (!S.enabled) return { ...snapshot(), ok: false, msg: tr('srv.monitorOff') };
   const now = Date.now();
   if (!inflight && now - lastManual < S.minRefreshMs) return { ...snapshot(), throttled: true };
   lastManual = now;
