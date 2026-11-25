@@ -602,6 +602,23 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
       r = await j('GET', '/api/term/windows?name=demo'); ok('term windows = 2', r.data.ok && r.data.windows.length === 2)
       r = await j('POST', '/api/term/window', { name: 'demo', action: 'kill', index: r.data.windows[1].index }); ok('term window kill', r.data.ok, r.data.msg)
       r = await j('GET', '/api/term/capture?name=demo'); ok('term capture', r.data.ok && /SMOKE-READY/.test(r.data.content))
+      // "Selecionar texto" (celular): capture com MAIS historico (lines=), limitado no servidor
+      r = await j('POST', '/api/term/send', { name: 'demo', text: "seq -f 'HIST-%04g' 1 600", key: 'Enter' }); ok('term send (historico)', r.data.ok, r.data.msg)
+      await new Promise((s) => setTimeout(s, 800))
+      r = await j('GET', '/api/term/capture?name=demo'); ok('capture padrao (200 linhas) nao traz o inicio do historico', r.data.ok && r.data.lines === 200 && /HIST-0600/.test(r.data.content) && !/HIST-0001\b/.test(r.data.content), r.data.lines)
+      r = await j('GET', '/api/term/capture?name=demo&lines=2000'); ok('capture lines=2000 traz o historico todo', r.data.ok && r.data.lines === 2000 && /HIST-0001\b/.test(r.data.content) && /HIST-0600/.test(r.data.content))
+      ok('capture sem linhas vazias no fim', /\S\n$/.test(r.data.content), JSON.stringify(r.data.content.slice(-20)))
+      r = await j('GET', '/api/term/capture?name=demo&lines=99999999'); ok('capture lines limitado a 5000', r.data.ok && r.data.lines === 5000, r.data.lines)
+      r = await j('GET', '/api/term/capture?name=demo&lines=abc'); ok('capture lines invalido -> 200', r.data.ok && r.data.lines === 200, r.data.lines)
+      // heartbeat do cliente: {type:'ping'} -> {type:'pong'} (o terminal do celular usa p/ detectar conexao morta)
+      const pong = await new Promise((resolve) => {
+        const ws = new WSLib(`ws://127.0.0.1:${PORT}/ws/term?name=demo&cols=100&rows=30`, { headers: { cookie, origin: BASE } })
+        const ctl = []
+        ws.on('message', (m) => { const s = m.toString(); if (s.charCodeAt(0) === 1 && s.charCodeAt(1) === 123) { const c = JSON.parse(s.slice(1)); ctl.push(c); if (c.type === 'ready') ws.send('\x01' + JSON.stringify({ type: 'ping' })); if (c.type === 'pong') ws.close() } })
+        setTimeout(() => ws.close(), 3000)
+        ws.on('close', () => resolve(ctl)); ws.on('error', () => resolve(ctl))
+      })
+      ok('ws: ping -> pong', pong.some((c) => c.type === 'pong'), JSON.stringify(pong))
       await new Promise((s) => setTimeout(s, 4500)) // watcher: 2 ticks quietos -> activity
       r = await j('GET', '/api/state'); ok('state: activity do watcher', ['idle', 'busy', 'prompt', 'off'].includes(r.data.projects[0].activity), JSON.stringify(r.data.projects[0]))
 

@@ -54,13 +54,19 @@ async function targetSession(name, { create = true } = {}) {
 const isDisabled = (name) => !!name && name !== 'shell' && validName(name) && !projConfig(name).enabled;
 
 // ---------- REST de apoio ----------
-async function termCapture(name) {
+// lines = quantas linhas do HISTORICO (alem da tela) trazer: 200 por padrao (login do Claude);
+// a tela "Selecionar texto" do celular pede mais (ate CAPTURE_MAX) p/ copiar com o dedo.
+const CAPTURE_MAX = 5000;
+async function termCapture(name, lines) {
   const sess = await targetSession(name, { create: false });
   if (!sess) return { ok: false, msg: 'alvo invalido' };
   if (!(await hasSession(sess))) return { ok: false, msg: 'sessao nao esta de pe' };
+  const n = clampInt(lines, 0, CAPTURE_MAX, 200);
   // -J junta as linhas quebradas pela largura do terminal (URL longa sai inteira)
-  const r = await sh('tmux', ['capture-pane', '-t', paneOf(sess), '-p', '-J', '-S', '-200']);
-  return { ok: r.ok, content: r.stdout || '', msg: r.ok ? '' : 'falha ao capturar a tela' };
+  const r = await sh('tmux', ['capture-pane', '-t', paneOf(sess), '-p', '-J', '-S', '-' + n]);
+  // sem as linhas vazias do fim da tela (o tmux preenche ate a ultima linha do painel)
+  const content = (r.stdout || '').replace(/\s+$/, '') + (r.stdout ? '\n' : '');
+  return { ok: r.ok, content, lines: n, msg: r.ok ? '' : 'falha ao capturar a tela' };
 }
 const KEYS = new Set(['Enter', 'Escape', 'Tab', 'Space', 'BSpace', 'Up', 'Down', 'Left', 'Right', 'PageUp', 'PageDown', 'Home', 'End', 'IC', 'DC']);
 async function termSend(name, text, key) {
@@ -227,4 +233,4 @@ function shutdown() {
   for (const c of wss.clients) { try { c.terminate(); } catch { /* */ } }
 }
 
-module.exports = { termCapture, termSend, termExit, listWindows, windowAction, handleUpgrade, shutdown, ptyAvailable: !!pty };
+module.exports = { CAPTURE_MAX, termCapture, termSend, termExit, listWindows, windowAction, handleUpgrade, shutdown, ptyAvailable: !!pty };

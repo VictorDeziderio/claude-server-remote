@@ -3,7 +3,7 @@ import { NavLink, Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, BarChart3, FolderTree, SquareTerminal, UserRound, LogOut, RefreshCw, History, ScrollText,
   Settings, DatabaseBackup, PanelLeftClose, PanelLeftOpen, Bell, BellOff, BellRing, HardDrive, MemoryStick, Gauge, Radio, ArrowUpCircle,
-  AlertTriangle, Trash2,
+  AlertTriangle, Trash2, Ellipsis, X,
 } from 'lucide-react'
 import Logo from './Logo.jsx'
 import { Dot, Btn, Empty } from './ui.jsx'
@@ -24,6 +24,54 @@ export const NAV = [
   { to: '/notifications', label: 'Notifications', icon: BellRing },
   { to: '/account', label: 'Conta', icon: UserRound },
 ]
+// Celular: navegacao EMBAIXO (alcance do polegar) com as 3 telas mais usadas + "More" (folha
+// com o resto do NAV — abas novas adicionadas ao NAV aparecem la sozinhas).
+const MOBILE_PRIMARY = ['/dashboard', '/terminal', '/files']
+const isActivePath = (path, to) => path === to || path.startsWith(to + '/')
+function MobileNav({ onLogout }) {
+  const { pathname } = useLocation()
+  const [more, setMore] = useState(false)
+  useEffect(() => { setMore(false) }, [pathname])
+  const primary = NAV.filter((n) => MOBILE_PRIMARY.includes(n.to))
+  const rest = NAV.filter((n) => !MOBILE_PRIMARY.includes(n.to))
+  const restActive = rest.some((n) => isActivePath(pathname, n.to))
+  const item = (active) => cn('flex h-14 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors', active ? 'text-primary' : 'text-muted-foreground active:text-foreground')
+  return (
+    <>
+      {more && (
+        <div className="fixed inset-0 z-40 bg-black/50 sm:hidden" onClick={() => setMore(false)}>
+          <div className="absolute inset-x-0 bottom-0 animate-fade-up rounded-t-xl border-t border-border bg-popover p-3 pb-[calc(env(safe-area-inset-bottom)+4.5rem)]" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="More">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <span className="text-sm font-medium text-foreground">More</span>
+              <button type="button" onClick={() => setMore(false)} aria-label="close" className="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-muted"><X className="size-5" /></button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {rest.map((n) => (
+                <NavLink key={n.to} to={n.to} className={({ isActive }) => cn('flex h-20 flex-col items-center justify-center gap-1.5 rounded-lg border text-xs', isActive ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-card text-foreground/80')}>
+                  <n.icon className="size-5" /> {n.label}
+                </NavLink>
+              ))}
+              <button type="button" onClick={onLogout} className="flex h-20 flex-col items-center justify-center gap-1.5 rounded-lg border border-border bg-card text-xs text-muted-foreground">
+                <LogOut className="size-5" /> sair do painel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <nav className="hide-on-kb relative z-50 grid shrink-0 grid-cols-4 border-t border-border bg-sidebar sm:hidden" aria-label="main">
+        {primary.map((n) => (
+          <NavLink key={n.to} to={n.to} className={() => item(isActivePath(pathname, n.to) && !more)}>
+            <n.icon className="size-5" /> {n.label}
+          </NavLink>
+        ))}
+        <button type="button" onClick={() => setMore((m) => !m)} className={item(more || restActive)} aria-expanded={more}>
+          <Ellipsis className="size-5" /> More
+        </button>
+      </nav>
+    </>
+  )
+}
+
 const titleOf = (path) => (NAV.find((n) => path === n.to || path.startsWith(n.to + '/')) || {}).label || 'Claude Remote'
 const LS_NAV = 'cr.nav.collapsed'
 const readLS = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v) } catch { return d } }
@@ -141,17 +189,8 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
 
       {/* Conteudo */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Nav mobile */}
-        <div className="flex gap-1.5 overflow-x-auto border-b border-border px-3 py-2 sm:hidden">
-          {NAV.map((n) => (
-            <NavLink key={n.to} to={n.to}
-              className={({ isActive }) => cn('flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs', isActive ? 'bg-accent text-primary' : 'bg-card text-muted-foreground')}>
-              <n.icon className="size-4" /> {n.label}
-            </NavLink>
-          ))}
-        </div>
-
-        <div className={cn('flex items-center justify-between gap-2 border-b border-border px-4 py-3 sm:px-6', isTerm && 'py-2.5')}>
+        {/* celular: no Terminal o cabecalho some (cada linha vale ouro; a aba fica na nav de baixo) */}
+        <div className={cn('flex items-center justify-between gap-2 border-b border-border px-4 py-2 sm:px-6 sm:py-3', isTerm && 'hidden sm:flex sm:py-2.5')}>
           <div className="flex min-w-0 items-center gap-3">
             <h1 className="truncate text-base font-medium text-foreground">{titleOf(pathname)}</h1>
             <span className={cn('hidden items-center gap-1.5 text-xs sm:inline-flex', live ? 'text-success' : 'text-muted-foreground')} title={live ? 'tempo real conectado (SSE)' : 'tempo real desconectado — usando polling'}>
@@ -176,9 +215,10 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
           </div>
         </div>
 
-        <div className={cn('min-h-0 flex-1', isTerm ? 'flex flex-col px-3 pb-3 sm:px-6 sm:pb-5' : 'overflow-auto px-4 pb-6 pt-4 sm:px-6')}>
+        <div className={cn('min-h-0 flex-1', isTerm ? 'flex flex-col sm:px-6 sm:pb-5' : 'overflow-auto px-3 pb-6 pt-3 sm:px-6 sm:pt-4')}>
           {children}
         </div>
+        <MobileNav onLogout={onLogout} />
       </main>
     </div>
   )

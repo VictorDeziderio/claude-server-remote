@@ -62,7 +62,7 @@ export function Chip({ on, onClick, busy, labelOn, labelOff, Icon }) {
   return (
     <button type="button" onClick={onClick} disabled={busy} title="clique para alternar"
       className={cn(
-        'group/badge inline-flex h-5 shrink-0 items-center gap-1.5 rounded-4xl border px-2 py-0.5 text-xs font-medium transition-all disabled:pointer-events-none disabled:opacity-50',
+        'group/badge inline-flex h-9 shrink-0 items-center gap-1.5 rounded-4xl border px-3 py-0.5 text-xs font-medium transition-all disabled:pointer-events-none disabled:opacity-50 sm:h-5 sm:px-2', // alvo de toque maior no celular
         on ? 'border-transparent bg-success/15 text-success' : 'border-transparent bg-destructive/10 text-destructive'
       )}>
       {busy ? <Loader2 className="size-3 animate-spin" /> : <Icon className="size-3" />}
@@ -118,7 +118,12 @@ export function Toast({ flash, onClose, position = 'bottom' }) {
     return () => clearTimeout(t)
   }, [flash, onClose])
   if (!flash) return null
-  const pos = position === 'top-right' ? 'top-4 right-4 w-[min(92vw,26rem)]' : 'bottom-4 left-1/2 -translate-x-1/2 w-[min(92vw,40rem)]'
+  // centralizado com inset-x + mx-auto (e nao left-1/2 + -translate-x-1/2): a animacao fade-up
+  // mexe no transform e anulava o translate -> o aviso saia metade fora da tela no celular.
+  // No celular fica acima da navegacao de baixo.
+  const pos = position === 'top-right'
+    ? 'top-[calc(env(safe-area-inset-top)+1rem)] inset-x-0 mx-auto w-[min(92vw,26rem)] sm:left-auto sm:right-4 sm:mx-0'
+    : 'bottom-[calc(env(safe-area-inset-bottom)+5rem)] inset-x-0 mx-auto w-[min(92vw,40rem)] sm:bottom-4'
   return (
     <div className={cn('pointer-events-auto fixed z-[70] flex animate-fade-up items-start gap-2 rounded-lg border px-4 py-3 text-sm', pos,
       flash.ok ? 'border-success/30 bg-success/10 text-success' : 'border-destructive/30 bg-destructive/10 text-destructive')} role="status">

@@ -54,7 +54,7 @@ export const termWsUrl = (name, cols, rows, detach) => {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
   return `${proto}://${window.location.host}/ws/term?` + q({ name: name || 'shell', cols, rows, detach: detach ? '1' : '0' })
 }
-export const termCapture = (name) => get('/api/term/capture?' + q({ name: name || '' }))
+export const termCapture = (name, lines) => get('/api/term/capture?' + q(lines ? { name: name || '', lines } : { name: name || '' }))
 export const termSend = (name, text, key) => post('/api/term/send', { name, text, key })
 export const termExit = (name) => post('/api/term/exit', { name })
 export const termWindows = (name) => get('/api/term/windows?' + q({ name: name || '' }))

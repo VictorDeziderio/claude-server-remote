@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { SquareTerminal, Cpu, Maximize2, Minimize2, RefreshCw, ClipboardPaste, Eraser, ZoomIn, ZoomOut, Keyboard, Wifi, WifiOff, Loader2, AlertTriangle, Search, ChevronUp, ChevronDown, X, PanelRightOpen, PanelRightClose, Plus, AppWindow, Users, LogIn, Power } from 'lucide-react'
+import { SquareTerminal, Cpu, Maximize2, Minimize2, RefreshCw, ClipboardPaste, Eraser, ZoomIn, ZoomOut, Keyboard, Wifi, WifiOff, Loader2, AlertTriangle, Search, ChevronUp, ChevronDown, X, PanelRightOpen, PanelRightClose, Plus, AppWindow, Users, LogIn, Power, TextSelect, Ellipsis, Copy, Send } from 'lucide-react'
 import XTerm from '../components/XTerm.jsx'
 import Files from '../components/Files.jsx'
-import { Dot, IconBtn, ActivityDot, inputCls } from '../components/ui.jsx'
+import { Dot, IconBtn, ActivityDot, Btn, Modal, inputCls } from '../components/ui.jsx'
 import { Separator } from '../components/ui/separator.jsx'
+import { cn } from '../lib/utils.js'
+import { copyText } from '../lib/clipboard.js'
+import { EXTRA_KEYS, CLAUDE_ACTIONS, cycleMod, afterUse, applyModifiers, isUserInput, clampFont, defaultFont } from '../lib/termkeys.js'
 import * as api from '../api.js'
 
 const LS_FONT = 'cr.term.font',
@@ -26,31 +29,104 @@ const writeLS = (k, v) => {
     /* */
   }
 }
+const narrow = () => window.matchMedia('(max-width: 768px)').matches
+const coarse = () => window.matchMedia('(pointer: coarse)').matches
 
-// barra de teclas (mobile/tablet): sequencias enviadas direto ao PTY
-const KEYS = [
-  ['Esc', '\x1b'],
-  ['Tab', '\t'],
-  ['^C', '\x03'],
-  ['^D', '\x04'],
-  ['^Z', '\x1a'],
-  ['^L', '\x0c'],
-  ['^R', '\x12'],
-  ['↑', '\x1b[A'],
-  ['↓', '\x1b[B'],
-  ['←', '\x1b[D'],
-  ['→', '\x1b[C'],
-  ['Home', '\x1b[H'],
-  ['End', '\x1b[F'],
-  ['PgUp', '\x1b[5~'],
-  ['PgDn', '\x1b[6~'],
-  ['Enter', '\r'],
-]
 const STATUS = {
   connecting: { label: 'conectando…', Icon: Loader2, cls: 'text-amber-300', spin: true },
   open: { label: 'conectado', Icon: Wifi, cls: 'text-success drop-shadow-[0_0_6px_rgba(79,224,203,.5)]' },
   closed: { label: 'reconectando…', Icon: WifiOff, cls: 'text-amber-300' },
   error: { label: 'erro', Icon: AlertTriangle, cls: 'text-rose-300' },
+}
+
+// Botao da barra de teclas: NAO tira o foco do terminal (senao o teclado do celular fecha) e,
+// nas teclas com repeat (setas/PgUp/PgDn), segurar repete.
+function KeyBtn({ k, onPress, active, locked, hot }) {
+  const t = useRef({ delay: null, rep: null, repeated: false })
+  const stop = () => { clearTimeout(t.current.delay); clearInterval(t.current.rep) }
+  useEffect(() => stop, [])
+  const down = (e) => {
+    e.preventDefault()
+    if (!k.repeat) return
+    t.current.repeated = false
+    stop()
+    t.current.delay = setTimeout(() => {
+      t.current.rep = setInterval(() => { t.current.repeated = true; onPress(k) }, 70)
+    }, 380)
+  }
+  return (
+    <button
+      type="button"
+      title={k.title}
+      aria-pressed={k.mod ? active : undefined}
+      onPointerDown={down}
+      onMouseDown={(e) => e.preventDefault()}
+      onPointerUp={stop}
+      onPointerLeave={stop}
+      onPointerCancel={stop}
+      onClick={() => { if (!t.current.repeated) onPress(k); t.current.repeated = false }}
+      className={cn(
+        'h-10 min-w-[2.75rem] shrink-0 select-none rounded-md border px-2.5 font-mono text-[13px] transition active:scale-95 sm:h-8 sm:min-w-0 sm:text-xs',
+        active ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-accent text-slate-200 hover:bg-secondary hover:text-white active:bg-primary/30',
+        locked && 'underline decoration-2 underline-offset-4',
+        hot && 'border-destructive/60 text-destructive',
+      )}
+    >
+      {k.label}
+    </button>
+  )
+}
+
+// "Selecionar texto": o historico do tmux como TEXTO normal da pagina -> a selecao nativa do
+// celular (segurar + arrastar as alcas + Copiar) funciona; no xterm/tmux o dedo nao seleciona.
+function SelectSheet({ target, font, onClose, onFlash }) {
+  const [text, setText] = useState(null)
+  const preRef = useRef(null)
+  useEffect(() => {
+    api.termCapture(target, 2000)
+      .then((r) => setText(r.ok ? r.content : `[${r.msg || 'erro'}]`))
+      .catch((e) => setText(`[${e.message}]`))
+  }, [target])
+  useEffect(() => {
+    if (text != null && preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight
+  }, [text])
+  const copy = async (all) => {
+    const sel = all ? '' : String(window.getSelection?.() || '')
+    const s = sel || text || ''
+    const ok = await copyText(s)
+    onFlash?.(ok ? { ok: true, msg: `copied (${s.length} chars)` } : { ok: false, msg: 'the browser blocked copying — select the text and use the system Copy' })
+    if (ok) onClose()
+  }
+  return (
+    <div className="fixed inset-0 z-[70] flex flex-col bg-background pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]" role="dialog" aria-modal="true" aria-label="Select text">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+        <TextSelect className="size-4 text-primary" />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">Select text</span>
+        <Btn variant="accent" onClick={() => copy(false)}><Copy className="size-4" /> Copy</Btn>
+        <IconBtn title="close" onClick={onClose}><X className="size-4" /></IconBtn>
+      </div>
+      <p className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">Long-press and drag to select, then tap Copy. Without a selection, Copy copies everything.</p>
+      <pre ref={preRef} className="min-h-0 flex-1 select-text overflow-auto whitespace-pre-wrap break-all bg-black p-3 font-mono leading-snug text-[#E8E6E1]" style={{ fontSize: font, WebkitUserSelect: 'text', userSelect: 'text' }}>
+        {text == null ? 'loading…' : text}
+      </pre>
+    </div>
+  )
+}
+
+// Colar sem permissao de leitura da area de transferencia (HTTP, iOS negou...): caixa de texto
+// onde o "Colar" nativo do celular funciona sempre.
+function PasteSheet({ onSend, onClose }) {
+  const [v, setV] = useState('')
+  return (
+    <Modal title="Paste into terminal" icon={ClipboardPaste} onClose={onClose}>
+      <p className="mb-2 text-xs text-muted-foreground">The browser did not allow reading the clipboard. Long-press the box below, choose Paste, then Send.</p>
+      <textarea autoFocus value={v} onChange={(e) => setV(e.target.value)} rows={5} className={cn(inputCls, 'w-full font-mono')} placeholder="paste here" />
+      <div className="mt-3 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn variant="accent" disabled={!v} onClick={() => onSend(v)}><Send className="size-4" /> Send</Btn>
+      </div>
+    </Modal>
+  )
 }
 
 // /terminal/:name -> "shell" (bash em /root) ou nome de um projeto (sessao claude-<projeto>)
@@ -60,8 +136,9 @@ export default function TerminalPage({ data, activity, onFlash }) {
   const termRef = useRef(null)
   const [status, setStatus] = useState('connecting')
   const [statusMsg, setStatusMsg] = useState('')
-  const [font, setFont] = useState(() => readLS(LS_FONT, 13))
-  const [keys, setKeys] = useState(() => readLS(LS_KEYS, window.matchMedia('(max-width: 768px)').matches))
+  const [statusInfo, setStatusInfo] = useState({})
+  const [font, setFont] = useState(() => clampFont(readLS(LS_FONT, defaultFont(narrow()))))
+  const [keys, setKeys] = useState(() => readLS(LS_KEYS, narrow()))
   const [full, setFull] = useState(false)
   const [detach, setDetach] = useState(false)
   const [search, setSearch] = useState(null) // null | string
@@ -70,8 +147,17 @@ export default function TerminalPage({ data, activity, onFlash }) {
   const [sidePath, setSidePath] = useState('')
   const [win, setWin] = useState({ windows: [], clients: 0 })
   const [killIdx, setKillIdx] = useState(null)
+  const [mods, setMods] = useState({ ctrl: 'off', alt: 'off' })
+  const [menu, setMenu] = useState(false)
+  const [selecting, setSelecting] = useState(false)
+  const [pasting, setPasting] = useState(false)
   const searchRef = useRef(null)
   const dragRef = useRef(null)
+  const modsRef = useRef(mods)
+  modsRef.current = mods
+  const pinchRef = useRef(font)
+  const fontRef = useRef(font)
+  fontRef.current = font
 
   const projects = data?.projects || []
   const target = name === 'shell' || projects.some((p) => p.name === name) ? name : 'shell'
@@ -83,9 +169,10 @@ export default function TerminalPage({ data, activity, onFlash }) {
     setDetach(false)
   }, [target])
 
-  const onStatus = useCallback((s, msg) => {
+  const onStatus = useCallback((s, msg, info) => {
     setStatus(s)
     setStatusMsg(msg || '')
+    setStatusInfo(info || {})
   }, [])
   const onCopy = useCallback((ok, text) => onFlash?.(ok ? { ok: true, msg: `copiado (${text.length} caractere${text.length === 1 ? '' : 's'})` } : { ok: false, msg: 'o navegador bloqueou a cópia — use Ctrl+Shift+C' }), [onFlash])
   const powerOn = async () => {
@@ -93,11 +180,12 @@ export default function TerminalPage({ data, activity, onFlash }) {
     onFlash?.(r)
     if (r.ok) setTimeout(() => termRef.current?.reconnect(), 400)
   }
-  const setFontSafe = (n) => {
-    const v = Math.min(22, Math.max(10, n))
+  const setFontSafe = useCallback((n) => {
+    const v = clampFont(n)
+    if (v === fontRef.current) return
     setFont(v)
     writeLS(LS_FONT, v)
-  }
+  }, [])
   const toggleKeys = () =>
     setKeys((k) => {
       writeLS(LS_KEYS, !k)
@@ -108,11 +196,47 @@ export default function TerminalPage({ data, activity, onFlash }) {
       writeLS(LS_SIDE, !s)
       return !s
     })
-  const press = (seq) => {
-    termRef.current?.send(seq)
-    termRef.current?.focus()
+
+  // Ctrl/Alt grudentos: aplicados a PROXIMA tecla do teclado do celular (ou da barra)
+  const withMods = useCallback((d) => {
+    const m = modsRef.current
+    if ((m.ctrl === 'off' && m.alt === 'off') || !isUserInput(d)) return d
+    const out = applyModifiers(d, { ctrl: m.ctrl !== 'off', alt: m.alt !== 'off' })
+    const next = { ctrl: afterUse(m.ctrl), alt: afterUse(m.alt) }
+    modsRef.current = next
+    setMods(next)
+    return out
+  }, [])
+  // no celular NAO devolve o foco ao terminal (abriria o teclado a cada toque num botao)
+  const refocus = () => { if (!coarse()) termRef.current?.focus() }
+  const paste = async () => {
+    const ok = await termRef.current?.paste()
+    if (!ok) setPasting(true)
+  }
+  const pressKey = (k) => {
+    if (k.mod) {
+      setMods((m) => {
+        const next = { ...m, [k.mod]: cycleMod(m[k.mod]) }
+        modsRef.current = next
+        return next
+      })
+      return
+    }
+    if (k.action === 'paste') return paste()
+    termRef.current?.send(withMods(k.seq))
+    refocus()
+  }
+  const pressAction = (a) => {
+    termRef.current?.send(a.seq)
+    termRef.current?.scrollToBottom()
+    refocus()
   }
   const toggleSearch = useCallback(() => setSearch((s) => (s === null ? '' : null)), [])
+  const onLongPress = useCallback(() => setSelecting(true), [])
+  const onPinch = useCallback((scale, phase) => {
+    if (phase === 'start') pinchRef.current = fontRef.current
+    else if (phase === 'move') setFontSafe(pinchRef.current * scale)
+  }, [setFontSafe])
 
   // janelas do tmux (lista a cada 5s enquanto a pagina esta aberta)
   const loadWin = useCallback(
@@ -130,12 +254,14 @@ export default function TerminalPage({ data, activity, onFlash }) {
     const t = setInterval(loadWin, 5000)
     return () => clearInterval(t)
   }, [loadWin])
+  // conectou (ou reconectou): atualiza logo a lista de janelas/clientes
+  useEffect(() => { if (status === 'open') loadWin() }, [status, loadWin])
   const winAction = async (action, index) => {
     const r = await api.termWindow(target, action, index)
     if (r.msg) onFlash?.(r)
     setKillIdx(null)
     loadWin()
-    termRef.current?.focus()
+    refocus()
   }
 
   useEffect(() => {
@@ -148,11 +274,17 @@ export default function TerminalPage({ data, activity, onFlash }) {
   }, [full])
   useEffect(() => {
     setTimeout(() => termRef.current?.fit(), 60)
-  }, [full, keys, side, sideW, search])
+  }, [full, keys, side, sideW, search, target])
   useEffect(() => {
     if (search !== null) setTimeout(() => searchRef.current?.focus(), 30)
     else termRef.current?.clearSearch()
   }, [search])
+  useEffect(() => {
+    if (!menu) return undefined
+    const close = () => setMenu(false)
+    const t = setTimeout(() => document.addEventListener('click', close), 0)
+    return () => { clearTimeout(t); document.removeEventListener('click', close) }
+  }, [menu])
 
   // redimensiona o painel lateral arrastando a divisoria
   const onDragStart = (e) => {
@@ -179,13 +311,16 @@ export default function TerminalPage({ data, activity, onFlash }) {
   const S = STATUS[status] || STATUS.connecting
   const proj = projects.find((p) => p.name === target)
   const actOf = (p) => (activity && activity[p.session] && activity[p.session].state) || p.activity || 'off'
-  const tabCls = (active) => `relative flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${active ? 'border border-transparent bg-primary/15 text-primary ring-1 ring-primary/25 after:absolute after:-bottom-2 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-primary after:content-[""]' : 'bg-accent text-slate-400 border hover:bg-secondary hover:text-slate-200'}`
+  const waiting = proj && proj.claudeRunning && actOf(proj) === 'prompt'
+  const tabCls = (active) => `relative flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:h-auto sm:py-1.5 sm:text-xs ${active ? 'border border-transparent bg-primary/15 text-primary ring-1 ring-primary/25' : 'bg-accent text-slate-400 border hover:bg-secondary hover:text-slate-200'}`
+  const lost = status === 'closed' || (status === 'connecting' && statusInfo.attempt > 0)
+  const menuItem = 'flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-sm text-foreground hover:bg-muted'
 
   return (
-    <div className={`flex min-h-0 flex-1 flex-col rounded-lg bg-card border ${full ? 'fixed inset-0 z-50 rounded-none' : ''}`}>
+    <div className={cn('flex min-h-0 flex-1 flex-col bg-card sm:rounded-lg sm:border', full && 'fixed inset-0 z-[60] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:rounded-none')}>
       {/* Barra: sessoes + status + acoes */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
+      <div className="flex items-center gap-2 border-b border-border px-2 py-1.5 sm:flex-wrap sm:px-3 sm:py-2">
+        <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
           <button type="button" onClick={() => navigate('/terminal/shell')} className={tabCls(target === 'shell')} title="bash em /root (sessão cr-shell)">
             <SquareTerminal className="h-3.5 w-3.5" /> Shell
           </button>
@@ -195,10 +330,10 @@ export default function TerminalPage({ data, activity, onFlash }) {
             </button>
           ))}
         </div>
-        <span className={`inline-flex items-center gap-1.5 text-xs ${S.cls}`} title={statusMsg}>
-          <S.Icon className={`h-3.5 w-3.5 ${S.spin ? 'animate-spin' : ''}`} /> <span className="hidden sm:inline">{S.label}</span>
+        <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs ${S.cls}`} title={statusMsg || S.label} role="status" aria-label={S.label}>
+          <S.Icon className={`h-4 w-4 sm:h-3.5 sm:w-3.5 ${S.spin ? 'animate-spin' : ''}`} /> <span className="hidden sm:inline">{S.label}</span>
         </span>
-        <div className="flex items-center gap-1">
+        <div className="hidden items-center gap-1 sm:flex">
           <IconBtn title="buscar no terminal (Ctrl+Shift+F)" active={search !== null} onClick={toggleSearch}>
             <Search className="h-4 w-4" />
           </IconBtn>
@@ -210,8 +345,11 @@ export default function TerminalPage({ data, activity, onFlash }) {
             <ZoomIn className="h-4 w-4" />
           </IconBtn>
           <Separator orientation="vertical" className="mx-1 h-5" />
-          <IconBtn title="colar da área de transferência (ou botão direito)" onClick={() => termRef.current?.paste()}>
+          <IconBtn title="colar da área de transferência (ou botão direito)" onClick={paste}>
             <ClipboardPaste className="h-4 w-4" />
+          </IconBtn>
+          <IconBtn title="Select text (copy from the scrollback)" onClick={() => setSelecting(true)}>
+            <TextSelect className="h-4 w-4" />
           </IconBtn>
           <IconBtn title="limpar a tela (local)" onClick={() => termRef.current?.clear()}>
             <Eraser className="h-4 w-4" />
@@ -233,37 +371,59 @@ export default function TerminalPage({ data, activity, onFlash }) {
         </div>
       </div>
 
-      {/* Janelas do tmux + clientes */}
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-1.5 text-[11px]">
-        <AppWindow className="h-3.5 w-3.5 text-slate-500" />
-        {win.windows.map((w) => (
-          <span key={w.index} className={`inline-flex items-center overflow-hidden rounded-md ${w.active ? 'border border-transparent ring-1 ring-primary/25 bg-primary/15 text-primary' : 'border border-border bg-accent text-slate-400'}`}>
-            <button type="button" onClick={() => winAction('select', w.index)} className="px-2 py-0.5 hover:text-white" title={`janela ${w.index} · ${w.cmd}`}>
-              {w.index}:{w.name}
-            </button>
-            {win.windows.length > 1 &&
-              (killIdx === w.index ? (
-                <button type="button" onClick={() => winAction('kill', w.index)} className="bg-rose-500/20 px-1.5 py-0.5 text-rose-200" title="confirmar fechar">
-                  fechar?
-                </button>
-              ) : (
-                <button type="button" onClick={() => setKillIdx(w.index)} className="px-1 py-0.5 text-slate-500 hover:text-rose-300" title="fechar janela">
-                  <X className="h-3 w-3" />
-                </button>
-              ))}
-          </span>
-        ))}
-        <button type="button" onClick={() => winAction('new')} className="inline-flex items-center gap-0.5 rounded-md bg-accent px-1.5 py-0.5 text-slate-400 border hover:text-white" title="nova janela tmux (Ctrl+b c)">
-          <Plus className="h-3 w-3" />
-        </button>
-        <span className="ml-auto inline-flex items-center gap-1 text-slate-500" title="clientes tmux conectados nesta sessão (painel + Console)">
-          <Users className="h-3 w-3" /> {win.clients}
-        </span>
-        {win.clients > 1 && !detach && (
-          <button type="button" onClick={() => setDetach(true)} className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-amber-300 ring-1 ring-amber-500/25 hover:bg-amber-500/20" title="derruba os outros clientes (tamanho da tela passa a ser o seu)">
-            <LogIn className="h-3 w-3" /> assumir sessão
+      {/* Janelas do tmux + clientes (+ ferramentas no celular) */}
+      <div className="flex items-center gap-1.5 border-b border-border px-2 py-1 text-[11px] sm:flex-wrap sm:px-3 sm:py-1.5">
+        <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
+          <AppWindow className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+          {win.windows.map((w) => (
+            <span key={w.index} className={`inline-flex shrink-0 items-center overflow-hidden rounded-md ${w.active ? 'border border-transparent ring-1 ring-primary/25 bg-primary/15 text-primary' : 'border border-border bg-accent text-slate-400'}`}>
+              <button type="button" onClick={() => winAction('select', w.index)} className="px-2 py-1.5 hover:text-white sm:py-0.5" title={`janela ${w.index} · ${w.cmd}`}>
+                {w.index}:{w.name}
+              </button>
+              {win.windows.length > 1 &&
+                (killIdx === w.index ? (
+                  <button type="button" onClick={() => winAction('kill', w.index)} className="bg-rose-500/20 px-1.5 py-1.5 text-rose-200 sm:py-0.5" title="confirmar fechar">
+                    fechar?
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => setKillIdx(w.index)} className="px-1.5 py-1.5 text-slate-500 hover:text-rose-300 sm:px-1 sm:py-0.5" title="fechar janela">
+                    <X className="h-3 w-3" />
+                  </button>
+                ))}
+            </span>
+          ))}
+          <button type="button" onClick={() => winAction('new')} className="inline-flex shrink-0 items-center gap-0.5 rounded-md border bg-accent px-2 py-1.5 text-slate-400 hover:text-white sm:px-1.5 sm:py-0.5" title="nova janela tmux (Ctrl+b c)">
+            <Plus className="h-3 w-3" />
           </button>
-        )}
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1 pl-1 text-slate-500" title="clientes tmux conectados nesta sessão (painel + Console)">
+            <Users className="h-3 w-3" /> {win.clients}
+          </span>
+          {win.clients > 1 && !detach && (
+            <button type="button" onClick={() => setDetach(true)} className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-amber-300 ring-1 ring-amber-500/25 hover:bg-amber-500/20 sm:py-0.5" title="derruba os outros clientes (tamanho da tela passa a ser o seu)">
+              <LogIn className="h-3 w-3" /> assumir sessão
+            </button>
+          )}
+        </div>
+        {/* ferramentas no celular: fonte, selecionar texto, teclas, mais */}
+        <div className="flex shrink-0 items-center gap-1 sm:hidden">
+          <IconBtn title="smaller font" onClick={() => setFontSafe(font - 1)}><ZoomOut className="h-4 w-4" /></IconBtn>
+          <IconBtn title="bigger font" onClick={() => setFontSafe(font + 1)}><ZoomIn className="h-4 w-4" /></IconBtn>
+          <IconBtn title="Select text" onClick={() => setSelecting(true)}><TextSelect className="h-4 w-4" /></IconBtn>
+          <IconBtn title="extra keys" active={keys} onClick={toggleKeys}><Keyboard className="h-4 w-4" /></IconBtn>
+          <div className="relative">
+            <IconBtn title="more" active={menu} onClick={() => setMenu((m) => !m)}><Ellipsis className="h-4 w-4" /></IconBtn>
+            {menu && (
+              <div className="absolute right-0 top-full z-[65] mt-1 w-56 rounded-lg border border-border bg-popover p-1 shadow-xl" role="menu">
+                <button type="button" className={menuItem} onClick={paste}><ClipboardPaste className="size-4" /> Paste</button>
+                <button type="button" className={menuItem} onClick={toggleSearch}><Search className="size-4" /> Search</button>
+                <button type="button" className={menuItem} onClick={() => termRef.current?.clear()}><Eraser className="size-4" /> Clear screen (local)</button>
+                <button type="button" className={menuItem} onClick={() => termRef.current?.reconnect()}><RefreshCw className="size-4" /> Reconnect</button>
+                <button type="button" className={menuItem} onClick={() => setFull((f) => !f)}>{full ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />} {full ? 'Exit full screen' : 'Full screen'}</button>
+                <div className="px-3 pb-1.5 pt-1 text-[11px] text-muted-foreground">font {font}px · pinch to zoom</div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Busca */}
@@ -275,7 +435,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
             termRef.current?.findNext(search)
           }}
         >
-          <Search className="h-3.5 w-3.5 text-slate-500" />
+          <Search className="h-3.5 w-3.5 shrink-0 text-slate-500" />
           <input
             ref={searchRef}
             value={search}
@@ -291,7 +451,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
               }
             }}
             placeholder="buscar no histórico do terminal…"
-            className={`${inputCls} w-72 py-1`}
+            className={`${inputCls} min-w-0 flex-1 py-1 sm:w-72 sm:flex-none`}
           />
           <IconBtn title="anterior (Shift+Enter)" onClick={() => termRef.current?.findPrevious(search)}>
             <ChevronUp className="h-3.5 w-3.5" />
@@ -307,13 +467,22 @@ export default function TerminalPage({ data, activity, onFlash }) {
 
       {/* Terminal (+ arquivos ao lado) */}
       <div className="flex min-h-0 flex-1">
-        <div className="relative min-h-0 min-w-0 flex-1 p-1">
-          <XTerm ref={termRef} target={target} fontSize={font} detach={detach} onStatus={onStatus} onSearchToggle={toggleSearch} onCopy={onCopy} className="rounded-lg" />
+        <div className="relative min-h-0 min-w-0 flex-1 sm:p-1">
+          <XTerm ref={termRef} target={target} fontSize={font} detach={detach} onStatus={onStatus} onSearchToggle={toggleSearch} onCopy={onCopy} onLongPress={onLongPress} onPinch={onPinch} transformInput={withMods} className="sm:rounded-lg" />
+          {lost && (
+            <div className="absolute inset-x-0 top-2 z-10 mx-auto flex w-fit max-w-[92%] items-center gap-2 rounded-lg bg-amber-950/90 px-3 py-2 text-xs text-amber-100 ring-1 ring-amber-500/30" role="status">
+              <WifiOff className="size-4 shrink-0 text-amber-300" />
+              <span>{status === 'closed' ? `Connection lost — retrying in ${Math.max(1, Math.round((statusInfo.retryIn || 0) / 1000))}s` : `Reconnecting… (attempt ${statusInfo.attempt})`}</span>
+              <button type="button" className="rounded-md bg-amber-500/20 px-2.5 py-1.5 font-medium text-amber-100 ring-1 ring-amber-500/40 hover:bg-amber-500/30" onClick={() => termRef.current?.reconnect()}>
+                Reconnect now
+              </button>
+            </div>
+          )}
           {status === 'error' && (
-            <div className="absolute inset-x-0 bottom-3 mx-auto flex w-fit items-center gap-2 rounded-lg bg-rose-950/90 px-3 py-2 text-xs text-rose-100 ring-1 ring-rose-500/30">
+            <div className="absolute inset-x-0 bottom-3 z-10 mx-auto flex w-fit max-w-[92%] flex-wrap items-center gap-2 rounded-lg bg-rose-950/90 px-3 py-2 text-xs text-rose-100 ring-1 ring-rose-500/30">
               {statusMsg || 'erro'} —
               {proj && proj.enabled === false ? (
-                <button type="button" className="inline-flex items-center gap-1 rounded-md bg-emerald-500/20 px-2 py-0.5 text-emerald-200 ring-1 ring-emerald-500/30 hover:bg-emerald-500/30" onClick={powerOn}>
+                <button type="button" className="inline-flex items-center gap-1 rounded-md bg-emerald-500/20 px-2 py-1 text-emerald-200 ring-1 ring-emerald-500/30 hover:bg-emerald-500/30" onClick={powerOn}>
                   <Power className="h-3 w-3" /> ligar o projeto
                 </button>
               ) : (
@@ -334,19 +503,27 @@ export default function TerminalPage({ data, activity, onFlash }) {
         )}
       </div>
 
-      {/* Barra de teclas (mobile) */}
+      {/* Barras de teclas (celular): atalhos do Claude + teclas extras */}
       {keys && (
-        <div className="flex gap-1 overflow-x-auto border-t border-border px-2 py-1.5">
-          {KEYS.map(([label, seq]) => (
-            <button key={label} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => press(seq)} className="shrink-0 rounded-md bg-accent px-2.5 py-1.5 font-mono text-xs text-slate-300 border transition hover:bg-secondary hover:text-white active:bg-primary/30">
-              {label}
-            </button>
-          ))}
+        <div className="border-t border-border bg-sidebar">
+          {target !== 'shell' && (
+            <div className="no-scrollbar flex items-center gap-1 overflow-x-auto px-2 pt-1.5" aria-label="Claude shortcuts">
+              <span className={cn('shrink-0 pr-1 text-[10px] uppercase tracking-wide', waiting ? 'text-destructive' : 'text-muted-foreground')}>{waiting ? 'waiting' : 'claude'}</span>
+              {CLAUDE_ACTIONS.map((a) => (
+                <KeyBtn key={a.id} k={a} onPress={pressAction} hot={waiting && /^a\d$/.test(a.id)} />
+              ))}
+            </div>
+          )}
+          <div className="no-scrollbar flex items-center gap-1 overflow-x-auto px-2 py-1.5" aria-label="extra keys">
+            {EXTRA_KEYS.map((k) => (
+              <KeyBtn key={k.id} k={k} onPress={pressKey} active={k.mod ? mods[k.mod] !== 'off' : false} locked={k.mod ? mods[k.mod] === 'lock' : false} />
+            ))}
+          </div>
         </div>
       )}
 
       {!full && (
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-1.5 text-xs text-slate-500">
+        <p className="hidden flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-1.5 text-xs text-slate-500 sm:flex">
           <span className="inline-flex items-center gap-1 font-mono">
             <Cpu className="h-3 w-3" /> {proj ? `sessão ${proj.session} em ${proj.dir}` : 'bash em /root (sessão cr-shell)'}
           </span>
@@ -359,6 +536,9 @@ export default function TerminalPage({ data, activity, onFlash }) {
           )}
         </p>
       )}
+
+      {selecting && <SelectSheet target={target} font={Math.max(12, font)} onClose={() => setSelecting(false)} onFlash={onFlash} />}
+      {pasting && <PasteSheet onClose={() => setPasting(false)} onSend={(t) => { termRef.current?.pasteText(t); setPasting(false) }} />}
     </div>
   )
 }

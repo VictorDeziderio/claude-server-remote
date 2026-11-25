@@ -4,6 +4,10 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import './index.css'
 import { initPwaHooks } from './lib/push.js'
+import { installViewport } from './lib/viewport.js'
+
+// celular: altura visivel real (teclado virtual) -> --app-h / data-kb no <html>
+installViewport()
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

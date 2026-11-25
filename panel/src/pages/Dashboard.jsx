@@ -12,13 +12,13 @@ const SESSION_MODES = [
   ['pinned', 'Sessão fixa'],
 ]
 
-function StatItem({ icon: Icon, label, children, warn }) {
+function StatItem({ icon: Icon, label, children, warn, className = '' }) {
   return (
-    <div className={`flex items-start gap-3 rounded-xl border bg-accent p-3 ${warn ? 'border-amber-500/40' : 'border-border'}`}>
+    <div className={`flex items-start gap-3 rounded-xl border bg-accent px-3 py-2.5 sm:p-3 ${warn ? 'border-amber-500/40' : 'border-border'} ${className}`}>
       <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${warn ? 'text-amber-300' : 'text-primary'}`} />
       <div className="min-w-0 flex-1">
         <div className="text-[11px] text-muted-foreground">{label}</div>
-        <div className="truncate text-sm text-slate-100">{children}</div>
+        <div className="break-words text-sm text-slate-100 sm:truncate">{children}</div>
       </div>
     </div>
   )
@@ -104,7 +104,7 @@ export function HealthCard({ onFlash, compact }) {
             host há {fmtUptime(h.uptime)} · painel há {fmtUptime(h.panel?.uptime)}
           </div>
         </div>
-        <div className={`rounded-xl border bg-accent p-3 ${c.updateAvailable ? 'border-amber-500/40' : 'border-border'}`}>
+        <div className={`col-span-2 rounded-xl border bg-accent p-3 lg:col-span-1 ${c.updateAvailable ? 'border-amber-500/40' : 'border-border'}`}>
           <div className="text-[11px] text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
               <Tag className="h-3.5 w-3.5 text-primary" /> Claude Code
@@ -114,7 +114,7 @@ export function HealthCard({ onFlash, compact }) {
             {c.currentNum || c.current || '?'}
             {c.latest && <span className="text-slate-500"> · npm {c.latest}</span>}
           </div>
-          <div className="mt-1.5 flex items-center gap-2">
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
             {c.updateAvailable ? (
               <Btn size="sm" variant="accent" busy={busy} onClick={update} title="npm i -g @anthropic-ai/claude-code@latest">
                 <ArrowUpCircle className="h-3.5 w-3.5" /> Atualizar p/ {c.latest}
@@ -219,11 +219,11 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
   const drawerProj = drawer && projects.find((p) => p.name === drawer)
 
   return (
-    <>
+    <div className="flex flex-col gap-4 sm:gap-5">
       {/* Resumo */}
-      <section className="mb-5 rounded-lg bg-card p-5 border">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <StatItem icon={UserRound} label="Conta Claude" warn={!login.logged}>
+      <section className="order-1 rounded-lg border bg-card p-3 sm:p-5">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
+          <StatItem icon={UserRound} label="Conta Claude" warn={!login.logged} className="col-span-2 sm:col-span-1">
             <Link to={login.logged ? '/account' : '/account?login=1'} className="inline-flex items-center gap-2 hover:underline">
               <Dot on={login.logged} /> {login.logged ? login.account || 'logado' : 'deslogado — clique p/ logar'}
             </Link>
@@ -244,13 +244,15 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
         <div className="mt-4 border-t border-white/6 pt-4 empty:hidden">
           <UsageWidget />
         </div>
-        <div className="mt-4 border-t border-white/6 pt-4">
-          <HealthCard onFlash={onFlash} />
-        </div>
+      </section>
+
+      {/* Saude do host: no celular vem DEPOIS dos projetos (o que se abre o painel p/ ver) */}
+      <section className="order-3 rounded-lg border bg-card p-3 sm:order-2 sm:p-5">
+        <HealthCard onFlash={onFlash} />
       </section>
 
       {/* Projetos */}
-      <section className="space-y-3">
+      <section className="order-2 space-y-3 sm:order-3">
         <div className="flex items-center justify-between px-1">
           <h2 className="text-sm font-medium text-slate-200">
             Projetos <span className="font-mono text-xs text-slate-500">({projects.length})</span>
@@ -277,29 +279,40 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
           const on = p.enabled !== false
           const accent = !on ? 'bg-white/10' : act === 'prompt' ? 'bg-rose-400 animate-pulse' : act === 'busy' ? 'bg-amber-400 animate-pulse' : p.claudeRunning ? 'bg-success/60' : 'bg-white/10'
           return (
-            <div key={p.name} className={`relative animate-fade-up overflow-hidden rounded-lg bg-card p-5 border transition duration-200 hover:-translate-y-px hover:border-primary/30 ${!on ? 'opacity-70' : ''}`} style={{ animationDelay: `${idx * 40}ms` }}>
+            <div key={p.name} className={`relative animate-fade-up overflow-hidden rounded-lg border bg-card p-4 transition duration-200 hover:border-primary/30 sm:p-5 sm:hover:-translate-y-px ${!on ? 'opacity-70' : ''}`} style={{ animationDelay: `${idx * 40}ms` }}>
               <div className={`absolute inset-y-0 left-0 w-[3px] ${accent}`} />
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link to={'/terminal/' + encodeURIComponent(p.name)} className="text-base font-semibold text-white hover:underline">
-                      {p.name}
-                    </Link>
-                    {!on ? <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-[11px] text-slate-400 border">desligado</span> : p.claudeRunning ? <ActivityBadge state={act} since={p.activitySince} /> : <ActivityBadge state="off" />}
-                    {p.paused && <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-300" title="Claude pausado por inatividade — não consome CPU/memória até retomar">Pausado</span>}
+                  <div className="flex items-start gap-2">
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                      <Link to={'/terminal/' + encodeURIComponent(p.name)} className="truncate text-lg font-semibold text-white hover:underline sm:text-base">
+                        {p.name}
+                      </Link>
+                      {!on ? <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-[11px] text-slate-400 border">desligado</span> : p.claudeRunning ? <ActivityBadge state={act} since={p.activitySince} /> : <ActivityBadge state="off" />}
+                      {p.paused && <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-300" title="Claude pausado por inatividade — não consome CPU/memória até retomar">Pausado</span>}
+                    </div>
+                    {/* celular: configurar fica no canto do cartao (no desktop, no fim dos botoes) */}
+                    <Btn variant="ghost" className="-mr-2 -mt-1 sm:hidden" onClick={() => setDrawer(p.name)} title="configurar: primeira linha, renomear, histórico, backup, excluir">
+                      <Settings2 className="h-4 w-4" />
+                    </Btn>
                   </div>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+                  {act === 'prompt' && on && p.claudeRunning && (
+                    <Link to={'/terminal/' + encodeURIComponent(p.name)} className="mt-2 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      <SquareTerminal className="h-4 w-4 shrink-0" /> Claude is waiting for your answer — open the terminal
+                    </Link>
+                  )}
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-400 sm:mt-1.5 sm:gap-y-1">
                     <span className="inline-flex items-center gap-1.5">
                       <Activity className="h-3.5 w-3.5 text-slate-500" /> tmux <Dot on={p.up} /> {p.up ? 'de pé' : 'fora'}
                     </span>
                     <span className="inline-flex items-center gap-1.5">
                       <Cpu className="h-3.5 w-3.5 text-slate-500" /> Claude <Dot on={p.claudeRunning} /> {p.claudeRunning ? 'rodando' : 'parado'}
                     </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <Radio className="h-3.5 w-3.5 text-slate-500" /> {p.autoRemote ? <code className="font-mono text-xs text-slate-300">{p.remoteCmd}</code> : <span className="text-slate-500">remote desligado</span>}
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      <Radio className="h-3.5 w-3.5 shrink-0 text-slate-500" /> {p.autoRemote ? <code className="truncate font-mono text-xs text-slate-300">{p.remoteCmd}</code> : <span className="text-slate-500">remote desligado</span>}
                     </span>
                     {p.initLine && (
-                      <span className="truncate text-slate-500" title={p.initLine}>
+                      <span className="w-full truncate text-slate-500 sm:w-auto" title={p.initLine}>
                         1ª linha: “{p.initLine.slice(0, 60)}
                         {p.initLine.length > 60 ? '…' : ''}”
                       </span>
@@ -311,33 +324,43 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                     <Chip Icon={p.autoRemote ? Wifi : WifiOff} on={p.autoRemote} busy={busy === `cfg:${p.name}:autoRemote`} labelOn="Remote: ON" labelOff="Remote: OFF" onClick={() => run(`cfg:${p.name}:autoRemote`, () => api.setConfig(p.name, 'autoRemote', !p.autoRemote))} />
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  {p.remoteUrl && (
-                    <a href={p.remoteUrl} target="_blank" rel="noreferrer" title="abre/reconecta o controle remoto — o link continua válido mesmo se você fechou a aba no PC" className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500/90 px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-sky-500">
-                      <ExternalLink className="h-3.5 w-3.5" /> Abrir remote
+                {/* acoes: no celular, grade de botoes grandes (1 toque, cabe o polegar) */}
+                <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
+                  <Link to={'/terminal/' + encodeURIComponent(p.name)} className={`${act === 'prompt' && on ? 'ring-2 ring-destructive/60 ' : ''}inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 sm:h-auto sm:py-1.5 sm:text-[13px]`}>
+                    <SquareTerminal className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> Terminal
+                  </Link>
+                  {p.remoteUrl ? (
+                    <a href={p.remoteUrl} target="_blank" rel="noreferrer" title="abre/reconecta o controle remoto — o link continua válido mesmo se você fechou a aba no PC" className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-sky-500/90 px-3 text-sm font-medium text-white transition hover:bg-sky-500 sm:h-auto sm:py-1.5 sm:text-[13px]">
+                      <ExternalLink className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> Abrir remote
                     </a>
+                  ) : (
+                    <Link to={'/files/projects/' + encodeURIComponent(p.name)} className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-secondary px-3 text-sm font-medium text-slate-100 transition hover:bg-secondary/80 sm:hidden">
+                      <FolderOpen className="h-4 w-4" /> Arquivos
+                    </Link>
                   )}
-                  <Link to={'/terminal/' + encodeURIComponent(p.name)} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-primary">
-                    <SquareTerminal className="h-3.5 w-3.5" /> Terminal
-                  </Link>
-                  <Link to={'/files/projects/' + encodeURIComponent(p.name)} className="inline-flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 text-[13px] font-medium text-slate-100 transition hover:bg-secondary/80">
-                    <FolderOpen className="h-3.5 w-3.5" /> Arquivos
-                  </Link>
-                  <Btn busy={busy === `restart:${p.name}`} onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title={on ? 'mata a sessão tmux (fecha remote + Claude) → reabre o Claude → religa o remote → envia a primeira linha' : 'liga o projeto e sobe a sessão'}>
+                  {on && p.claudeRunning && (
+                    <Btn busy={busy === `remote:${p.name}`} className="h-11 justify-center sm:h-8" onClick={() => run(`remote:${p.name}`, () => api.reconnectRemote(p.name))} title="re-emite o /remote-control sem reiniciar (preserva a conversa)">
+                      <Radio className="h-3.5 w-3.5" /> /remote-control
+                    </Btn>
+                  )}
+                  <Btn busy={busy === `restart:${p.name}`} className="h-11 justify-center sm:h-8" onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title={on ? 'mata a sessão tmux (fecha remote + Claude) → reabre o Claude → religa o remote → envia a primeira linha' : 'liga o projeto e sobe a sessão'}>
                     <RefreshCw className="h-3.5 w-3.5" /> {on ? 'Reiniciar' : 'Ligar'}
                   </Btn>
+                  <Link to={'/files/projects/' + encodeURIComponent(p.name)} className={`${p.remoteUrl ? 'inline-flex' : 'hidden sm:inline-flex'} h-11 items-center justify-center gap-1.5 rounded-lg bg-secondary px-3 text-sm font-medium text-slate-100 transition hover:bg-secondary/80 sm:h-auto sm:py-1.5 sm:text-[13px]`}>
+                    <FolderOpen className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> Arquivos
+                  </Link>
                   {p.paused ? (
-                    <Btn variant="accent" busy={busy === `unpause:${p.name}`} onClick={() => run(`unpause:${p.name}`, () => api.unpauseProject(p.name))} title="retoma o Claude pausado">
+                    <Btn variant="accent" className="h-11 justify-center sm:h-8" busy={busy === `unpause:${p.name}`} onClick={() => run(`unpause:${p.name}`, () => api.unpauseProject(p.name))} title="retoma o Claude pausado">
                       <Play className="h-3.5 w-3.5" /> Retomar
                     </Btn>
                   ) : (
                     p.claudeRunning && (
-                      <Btn variant="ghost" busy={busy === `pause:${p.name}`} onClick={() => run(`pause:${p.name}`, () => api.pauseProject(p.name))} title="pausa o Claude desta sessão — libera CPU/memória até você retomar">
+                      <Btn variant="ghost" className="h-11 justify-center border border-border sm:h-8 sm:border-transparent" busy={busy === `pause:${p.name}`} onClick={() => run(`pause:${p.name}`, () => api.pauseProject(p.name))} title="pausa o Claude desta sessão — libera CPU/memória até você retomar">
                         <Pause className="h-3.5 w-3.5" /> Pausar
                       </Btn>
                     )
                   )}
-                  <Btn variant="ghost" onClick={() => setDrawer(p.name)} title="configurar: primeira linha, renomear, histórico, backup, excluir">
+                  <Btn variant="ghost" className="hidden sm:inline-flex" onClick={() => setDrawer(p.name)} title="configurar: primeira linha, renomear, histórico, backup, excluir">
                     <Settings2 className="h-3.5 w-3.5" />
                   </Btn>
                 </div>
@@ -388,7 +411,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
           </p>
         </Modal>
       )}
-    </>
+    </div>
   )
 }
 
