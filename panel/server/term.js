@@ -22,6 +22,8 @@
 const { WebSocketServer } = require('ws');
 const cfg = require('./config');
 const { sh, validName, sessionName, paneOf, clampInt, log } = require('./util');
+const fs = require('fs');
+const path = require('path');
 const { ensureSession, projConfig } = require('./projects');
 
 let pty = null;
@@ -42,7 +44,11 @@ async function targetSession(name, { create = true } = {}) {
   if (!name || name === 'shell') return create ? ensureShell() : cfg.SHELL_SESSION;
   if (!validName(name)) return null;
   const sess = sessionName(name);
-  if (create && !(await hasSession(sess))) await ensureSession(name);
+  // projeto apagado: a aba de terminal que ficou aberta NAO pode ressuscita-lo
+  if (create && !(await hasSession(sess))) {
+    if (!fs.existsSync(path.join(cfg.PROJECTS_DIR, name))) return null;
+    await ensureSession(name);
+  }
   return sess;
 }
 const isDisabled = (name) => !!name && name !== 'shell' && validName(name) && !projConfig(name).enabled;

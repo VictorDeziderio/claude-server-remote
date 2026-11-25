@@ -121,6 +121,11 @@ MAX_FAST_FAILS=2 start
 wait_for 'rapido demais' 20; ok "cai no shell apos falhas rapidas seguidas" "$?" "$(screen | tail -4 | tr '\n' '|')"
 grep -q '"kind":"crash-loop"' "$T/.claude/run/alerts.jsonl"; ok "grava alerta crash-loop" "$?"
 
+echo "== projeto apagado nao renasce (bug do projeto \"codigo\")"
+tmux kill-server >/dev/null 2>&1
+bash "$HERE/claude-session.sh" fantasma </dev/null >/dev/null 2>&1
+[ ! -d "$T/projects/fantasma" ]; ok "pasta apagada nao e recriada" $?
+tmux has-session -t '=claude-fantasma' 2>/dev/null; [ $? -ne 0 ]; ok "sessao do projeto apagado nao sobe" $?
 echo
 echo "$pass PASS, $fail FAIL"
 [ "$fail" = "0" ]

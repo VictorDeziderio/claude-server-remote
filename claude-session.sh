@@ -34,7 +34,11 @@ ensure_one() {  # $1 = projeto
 
   load_proj_config "$name"
   [ "$CFG_ENABLED" = "true" ] || return 0              # desligado -> continua desligado
-  mkdir -p "$proj"
+  # NUNCA recria a pasta: projeto apagado tem que continuar apagado. Antes havia um mkdir -p
+  # aqui, e uma aba de terminal ainda aberta (ou o watchdog no meio da exclusao) ressuscitava
+  # o projeto apagado (bug do projeto "codigo", 2026-11-24). Quem cria pasta: o painel
+  # (createProject) e o ensure_all (projeto default).
+  [ -d "$proj" ] || { echo "[session] projeto '$name' nao existe (pasta ausente) — nada a subir" >&2; return 1; }
 
   if [ "$CFG_AUTOSTART" = "true" ]; then
     # supervisor como COMANDO DIRETO da sessao (sem send-keys -> sem race com o shell carregando)

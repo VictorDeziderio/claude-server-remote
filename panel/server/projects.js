@@ -171,9 +171,17 @@ async function deleteProject(name) {
   if (!validName(name)) return { ok: false, msg: 'nome invalido' };
   const dir = path.join(cfg.PROJECTS_DIR, name);
   if (!fs.existsSync(dir)) return { ok: false, msg: 'pasta inexistente' };
-  await killSession(name);
-  try { fs.rmSync(dir, { recursive: true, force: true }); }
-  catch (e) { return { ok: false, msg: 'falha ao excluir: ' + e.message }; }
+  // lock durante kill + rm: sem ele o watchdog (a cada 10s) via a pasta ainda la e a sessao
+  // morta e subia tudo de novo no meio da exclusao (bug do projeto "codigo", 2026-11-24)
+  const lock = path.join(cfg.RUN_DIR, sessionName(name) + '.lock');
+  try { fs.mkdirSync(cfg.RUN_DIR, { recursive: true }); fs.writeFileSync(lock, String(process.pid)); } catch { /* */ }
+  try {
+    await killSession(name);
+    try { fs.rmSync(dir, { recursive: true, force: true }); }
+    catch (e) { return { ok: false, msg: 'falha ao excluir: ' + e.message }; }
+  } finally {
+    try { fs.rmSync(lock, { force: true }); } catch { /* */ }
+  }
   const c = loadConfig();
   if (c.projects && c.projects[name]) { delete c.projects[name]; saveConfig(c); }
   events.poke();
