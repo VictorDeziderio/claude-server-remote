@@ -10,6 +10,7 @@ const PANEL = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const load = (rel) => import('data:text/javascript;base64,' + Buffer.from(fs.readFileSync(path.join(PANEL, rel), 'utf8')).toString('base64'))
 const K = await load('src/lib/termkeys.js')
 const C = await load('src/lib/clipboard.js')
+const T = await load('src/lib/theme.js')
 
 let fails = 0, passes = 0
 const eq = (name, got, want) => {
@@ -91,6 +92,19 @@ console.log('\n== clipboard: OSC 52')
 eq('decodeOsc52 texto', C.decodeOsc52('c;' + Buffer.from('olá mundo').toString('base64')), 'olá mundo')
 eq('decodeOsc52 pedido de leitura (?) ignorado', C.decodeOsc52('c;?'), null)
 eq('decodeOsc52 sem ;', C.decodeOsc52('abc'), null)
+
+console.log('\n== tema claro/escuro')
+eq('sistema + aparelho escuro -> dark', T.resolveTheme('system', true), 'dark')
+eq('sistema + aparelho claro -> light', T.resolveTheme('system', false), 'light')
+eq('escolha fixa vence o aparelho', [T.resolveTheme('light', true), T.resolveTheme('dark', false)], ['light', 'dark'])
+eq('valor estranho no localStorage -> sistema', T.resolveTheme('roxo', true), 'dark')
+eq('ciclo sistema -> claro -> escuro -> sistema', [T.nextTheme('system'), T.nextTheme('light'), T.nextTheme('dark'), T.nextTheme(null)], ['light', 'dark', 'system', 'light'])
+// a CSP do painel (script-src 'self') bloqueia script inline: o tema inicial vem de arquivo
+const html = fs.readFileSync(path.join(PANEL, 'index.html'), 'utf8')
+eq('index.html sem <script> inline (CSP)', [...html.matchAll(/<script(?![^>]*\ssrc=)[^>]*>/g)].length, 0)
+eq('index.html carrega /theme-init.js antes do app', html.indexOf('/theme-init.js') > 0 && html.indexOf('/theme-init.js') < html.indexOf('/src/main.jsx'), true)
+const init = fs.readFileSync(path.join(PANEL, 'public', 'theme-init.js'), 'utf8')
+eq('theme-init usa a mesma chave do theme.js', init.includes("'" + T.THEME_KEY + "'"), true)
 
 console.log(`\n${passes} PASS, ${fails} FAIL${fails ? '' : ' — TUDO OK'}`)
 process.exit(fails ? 1 : 0)

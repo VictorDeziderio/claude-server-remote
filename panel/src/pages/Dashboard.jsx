@@ -15,10 +15,10 @@ const SESSION_MODES = [
 function StatItem({ icon: Icon, label, children, warn, className = '' }) {
   return (
     <div className={`flex items-start gap-3 rounded-xl border bg-accent px-3 py-2.5 sm:p-3 ${warn ? 'border-amber-500/40' : 'border-border'} ${className}`}>
-      <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${warn ? 'text-amber-300' : 'text-primary'}`} />
+      <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${warn ? 'text-amber-600 dark:text-amber-300' : 'text-primary'}`} />
       <div className="min-w-0 flex-1">
         <div className="text-[11px] text-muted-foreground">{label}</div>
-        <div className="break-words text-sm text-slate-100 sm:truncate">{children}</div>
+        <div className="break-words text-sm text-foreground sm:truncate">{children}</div>
       </div>
     </div>
   )
@@ -31,19 +31,19 @@ function Meter({ icon: Icon, label, value, hint }) {
         <span className="inline-flex items-center gap-1.5">
           <Icon className="h-3.5 w-3.5 text-primary" /> {label}
         </span>
-        <span className="font-mono text-sm text-slate-300">{value}%</span>
+        <span className="font-mono text-sm text-foreground/80">{value}%</span>
       </div>
       <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-background">
         <div className={`h-full rounded-full ${pct(value)}`} style={{ width: Math.min(100, value) + '%' }} />
       </div>
-      {hint && <div className="mt-1 text-[11px] text-slate-500">{hint}</div>}
+      {hint && <div className="mt-1 text-[11px] text-muted-foreground">{hint}</div>}
     </div>
   )
 }
 
 // linha fina (sparkline) 0-100% para o historico de CPU/memoria — sem lib de grafico
 function MiniLine({ points, color }) {
-  if (!points || points.length < 2) return <div className="flex h-10 items-center text-[11px] text-slate-500">sem histórico ainda</div>
+  if (!points || points.length < 2) return <div className="flex h-10 items-center text-[11px] text-muted-foreground">sem histórico ainda</div>
   const w = 100, h = 32
   const path = points.map((v, i) => `${(i / (points.length - 1)) * w},${h - Math.min(100, Math.max(0, v || 0)) / 100 * h}`).join(' ')
   return (
@@ -96,10 +96,10 @@ export function HealthCard({ onFlash, compact }) {
               <Gauge className="h-3.5 w-3.5 text-primary" /> Load / CPUs
             </span>
           </div>
-          <div className="mt-1 font-mono text-sm text-slate-100">
-            {(h.load || []).join(' · ')} <span className="text-slate-500">/ {h.cpus}</span>
+          <div className="mt-1 font-mono text-sm text-foreground">
+            {(h.load || []).join(' · ')} <span className="text-muted-foreground">/ {h.cpus}</span>
           </div>
-          <div className="mt-1 text-[11px] text-slate-500">
+          <div className="mt-1 text-[11px] text-muted-foreground">
             <Clock className="mr-1 inline h-3 w-3" />
             host há {fmtUptime(h.uptime)} · painel há {fmtUptime(h.panel?.uptime)}
           </div>
@@ -110,9 +110,9 @@ export function HealthCard({ onFlash, compact }) {
               <Tag className="h-3.5 w-3.5 text-primary" /> Claude Code
             </span>
           </div>
-          <div className="mt-1 truncate font-mono text-sm text-slate-100" title={c.current}>
+          <div className="mt-1 truncate font-mono text-sm text-foreground" title={c.current}>
             {c.currentNum || c.current || '?'}
-            {c.latest && <span className="text-slate-500"> · npm {c.latest}</span>}
+            {c.latest && <span className="text-muted-foreground"> · npm {c.latest}</span>}
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             {c.updateAvailable ? (
@@ -120,12 +120,12 @@ export function HealthCard({ onFlash, compact }) {
                 <ArrowUpCircle className="h-3.5 w-3.5" /> Atualizar p/ {c.latest}
               </Btn>
             ) : (
-              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-300">
+              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-300">
                 <CheckCircle2 className="h-3.5 w-3.5" /> {c.latest ? 'atualizado' : 'sem acesso ao npm'}
               </span>
             )}
             {!compact && (
-              <Link to="/account" className="text-[11px] text-slate-500 hover:text-slate-300">
+              <Link to="/account" className="text-[11px] text-muted-foreground hover:text-foreground/80">
                 detalhes →
               </Link>
             )}
@@ -138,7 +138,7 @@ export function HealthCard({ onFlash, compact }) {
           {history.length > 0 && (
             <div className="rounded-xl bg-accent p-3 border">
               <div className="mb-1 text-[11px] text-muted-foreground">Últimas 6h</div>
-              <div className="mb-1 flex items-center gap-1.5 text-[11px] text-slate-400">
+              <div className="mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                 <span className="inline-block h-1.5 w-3 rounded-full bg-sky-400" /> CPU
                 <span className="ml-3 inline-block h-1.5 w-3 rounded-full bg-amber-400" /> Memória
               </div>
@@ -158,11 +158,11 @@ export function HealthCard({ onFlash, compact }) {
               <table className="w-full text-xs">
                 <tbody>
                   {top.slice(0, 5).map((p) => (
-                    <tr key={p.pid} className="border-t border-white/5 first:border-0">
-                      <td className="py-1 pr-2 text-slate-500">{p.pid}</td>
-                      <td className="py-1 pr-2 truncate text-slate-200" title={p.comm}>{p.comm}</td>
-                      <td className="py-1 pr-2 text-right font-mono text-slate-400">{(p.pcpu ?? 0).toFixed(0)}% cpu</td>
-                      <td className="py-1 text-right font-mono text-slate-400">{fmtSize(p.rss)}</td>
+                    <tr key={p.pid} className="border-t border-border first:border-0">
+                      <td className="py-1 pr-2 text-muted-foreground">{p.pid}</td>
+                      <td className="py-1 pr-2 truncate text-foreground" title={p.comm}>{p.comm}</td>
+                      <td className="py-1 pr-2 text-right font-mono text-muted-foreground">{(p.pcpu ?? 0).toFixed(0)}% cpu</td>
+                      <td className="py-1 text-right font-mono text-muted-foreground">{fmtSize(p.rss)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -229,11 +229,11 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
             </Link>
           </StatItem>
           <StatItem icon={Cpu} label="Sessões">
-            <span className="font-mono text-sm text-slate-100">
+            <span className="font-mono text-sm text-foreground">
               {running}/{projects.length}
             </span>{' '}
-            com Claude rodando{off ? <span className="text-slate-500"> · {off} desligado(s)</span> : ''}
-            {waiting ? <span className="text-rose-300"> · {waiting} aguardando você</span> : ''}
+            com Claude rodando{off ? <span className="text-muted-foreground"> · {off} desligado(s)</span> : ''}
+            {waiting ? <span className="text-rose-600 dark:text-rose-300"> · {waiting} aguardando você</span> : ''}
           </StatItem>
           <StatItem icon={BarChart3} label="Hoje">
             <Link to="/report" className="text-sm hover:underline">
@@ -241,7 +241,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
             </Link>
           </StatItem>
         </div>
-        <div className="mt-4 border-t border-white/6 pt-4 empty:hidden">
+        <div className="mt-4 border-t border-border pt-4 empty:hidden">
           <UsageWidget />
         </div>
       </section>
@@ -254,19 +254,19 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
       {/* Projetos */}
       <section className="order-2 space-y-3 sm:order-3">
         <div className="flex items-center justify-between px-1">
-          <h2 className="text-sm font-medium text-slate-200">
-            Projetos <span className="font-mono text-xs text-slate-500">({projects.length})</span>
+          <h2 className="text-sm font-medium text-foreground">
+            Projetos <span className="font-mono text-xs text-muted-foreground">({projects.length})</span>
           </h2>
           {data.remoteNameForced ? (
-            <span className="text-[11px] text-slate-500">
+            <span className="text-[11px] text-muted-foreground">
               remote fixo: <code className="font-mono text-xs">/remote-control {data.remoteNameForced}</code>
             </span>
           ) : (
-            <span className="text-[11px] text-slate-500">remote = nome do projeto</span>
+            <span className="text-[11px] text-muted-foreground">remote = nome do projeto</span>
           )}
         </div>
         {projects.length === 0 && (
-          <div className="rounded-lg bg-card p-8 text-center text-sm text-slate-500 border">
+          <div className="rounded-lg bg-card p-8 text-center text-sm text-muted-foreground border">
             Nenhum projeto ainda.{' '}
             <button type="button" className="text-primary hover:underline" onClick={() => setShowNew(true)}>
               Criar o primeiro
@@ -277,7 +277,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
         {projects.map((p, idx) => {
           const act = actOf(p)
           const on = p.enabled !== false
-          const accent = !on ? 'bg-white/10' : act === 'prompt' ? 'bg-rose-400 animate-pulse' : act === 'busy' ? 'bg-amber-400 animate-pulse' : p.claudeRunning ? 'bg-success/60' : 'bg-white/10'
+          const accent = !on ? 'bg-muted' : act === 'prompt' ? 'bg-rose-400 animate-pulse' : act === 'busy' ? 'bg-amber-400 animate-pulse' : p.claudeRunning ? 'bg-success/60' : 'bg-muted'
           return (
             <div key={p.name} className={`relative animate-fade-up overflow-hidden rounded-lg border bg-card p-4 transition duration-200 hover:border-primary/30 sm:p-5 sm:hover:-translate-y-px ${!on ? 'opacity-70' : ''}`} style={{ animationDelay: `${idx * 40}ms` }}>
               <div className={`absolute inset-y-0 left-0 w-[3px] ${accent}`} />
@@ -285,11 +285,11 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start gap-2">
                     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                      <Link to={'/terminal/' + encodeURIComponent(p.name)} className="truncate text-lg font-semibold text-white hover:underline sm:text-base">
+                      <Link to={'/terminal/' + encodeURIComponent(p.name)} className="truncate text-lg font-semibold text-foreground hover:underline sm:text-base">
                         {p.name}
                       </Link>
-                      {!on ? <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-[11px] text-slate-400 border">desligado</span> : p.claudeRunning ? <ActivityBadge state={act} since={p.activitySince} /> : <ActivityBadge state="off" />}
-                      {p.paused && <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-300" title="Claude pausado por inatividade — não consome CPU/memória até retomar">Pausado</span>}
+                      {!on ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground border">desligado</span> : p.claudeRunning ? <ActivityBadge state={act} since={p.activitySince} /> : <ActivityBadge state="off" />}
+                      {p.paused && <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-600 dark:text-amber-300" title="Claude pausado por inatividade — não consome CPU/memória até retomar">Pausado</span>}
                     </div>
                     {/* celular: configurar fica no canto do cartao (no desktop, no fim dos botoes) */}
                     <Btn variant="ghost" className="-mr-2 -mt-1 sm:hidden" onClick={() => setDrawer(p.name)} title="configurar: primeira linha, renomear, histórico, backup, excluir">
@@ -301,18 +301,18 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                       <SquareTerminal className="h-4 w-4 shrink-0" /> Claude is waiting for your answer — open the terminal
                     </Link>
                   )}
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-400 sm:mt-1.5 sm:gap-y-1">
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground sm:mt-1.5 sm:gap-y-1">
                     <span className="inline-flex items-center gap-1.5">
-                      <Activity className="h-3.5 w-3.5 text-slate-500" /> tmux <Dot on={p.up} /> {p.up ? 'de pé' : 'fora'}
+                      <Activity className="h-3.5 w-3.5 text-muted-foreground" /> tmux <Dot on={p.up} /> {p.up ? 'de pé' : 'fora'}
                     </span>
                     <span className="inline-flex items-center gap-1.5">
-                      <Cpu className="h-3.5 w-3.5 text-slate-500" /> Claude <Dot on={p.claudeRunning} /> {p.claudeRunning ? 'rodando' : 'parado'}
+                      <Cpu className="h-3.5 w-3.5 text-muted-foreground" /> Claude <Dot on={p.claudeRunning} /> {p.claudeRunning ? 'rodando' : 'parado'}
                     </span>
                     <span className="inline-flex min-w-0 items-center gap-1.5">
-                      <Radio className="h-3.5 w-3.5 shrink-0 text-slate-500" /> {p.autoRemote ? <code className="truncate font-mono text-xs text-slate-300">{p.remoteCmd}</code> : <span className="text-slate-500">remote desligado</span>}
+                      <Radio className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> {p.autoRemote ? <code className="truncate font-mono text-xs text-foreground/80">{p.remoteCmd}</code> : <span className="text-muted-foreground">remote desligado</span>}
                     </span>
                     {p.initLine && (
-                      <span className="w-full truncate text-slate-500 sm:w-auto" title={p.initLine}>
+                      <span className="w-full truncate text-muted-foreground sm:w-auto" title={p.initLine}>
                         1ª linha: “{p.initLine.slice(0, 60)}
                         {p.initLine.length > 60 ? '…' : ''}”
                       </span>
@@ -334,7 +334,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                       <ExternalLink className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> Abrir remote
                     </a>
                   ) : (
-                    <Link to={'/files/projects/' + encodeURIComponent(p.name)} className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-secondary px-3 text-sm font-medium text-slate-100 transition hover:bg-secondary/80 sm:hidden">
+                    <Link to={'/files/projects/' + encodeURIComponent(p.name)} className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-secondary px-3 text-sm font-medium text-foreground transition hover:bg-secondary/80 sm:hidden">
                       <FolderOpen className="h-4 w-4" /> Arquivos
                     </Link>
                   )}
@@ -346,7 +346,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                   <Btn busy={busy === `restart:${p.name}`} className="h-11 justify-center sm:h-8" onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title={on ? 'mata a sessão tmux (fecha remote + Claude) → reabre o Claude → religa o remote → envia a primeira linha' : 'liga o projeto e sobe a sessão'}>
                     <RefreshCw className="h-3.5 w-3.5" /> {on ? 'Reiniciar' : 'Ligar'}
                   </Btn>
-                  <Link to={'/files/projects/' + encodeURIComponent(p.name)} className={`${p.remoteUrl ? 'inline-flex' : 'hidden sm:inline-flex'} h-11 items-center justify-center gap-1.5 rounded-lg bg-secondary px-3 text-sm font-medium text-slate-100 transition hover:bg-secondary/80 sm:h-auto sm:py-1.5 sm:text-[13px]`}>
+                  <Link to={'/files/projects/' + encodeURIComponent(p.name)} className={`${p.remoteUrl ? 'inline-flex' : 'hidden sm:inline-flex'} h-11 items-center justify-center gap-1.5 rounded-lg bg-secondary px-3 text-sm font-medium text-foreground transition hover:bg-secondary/80 sm:h-auto sm:py-1.5 sm:text-[13px]`}>
                     <FolderOpen className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> Arquivos
                   </Link>
                   {p.paused ? (
@@ -375,7 +375,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
       {/* Modal: novo projeto */}
       {showNew && (
         <Modal title="Novo projeto" icon={Plus} onClose={() => setShowNew(false)}>
-          <label className="mb-1 block text-xs text-slate-400">Nome do projeto</label>
+          <label className="mb-1 block text-xs text-muted-foreground">Nome do projeto</label>
           <input
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -388,12 +388,12 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
             className={`w-full ${inputCls} px-3 py-2`}
           />
           <div className="mt-4 space-y-2">
-            <div className="text-xs text-slate-400">Serviços</div>
-            <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-background px-3 py-2 text-sm text-slate-200 border">
+            <div className="text-xs text-muted-foreground">Serviços</div>
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-background px-3 py-2 text-sm text-foreground border">
               <input type="checkbox" checked={form.autoStartClaude} onChange={(e) => setForm((f) => ({ ...f, autoStartClaude: e.target.checked }))} className="accent-[#D97757]" />
               <Cpu className="h-4 w-4 text-primary" /> Iniciar o Claude na sessão
             </label>
-            <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-background px-3 py-2 text-sm text-slate-200 border">
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-background px-3 py-2 text-sm text-foreground border">
               <input type="checkbox" checked={form.autoRemote} onChange={(e) => setForm((f) => ({ ...f, autoRemote: e.target.checked }))} className="accent-[#D97757]" />
               <Radio className="h-4 w-4 text-primary" /> Religar o remote-control
             </label>
@@ -406,7 +406,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
               <Power className="h-3.5 w-3.5" /> Criar projeto
             </Btn>
           </div>
-          <p className="mt-3 text-xs text-slate-500">
+          <p className="mt-3 text-xs text-muted-foreground">
             Cria a pasta em <code>{data.projectsDir}</code> + <code>git init</code> e sobe a sessão tmux do projeto.
           </p>
         </Modal>
@@ -443,12 +443,12 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
   return (
     <Drawer title={`Configurar “${p.name}”`} icon={Settings2} onClose={onClose}>
       <div className="space-y-4">
-        <div className="text-xs text-slate-500">
+        <div className="text-xs text-muted-foreground">
           {p.dir} · sessão <code className="font-mono text-xs">{p.session}</code>
         </div>
 
         <Section title="Primeira linha" icon={Pencil}>
-          <p className="mb-2 text-xs text-slate-500">Enviada ao Claude assim que ele fica pronto, em todo início (como prompt inicial).</p>
+          <p className="mb-2 text-xs text-muted-foreground">Enviada ao Claude assim que ele fica pronto, em todo início (como prompt inicial).</p>
           <div className="flex items-center gap-2">
             <input
               value={initLine}
@@ -466,17 +466,17 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
         </Section>
 
         <Section title="Ao reiniciar o Claude" icon={Pin}>
-          <p className="mb-2 text-xs text-slate-500">O que acontece com a conversa quando o Claude é religado nesta sessão (reiniciar, ligar, ou religar remote).</p>
+          <p className="mb-2 text-xs text-muted-foreground">O que acontece com a conversa quando o Claude é religado nesta sessão (reiniciar, ligar, ou religar remote).</p>
           <select value={p.sessionMode || 'new'} onChange={(e) => run(`sessmode:${p.name}`, () => api.setSessionMode(p.name, e.target.value))} className={inputCls}>
             {SESSION_MODES.map(([k, label]) => (
               <option key={k} value={k}>{label}</option>
             ))}
           </select>
           {(p.sessionMode || 'new') === 'pinned' && (
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-muted-foreground">
               {p.pinnedSession ? (
                 <>
-                  sessão fixada: <code className="font-mono text-xs text-slate-300">{String(p.pinnedSession).slice(0, 8)}</code> · trocar em{' '}
+                  sessão fixada: <code className="font-mono text-xs text-foreground/80">{String(p.pinnedSession).slice(0, 8)}</code> · trocar em{' '}
                 </>
               ) : (
                 <>nenhuma conversa fixada ainda — escolha uma em </>
@@ -498,20 +498,20 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
                 <ExternalLink className="h-3.5 w-3.5" /> Abrir link
               </a>
             )}
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-muted-foreground">
               comando: <code className="font-mono text-xs">{p.remoteCmd}</code>
             </span>
           </div>
         </Section>
 
         <Section title="Histórico de conversas" icon={History}>
-          <Link to={'/history/' + encodeURIComponent(p.name)} onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 text-[13px] font-medium text-slate-100 hover:bg-secondary/80">
+          <Link to={'/history/' + encodeURIComponent(p.name)} onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 text-[13px] font-medium text-foreground hover:bg-secondary/80">
             <History className="h-3.5 w-3.5" /> Ver conversas / continuar
           </Link>
         </Section>
 
         <Section title="Backup (git)" icon={DatabaseBackup}>
-          <div className="mb-2 text-xs text-slate-400">
+          <div className="mb-2 text-xs text-muted-foreground">
             {bk === null ? (
               'carregando…'
             ) : !bk?.git ? (
@@ -520,12 +520,12 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
               'sem remote origin — o backup automático ignora este projeto'
             ) : bk.last ? (
               <>
-                último: <span className={bk.last.level === 'ok' ? 'text-emerald-300' : 'text-amber-300'}>{bk.last.level}</span> em {bk.last.ts} — {bk.last.msg}
+                último: <span className={bk.last.level === 'ok' ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'}>{bk.last.level}</span> em {bk.last.ts} — {bk.last.msg}
               </>
             ) : (
               'ainda sem backup registrado'
             )}
-            {bk?.dirty ? <span className="text-amber-300"> · {bk.dirty} arquivo(s) alterado(s) sem commit</span> : null}
+            {bk?.dirty ? <span className="text-amber-600 dark:text-amber-300"> · {bk.dirty} arquivo(s) alterado(s) sem commit</span> : null}
           </div>
           <Btn busy={busy === `backup:${p.name}`} onClick={() => run(`backup:${p.name}`, () => api.backupRun(p.name))}>
             <DatabaseBackup className="h-3.5 w-3.5" /> Fazer backup agora
@@ -533,7 +533,7 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
         </Section>
 
         <Section title="Renomear" icon={Pencil}>
-          <p className="mb-2 text-xs text-slate-500">
+          <p className="mb-2 text-xs text-muted-foreground">
             Renomeia a <b>pasta no servidor</b>, migra o histórico do Claude e recria a sessão tmux (a conversa atual é encerrada).
           </p>
           {renaming ? (
@@ -580,9 +580,9 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
         </Section>
 
         <Section title="Excluir projeto" icon={Trash2} danger>
-          <p className="mb-2 text-xs text-slate-400">
+          <p className="mb-2 text-xs text-muted-foreground">
             Apaga{' '}
-            <code className="font-mono text-xs text-slate-300">
+            <code className="font-mono text-xs text-foreground/80">
               {data.projectsDir}/{p.name}
             </code>{' '}
             e mata a sessão. Sem volta (o histórico de conversas é mantido). Digite o nome para confirmar:

@@ -35,8 +35,8 @@ export default function Login({ onSuccess }) {
     <div className="flex h-full items-center justify-center overflow-auto px-4 py-10">
       <form onSubmit={submit} className="w-full max-w-sm animate-fade-up rounded-lg border border-border bg-card p-7 text-card-foreground">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 grid size-12 place-items-center rounded-md border border-border bg-accent text-primary"><Logo size={26} /></div>
-          <h1 className="text-lg font-medium text-foreground">claude<span className="text-primary">/</span>remote</h1>
+          <div className="mb-3 grid size-12 place-items-center rounded-xl bg-primary text-brand shadow-sm"><Logo size={26} /></div>
+          <h1 className="text-lg font-medium text-foreground">claude<span className="text-brand">/</span>remote</h1>
           <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="inline-block size-1.5 rounded-full bg-success" /> entre para acessar o painel
           </p>

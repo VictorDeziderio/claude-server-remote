@@ -36,7 +36,7 @@ export default function BackupPage({ onFlash }) {
     onFlash?.(r)
     load()
   }
-  const levelIcon = (l) => (l === 'ok' ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <AlertTriangle className="h-4 w-4 text-amber-300" />)
+  const levelIcon = (l) => (l === 'ok' ? <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-300" /> : <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-300" />)
 
   return (
     <div className="space-y-5">
@@ -59,24 +59,24 @@ export default function BackupPage({ onFlash }) {
         ) : st.projects.length === 0 ? (
           <Empty>nenhum projeto</Empty>
         ) : (
-          <ul className="divide-y divide-white/5">
+          <ul className="divide-y divide-border">
             {st.projects.map((p) => (
               <li key={p.name} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
-                <GitBranch className={`h-4 w-4 ${p.git && p.origin ? 'text-primary' : 'text-slate-600'}`} />
+                <GitBranch className={`h-4 w-4 ${p.git && p.origin ? 'text-primary' : 'text-muted-foreground/70'}`} />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm text-slate-200">{p.name}</span>
-                    {!p.git && <span className="rounded-full bg-slate-500/15 px-2 py-0.5 text-[10px] text-slate-400">não é repo git</span>}
-                    {p.git && !p.origin && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-300">sem origin — ignorado pelo backup</span>}
-                    {p.dirty ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-300">{p.dirty} alteração(ões) sem commit</span> : null}
+                    <span className="text-sm text-foreground">{p.name}</span>
+                    {!p.git && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">não é repo git</span>}
+                    {p.git && !p.origin && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-300">sem origin — ignorado pelo backup</span>}
+                    {p.dirty ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-300">{p.dirty} alteração(ões) sem commit</span> : null}
                   </div>
-                  <div className="truncate text-xs text-slate-500">
+                  <div className="truncate text-xs text-muted-foreground">
                     {p.origin ? <code>{p.origin}</code> : p.git ? 'configure: git remote add origin <url>' : ''}
                     {p.last && (
                       <span className="ml-2 inline-flex items-center gap-1">
                         {levelIcon(p.last.level)}
-                        <span className="font-mono text-xs text-slate-500">{p.last.ts}</span>
-                        <span className="text-slate-500">— {p.last.msg}</span>
+                        <span className="font-mono text-xs text-muted-foreground">{p.last.ts}</span>
+                        <span className="text-muted-foreground">— {p.last.msg}</span>
                       </span>
                     )}
                   </div>
@@ -90,7 +90,7 @@ export default function BackupPage({ onFlash }) {
             ))}
           </ul>
         )}
-        <p className="mt-3 flex items-start gap-1.5 text-[11px] text-slate-500">
+        <p className="mt-3 flex items-start gap-1.5 text-[11px] text-muted-foreground">
           <Info className="mt-0.5 h-3 w-3 shrink-0" /> O push usa o <code>GH_TOKEN</code> (escopo <code>repo</code>) ou um <code>gh auth login</code> feito no terminal. Log em <b>Logs → Backup</b>.
         </p>
       </Card>
@@ -103,16 +103,16 @@ export default function BackupPage({ onFlash }) {
             <Btn size="sm" variant="ghost" busy={busy === 'config'} onClick={runConfig}>
               <Archive className="h-3.5 w-3.5" /> Gerar snapshot agora
             </Btn>
-            <a href={api.backupDownloadUrl('', false)} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[13px] font-medium text-white transition duration-150 hover:bg-primary/80">
+            <a href={api.backupDownloadUrl('', false)} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground transition duration-150 hover:bg-primary/80">
               <Download className="h-3.5 w-3.5" /> Baixar agora (leve)
             </a>
-            <a href={api.backupDownloadUrl('', true)} className="inline-flex items-center gap-1.5 rounded-lg bg-transparent px-3 py-1.5 text-[13px] font-medium text-slate-300 border transition duration-150 hover:bg-accent" title="inclui o histórico de conversas (pode ser grande)">
+            <a href={api.backupDownloadUrl('', true)} className="inline-flex items-center gap-1.5 rounded-lg bg-transparent px-3 py-1.5 text-[13px] font-medium text-foreground/80 border transition duration-150 hover:bg-accent" title="inclui o histórico de conversas (pode ser grande)">
               <Download className="h-3.5 w-3.5" /> Baixar completo
             </a>
           </div>
         }
       >
-        <p className="mb-3 text-sm text-slate-300">
+        <p className="mb-3 text-sm text-foreground/80">
           Se o volume <code>/root</code> sumir, o login do Claude, o <code>panel.json</code>, o 2FA e as sessões vão junto. Um snapshot é gerado <b>1×/dia</b> em <code>/root/.claude-backups</code> (mantém 7) — mas isso está <b>no mesmo volume</b>: baixe de tempos em tempos.
         </p>
         {!st ? (
@@ -120,27 +120,27 @@ export default function BackupPage({ onFlash }) {
         ) : (st.configBackups || []).length === 0 ? (
           <Empty>nenhum snapshot ainda — gere um acima</Empty>
         ) : (
-          <ul className="divide-y divide-white/5">
+          <ul className="divide-y divide-border">
             {st.configBackups.map((b) => (
               <li key={b.file} className="flex flex-wrap items-center gap-3 py-2 text-sm">
-                <Archive className="h-4 w-4 text-slate-500" />
-                <code className="min-w-0 flex-1 truncate text-slate-200">{b.file}</code>
-                <span className="font-mono text-xs text-slate-500">
+                <Archive className="h-4 w-4 text-muted-foreground" />
+                <code className="min-w-0 flex-1 truncate text-foreground">{b.file}</code>
+                <span className="font-mono text-xs text-muted-foreground">
                   {fmtSize(b.size)} · {fmtDate(b.mtime)}
                 </span>
-                <a href={api.backupDownloadUrl(b.file)} className="inline-flex items-center gap-1.5 rounded-lg bg-transparent px-2.5 py-1 text-xs font-medium text-slate-300 border transition duration-150 hover:bg-accent">
+                <a href={api.backupDownloadUrl(b.file)} className="inline-flex items-center gap-1.5 rounded-lg bg-transparent px-2.5 py-1 text-xs font-medium text-foreground/80 border transition duration-150 hover:bg-accent">
                   <Download className="h-3.5 w-3.5" /> baixar
                 </a>
               </li>
             ))}
           </ul>
         )}
-        <p className="mt-3 text-[11px] text-slate-500">
+        <p className="mt-3 text-[11px] text-muted-foreground">
           Restaurar: extraia o <code>.tgz</code> em <code>/root</code> (<code>tar xzf config-….tgz -C /root</code>) e reinicie o serviço.
         </p>
       </Card>
       {busy && (
-        <div className="fixed bottom-4 right-4 inline-flex items-center gap-2 rounded-lg bg-background px-3 py-2 text-xs text-slate-300 border">
+        <div className="fixed bottom-4 right-4 inline-flex items-center gap-2 rounded-lg bg-background px-3 py-2 text-xs text-foreground/80 border">
           <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> executando…
         </div>
       )}

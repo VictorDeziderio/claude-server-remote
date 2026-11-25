@@ -45,7 +45,7 @@ export default function LogsPage() {
   }, [tail, auto])
 
   const shown = (tail?.lines || []).filter((l) => !filter || l.toLowerCase().includes(filter.toLowerCase()))
-  const colorOf = (l) => (/"level":"error"|WARN|ERR|falh|error/i.test(l) ? 'text-rose-300' : /login\.(ok|fail)|"action"/.test(l) ? 'text-sky-200' : /\bok\b/.test(l) ? 'text-emerald-200' : 'text-slate-300')
+  const colorOf = (l) => (/"level":"error"|WARN|ERR|falh|error/i.test(l) ? 'text-rose-600 dark:text-rose-300' : /login\.(ok|fail)|"action"/.test(l) ? 'text-sky-700 dark:text-sky-200' : /\bok\b/.test(l) ? 'text-emerald-700 dark:text-emerald-200' : 'text-foreground/80')
   // audit.log: JSON por linha -> mostra compacto
   const pretty = (l) => {
     if (cur !== 'audit') return l
@@ -62,10 +62,10 @@ export default function LogsPage() {
 
   return (
     <div className="flex h-full min-h-[60vh] flex-col overflow-hidden rounded-lg bg-card border">
-      <div className="flex flex-wrap items-center gap-2 border-b border-white/5 px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
         <div className="flex items-center gap-1.5">
           {files.map((f) => (
-            <button key={f.key} type="button" onClick={() => setCur(f.key)} title={`${f.file} · ${fmtSize(f.size)} · ${fmtDate(f.mtime)}`} className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${cur === f.key ? 'bg-primary/15 text-primary ring-1 ring-primary/25' : 'bg-accent text-slate-400 border hover:text-slate-200'}`}>
+            <button key={f.key} type="button" onClick={() => setCur(f.key)} title={`${f.file} · ${fmtSize(f.size)} · ${fmtDate(f.mtime)}`} className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${cur === f.key ? 'bg-primary/15 text-primary ring-1 ring-primary/25' : 'bg-accent text-muted-foreground border hover:text-foreground'}`}>
               {f.label}
             </button>
           ))}
@@ -78,7 +78,7 @@ export default function LogsPage() {
             </option>
           ))}
         </select>
-        <span className="ml-auto font-mono text-xs text-slate-500">{tail ? `${shown.length}/${tail.total} linhas · ${fmtSize(tail.size)} · ${fmtDate(tail.mtime)}` : ''}</span>
+        <span className="ml-auto font-mono text-xs text-muted-foreground">{tail ? `${shown.length}/${tail.total} linhas · ${fmtSize(tail.size)} · ${fmtDate(tail.mtime)}` : ''}</span>
         <IconBtn title={auto ? 'pausar auto-refresh' : 'retomar auto-refresh (5s)'} active={auto} onClick={() => setAuto((a) => !a)}>
           {auto ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
         </IconBtn>
@@ -97,7 +97,7 @@ export default function LogsPage() {
       <div ref={preRef} className="min-h-0 flex-1 overflow-auto bg-background">
         {!tail ? (
           <div className="flex h-full items-center justify-center">
-            <span className="font-mono text-xs text-slate-500">carregando…</span>
+            <span className="font-mono text-xs text-muted-foreground">carregando…</span>
           </div>
         ) : shown.length === 0 ? (
           <Empty>{tail.total === 0 ? 'log vazio (ainda não existe)' : 'nada bate com o filtro'}</Empty>
@@ -111,8 +111,8 @@ export default function LogsPage() {
           </pre>
         )}
       </div>
-      <p className="border-t border-white/5 px-3 py-1.5 text-[11px] text-slate-500">
-        <ScrollText className="mr-1 inline h-3 w-3" /> arquivos em <code className="rounded bg-white/5 px-1 py-0.5 font-mono text-xs">~/.claude/logs/</code> · o log do container (start.sh/Caddy) fica no EasyPanel → Logs do serviço
+      <p className="border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
+        <ScrollText className="mr-1 inline h-3 w-3" /> arquivos em <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">~/.claude/logs/</code> · o log do container (start.sh/Caddy) fica no EasyPanel → Logs do serviço
       </p>
       <Btn className="hidden" />
     </div>

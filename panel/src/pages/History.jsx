@@ -72,8 +72,8 @@ export default function HistoryPage({ data, onFlash, refresh }) {
               <Link key={p.name} to={'/history/' + encodeURIComponent(p.name)} className="flex items-center gap-3 rounded-xl bg-accent p-3 border transition hover:border-primary/30">
                 <History className="h-5 w-5 shrink-0 text-primary" />
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-white">{p.name}</div>
-                  <div className="truncate font-mono text-xs text-slate-500">{p.dir}</div>
+                  <div className="truncate text-sm font-medium text-foreground">{p.name}</div>
+                  <div className="truncate font-mono text-xs text-muted-foreground">{p.dir}</div>
                 </div>
               </Link>
             ))}
@@ -92,11 +92,11 @@ export default function HistoryPage({ data, onFlash, refresh }) {
             <Btn variant="ghost" onClick={() => setOpen(null)}>
               <ArrowLeft className="h-3.5 w-3.5" /> Voltar
             </Btn>
-            <h2 className="truncate text-sm font-medium text-white">{c.title}</h2>
+            <h2 className="truncate text-sm font-medium text-foreground">{c.title}</h2>
             {pinnedId === open.id && <span className="rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[11px] text-primary">Fixada</span>}
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <span className="font-mono text-xs text-slate-500">
+            <span className="font-mono text-xs text-muted-foreground">
               {fmtInt(c.messages)} msgs · {fmtTok(c.tokens)} tokens · {shortModel(c.model)} · {fmtIso(c.first)} → {fmtIso(c.last)}
             </span>
             {pinnedId !== open.id && (
@@ -116,10 +116,10 @@ export default function HistoryPage({ data, onFlash, refresh }) {
         <div className="space-y-2">
           {c.items.map((m, i) => (
             <div key={i} className={`flex gap-3 rounded-xl p-3 ${m.role === 'user' ? 'border border-border bg-card' : 'bg-primary/5 ring-1 ring-primary/15'}`}>
-              {m.role === 'user' ? <User className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /> : m.text.startsWith('[ferramenta') ? <Wrench className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" /> : <Bot className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
+              {m.role === 'user' ? <User className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /> : m.text.startsWith('[ferramenta') ? <Wrench className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /> : <Bot className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
               <div className="min-w-0 flex-1">
-                <pre className="whitespace-pre-wrap break-words font-sans text-[13px] leading-relaxed text-slate-200">{m.text}</pre>
-                <div className="mt-1 font-mono text-xs text-slate-600">
+                <pre className="whitespace-pre-wrap break-words font-sans text-[13px] leading-relaxed text-foreground">{m.text}</pre>
+                <div className="mt-1 font-mono text-xs text-muted-foreground/70">
                   {fmtIso(m.ts)}
                   {m.model ? ' · ' + shortModel(m.model) : ''}
                 </div>
@@ -137,7 +137,7 @@ export default function HistoryPage({ data, onFlash, refresh }) {
       subtitle={list ? `${list.length} conversa(s)` : ''}
       actions={
         <div className="flex flex-wrap items-center gap-3">
-          <Link to="/history" className="text-xs text-slate-500 hover:text-slate-300">
+          <Link to="/history" className="text-xs text-muted-foreground hover:text-foreground/80">
             outro projeto
           </Link>
           <Btn size="sm" variant="ghost" onClick={load}>
@@ -155,17 +155,17 @@ export default function HistoryPage({ data, onFlash, refresh }) {
       ) : list.length === 0 ? (
         <Empty>nenhuma conversa registrada ainda para este projeto</Empty>
       ) : (
-        <ul className="divide-y divide-white/5">
+        <ul className="divide-y divide-border">
           {list.map((s) => (
             <li key={s.id} className="flex flex-wrap items-center gap-3 rounded-lg px-2 py-2.5 transition hover:bg-accent">
               <MessageSquare className="h-4 w-4 shrink-0 text-primary" />
               <button type="button" onClick={() => view(s.id)} className="min-w-0 flex-1 text-left">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-sm text-slate-100 hover:underline">{s.title}</span>
+                  <span className="truncate text-sm text-foreground hover:underline">{s.title}</span>
                   {pinnedId === s.id && <span className="shrink-0 rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[11px] text-primary">Fixada</span>}
                 </div>
-                <div className="font-mono text-xs text-slate-500">
-                  {fmtIso(s.last)} · {fmtInt(s.messages)} msgs · {fmtTok(s.tokens)} tokens · {shortModel(s.model) || '?'} · <span className="text-slate-600">{s.id.slice(0, 8)}</span>
+                <div className="font-mono text-xs text-muted-foreground">
+                  {fmtIso(s.last)} · {fmtInt(s.messages)} msgs · {fmtTok(s.tokens)} tokens · {shortModel(s.model) || '?'} · <span className="text-muted-foreground/70">{s.id.slice(0, 8)}</span>
                 </div>
               </button>
               {pinnedId !== s.id && (

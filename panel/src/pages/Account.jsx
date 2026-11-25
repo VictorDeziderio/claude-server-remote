@@ -38,10 +38,10 @@ export default function Account({ data, onFlash, refresh }) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <Dot on={login.logged} />
-              <span className={`min-w-0 truncate text-sm text-slate-200 ${login.logged && login.account ? 'font-mono' : ''}`}>{login.logged ? login.account || 'Conta conectada' : 'Nenhuma conta conectada'}</span>
+              <span className={`min-w-0 truncate text-sm text-foreground ${login.logged && login.account ? 'font-mono' : ''}`}>{login.logged ? login.account || 'Conta conectada' : 'Nenhuma conta conectada'}</span>
             </div>
-            {login.org && <div className="mt-1.5 text-sm text-slate-400">organização: {login.org}</div>}
-            <div className="mt-1.5 font-mono text-xs text-slate-500">
+            {login.org && <div className="mt-1.5 text-sm text-muted-foreground">organização: {login.org}</div>}
+            <div className="mt-1.5 font-mono text-xs text-muted-foreground">
               método: {login.method || '—'} · {data.version || '?'}
             </div>
           </div>
@@ -65,11 +65,11 @@ export default function Account({ data, onFlash, refresh }) {
               <LogIn className="h-4 w-4" /> Connect Claude
             </Btn>
           )}
-          <Link to="/terminal/shell" className="inline-flex items-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm font-medium text-slate-100 transition hover:bg-accent">
+          <Link to="/terminal/shell" className="inline-flex items-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm font-medium text-foreground transition hover:bg-accent">
             <SquareTerminal className="h-4 w-4" /> Abrir terminal
           </Link>
         </div>
-        <p className="mt-3 text-xs text-slate-500">
+        <p className="mt-3 text-xs text-muted-foreground">
           Sign-in uses your Claude subscription account (OAuth). The panel answers every Claude Code setup screen for you: open the link, authorize and paste the code. Credentials are stored in <code>~/.claude</code> (volume) and survive redeploys.
         </p>
       </Card>
@@ -136,8 +136,8 @@ function ClaudeVersionCard({ onFlash, refresh }) {
       ) : (
         <>
           {c.updateAvailable && (
-            <div className="mb-3 flex items-start gap-2 rounded-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-100 ring-1 ring-amber-500/30" role="alert">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+            <div className="mb-3 flex items-start gap-2 rounded-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-100 ring-1 ring-amber-500/30" role="alert">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
               <span>
                 <b>Claude Code desatualizado:</b> instalado <code>{c.currentNum}</code>, disponível <code>{c.latest}</code>. Atualize para receber correções e novos recursos.
               </span>
@@ -149,10 +149,10 @@ function ClaudeVersionCard({ onFlash, refresh }) {
                 <Tag className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <div className="text-sm text-slate-100">
-                  instalado: <code className="font-mono text-xs text-white">{c.current || '?'}</code>
+                <div className="text-sm text-foreground">
+                  instalado: <code className="font-mono text-xs text-foreground">{c.current || '?'}</code>
                 </div>
-                <div className="font-mono text-xs text-slate-500">última no npm: {c.latest ? <code>{c.latest}</code> : <span className="font-sans text-amber-300">não consegui consultar (sem acesso ao registry?)</span>}</div>
+                <div className="font-mono text-xs text-muted-foreground">última no npm: {c.latest ? <code>{c.latest}</code> : <span className="font-sans text-amber-600 dark:text-amber-300">não consegui consultar (sem acesso ao registry?)</span>}</div>
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">
@@ -161,7 +161,7 @@ function ClaudeVersionCard({ onFlash, refresh }) {
                   <ArrowUpCircle className="h-4 w-4" /> Atualizar para {c.latest}
                 </Btn>
               ) : c.latest ? (
-                <span className="inline-flex items-center gap-1.5 text-sm text-emerald-300">
+                <span className="inline-flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-300">
                   <CheckCircle2 className="h-4 w-4" /> atualizado
                 </span>
               ) : (
@@ -171,10 +171,10 @@ function ClaudeVersionCard({ onFlash, refresh }) {
               )}
             </div>
           </div>
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="mt-2 text-xs text-muted-foreground">
             A atualização roda <code>npm i -g</code> no container (1–2 min). Sessões abertas continuam na versão antiga até você <b>Reiniciar</b> o projeto no dashboard. A imagem pina a versão <code>CLAUDE_CODE_VERSION</code> no Dockerfile — num redeploy ela volta a essa versão.
           </p>
-          {out && <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-background p-2 font-mono text-[11px] text-slate-400">{out}</pre>}
+          {out && <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-background p-2 font-mono text-[11px] text-muted-foreground">{out}</pre>}
         </>
       )}
     </Card>
@@ -254,7 +254,7 @@ function TwoFactorCard({ onFlash }) {
         <Skeleton className="h-16" />
       ) : st.enabled ? (
         <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-2 text-sm text-emerald-300">
+          <span className="inline-flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-300">
             <ShieldCheck className="h-5 w-5" /> O login pede senha <b>e</b> o código do autenticador.
           </span>
           {disabling ? (
@@ -284,9 +284,9 @@ function TwoFactorCard({ onFlash }) {
           <div className="shrink-0 rounded-xl bg-white p-3 border">
             <img src={setup.qr} alt="QR code do 2FA" className="h-[200px] w-[200px] rounded-lg" />
           </div>
-          <div className="min-w-0 flex-1 space-y-3 text-sm text-slate-300">
+          <div className="min-w-0 flex-1 space-y-3 text-sm text-foreground/80">
             <p>1. Abra o app autenticador (Google Authenticator, Authy, 1Password, Bitwarden…) e escaneie o QR — ou digite a chave:</p>
-            <code className="block break-all rounded-lg bg-background px-3 py-2 font-mono text-xs text-slate-200">{setup.secret}</code>
+            <code className="block break-all rounded-lg bg-background px-3 py-2 font-mono text-xs text-foreground">{setup.secret}</code>
             <p>2. Digite o código de 6 dígitos que o app mostra para confirmar:</p>
             <div className="flex flex-wrap items-center gap-2">
               {codeInput}
@@ -310,7 +310,7 @@ function TwoFactorCard({ onFlash }) {
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-2 text-sm text-slate-500">
+          <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
             <Dot on={false} /> Este painel expõe um shell no servidor. Ative o 2FA para exigir um código do celular além da senha.
           </span>
           <Btn variant="accent" className="ml-auto" busy={busy} onClick={start}>
@@ -382,12 +382,12 @@ function SessionsCard({ onFlash }) {
         <ul className="space-y-1.5">
           {list.map((s) => (
             <li key={s.id} className={`flex flex-wrap items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${s.current ? 'bg-primary/5 ring-1 ring-primary/25' : 'ring-1 ring-transparent'}`}>
-              {/iPhone|iPad|Android/.test(s.ua) ? <Smartphone className="h-4 w-4 text-slate-500" /> : <Monitor className="h-4 w-4 text-slate-500" />}
+              {/iPhone|iPad|Android/.test(s.ua) ? <Smartphone className="h-4 w-4 text-muted-foreground" /> : <Monitor className="h-4 w-4 text-muted-foreground" />}
               <div className="min-w-0 flex-1">
-                <div className="text-slate-200">
+                <div className="text-foreground">
                   {uaShort(s.ua)} {s.current && <span className="ml-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium text-primary-300">esta sessão</span>}
                 </div>
-                <div className="font-mono text-xs text-slate-500">
+                <div className="font-mono text-xs text-muted-foreground">
                   IP {s.ip || '?'} · último acesso {fmtAgo(s.last * 1000)} · login {fmtDate(s.iat * 1000)} · expira {fmtDate(s.exp * 1000)}
                 </div>
               </div>
@@ -509,12 +509,12 @@ function LoginModal({ onClose, onFlash }) {
           <li key={label} className="flex flex-1 items-center gap-2">
             <span
               className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
-                i < idx ? 'bg-emerald-500/20 text-emerald-300' : i === idx ? 'bg-primary/20 text-primary ring-1 ring-primary/40' : 'bg-secondary text-slate-500'
+                i < idx ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300' : i === idx ? 'bg-primary/20 text-primary ring-1 ring-primary/40' : 'bg-secondary text-muted-foreground'
               }`}
             >
               {i < idx ? <Check className="h-3.5 w-3.5" /> : i + 1}
             </span>
-            <span className={i === idx ? 'text-slate-200' : 'text-slate-500'}>{label}</span>
+            <span className={i === idx ? 'text-foreground' : 'text-muted-foreground'}>{label}</span>
             {i < STEPS.length - 1 && <span className="h-px flex-1 bg-border" />}
           </li>
         ))}
@@ -522,12 +522,12 @@ function LoginModal({ onClose, onFlash }) {
 
       <div className="mb-4 flex items-start gap-2 text-sm">
         {working && <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />}
-        {phase === 'success' && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />}
-        {(phase === 'error' || phase === 'attention') && <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />}
+        {phase === 'success' && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" />}
+        {(phase === 'error' || phase === 'attention') && <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />}
         <div className="min-w-0">
-          <div className={phase === 'success' ? 'text-emerald-300' : phase === 'error' ? 'text-rose-300' : 'text-slate-200'}>{STEP_TEXT[phase] || phase}</div>
-          {detail && <div className="text-xs text-slate-500">{detail}…</div>}
-          {st.msg && phase !== 'success' && <div className="text-xs text-slate-500">{st.msg}</div>}
+          <div className={phase === 'success' ? 'text-emerald-600 dark:text-emerald-300' : phase === 'error' ? 'text-rose-600 dark:text-rose-300' : 'text-foreground'}>{STEP_TEXT[phase] || phase}</div>
+          {detail && <div className="text-xs text-muted-foreground">{detail}…</div>}
+          {st.msg && phase !== 'success' && <div className="text-xs text-muted-foreground">{st.msg}</div>}
         </div>
       </div>
 
@@ -540,22 +540,22 @@ function LoginModal({ onClose, onFlash }) {
                 href={st.url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-base font-medium text-white hover:bg-primary/90"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90"
               >
                 <ExternalLink className="h-5 w-5" /> Open link
               </a>
               <button
                 type="button"
                 onClick={copyUrl}
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border bg-secondary px-4 py-3 text-base font-medium text-slate-100 hover:bg-accent"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border bg-secondary px-4 py-3 text-base font-medium text-foreground hover:bg-accent"
               >
-                {copied ? <Check className="h-5 w-5 text-emerald-300" /> : <Copy className="h-5 w-5" />} {copied ? 'Copied' : 'Copy link'}
+                {copied ? <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-300" /> : <Copy className="h-5 w-5" />} {copied ? 'Copied' : 'Copy link'}
               </button>
             </div>
-            <code className="mt-2 block max-h-16 select-all overflow-auto break-all rounded-lg bg-background px-2.5 py-2 font-mono text-[11px] text-sky-300">{st.url}</code>
+            <code className="mt-2 block max-h-16 select-all overflow-auto break-all rounded-lg bg-background px-2.5 py-2 font-mono text-[11px] text-sky-600 dark:text-sky-300">{st.url}</code>
           </div>
           <div className="rounded-xl border bg-sidebar p-3">
-            <div className="mb-2 text-xs font-medium text-slate-300">2. Paste the code shown after you authorize</div>
+            <div className="mb-2 text-xs font-medium text-foreground/80">2. Paste the code shown after you authorize</div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <input
                 value={code}
@@ -578,8 +578,8 @@ function LoginModal({ onClose, onFlash }) {
       )}
 
       {phase === 'success' && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl bg-emerald-500/10 p-4 text-sm text-emerald-100 ring-1 ring-emerald-500/25">
-          <CheckCircle2 className="h-5 w-5 text-emerald-300" /> Signed in. The login is saved in <code>~/.claude</code>, works for every project and survives redeploys.
+        <div className="flex flex-wrap items-center gap-3 rounded-xl bg-emerald-500/10 p-4 text-sm text-emerald-800 dark:text-emerald-100 ring-1 ring-emerald-500/25">
+          <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-300" /> Signed in. The login is saved in <code>~/.claude</code>, works for every project and survives redeploys.
           <Btn variant="accent" className="ml-auto" onClick={onClose}>
             Close
           </Btn>
@@ -594,12 +594,12 @@ function LoginModal({ onClose, onFlash }) {
       {/* ultimo recurso: tela desconhecida que o painel nao passou sozinho */}
       {(phase === 'attention' || (phase === 'error' && st.screen)) && (
         <div className="mt-4">
-          {phase === 'attention' && <div className="mb-2 text-xs text-slate-400">Pick the right option with the keys below. The panel carries on by itself afterwards.</div>}
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-background p-2.5 font-mono text-[11px] leading-snug text-slate-300">{st.screen || '…'}</pre>
+          {phase === 'attention' && <div className="mb-2 text-xs text-muted-foreground">Pick the right option with the keys below. The panel carries on by itself afterwards.</div>}
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-background p-2.5 font-mono text-[11px] leading-snug text-foreground/80">{st.screen || '…'}</pre>
           {phase === 'attention' && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {LOGIN_KEYS.map(([l, k]) => (
-                <button key={k} type="button" onClick={() => key(k)} className="min-h-10 min-w-10 rounded-md border bg-accent px-3 py-1.5 font-mono text-sm text-slate-300 hover:bg-secondary hover:text-white">
+                <button key={k} type="button" onClick={() => key(k)} className="min-h-10 min-w-10 rounded-md border bg-accent px-3 py-1.5 font-mono text-sm text-foreground/80 hover:bg-secondary hover:text-foreground">
                   {l}
                 </button>
               ))}

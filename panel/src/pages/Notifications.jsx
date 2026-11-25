@@ -65,7 +65,7 @@ function InstallGuide({ installEvt, onInstall }) {
               <Step n={3}>Close Safari and open <b>Claude Remote</b> from the Home Screen icon. Log in again (the app has its own cookies).</Step>
               <Step n={4}>Come back to this tab and tap <b>Enable on this device</b>, then <b>Allow</b>.</Step>
             </ol>
-            {ios && !P.isStandalone() && <p className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200 ring-1 ring-amber-500/30">You are in a browser tab right now — install first (steps 1–3).</p>}
+            {ios && !P.isStandalone() && <p className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200 ring-1 ring-amber-500/30">You are in a browser tab right now — install first (steps 1–3).</p>}
           </div>
         ) : (
           <div className="space-y-3">

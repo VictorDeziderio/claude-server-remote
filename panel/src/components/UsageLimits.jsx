@@ -51,10 +51,10 @@ export function LimitBar({ label, percent, resetsAt, thresholds, stale }) {
   return (
     <div className={cn('min-w-0', stale && 'opacity-60')}>
       <div className="flex items-baseline justify-between gap-2 text-xs">
-        <span className="truncate text-slate-300">{label}</span>
-        <span className="shrink-0 font-mono text-slate-100">{Math.round(p)}%</span>
+        <span className="truncate text-foreground/80">{label}</span>
+        <span className="shrink-0 font-mono text-foreground">{Math.round(p)}%</span>
       </div>
-      <div className="mt-1 h-2 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-valuenow={Math.round(p)} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
+      <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={Math.round(p)} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
         <div className={cn('h-full rounded-full transition-all', barColor(p, thresholds))} style={{ width: `${p}%` }} />
       </div>
       {resetsAt && <div className="mt-0.5 text-[11px] text-muted-foreground" title={new Date(resetsAt).toLocaleString()}>{fmtReset(resetsAt)}</div>}
@@ -68,7 +68,7 @@ function ClaudeStatus({ c, compact }) {
   if (c.status === 'ok' || c.status === 'pending') return null
   const reconnect = c.status === 'auth_error' || c.status === 'expired' || c.status === 'not_logged_in'
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs text-amber-200">
+    <div className="flex flex-wrap items-center gap-2 text-xs text-amber-700 dark:text-amber-200">
       <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
       <span className={cn('min-w-0', compact && 'truncate')}>{c.message}</span>
       {reconnect && <Link to="/account?login=1" className="inline-flex items-center gap-1 font-medium text-primary hover:underline"><LogIn className="h-3 w-3" /> Reconnect Claude</Link>}
@@ -98,7 +98,7 @@ export function UsageWidget() {
         </div>
       )}
       {a.configured && a.status === 'ok' && (
-        <div className="text-xs text-slate-300">
+        <div className="text-xs text-foreground/80">
           API spend: <span className="font-mono">{money(a.today, a.currency)}</span> today · <span className="font-mono">{money(a.month, a.currency)}</span> this month
           {a.budget ? <span className="text-muted-foreground"> ({Math.round(a.percent || 0)}% of {money(a.budget, a.currency)})</span> : null}
         </div>
@@ -129,23 +129,23 @@ export function UsageDetails() {
                 </div>
               )}
               {c.extra && (
-                <div className="text-xs text-slate-300">
+                <div className="text-xs text-foreground/80">
                   Extra usage: <span className="font-mono">{money(c.extra.used, c.extra.currency)}</span> of <span className="font-mono">{money(c.extra.limit, c.extra.currency)}</span>
                   {c.extra.percent !== null ? ` (${Math.round(c.extra.percent)}%)` : ''}
                 </div>
               )}
               {c.status === 'ok' && !(c.windows || []).length && <div className="text-xs text-muted-foreground">{c.message}</div>}
             </section>
-            <section className="space-y-2 border-t border-white/6 pt-4">
+            <section className="space-y-2 border-t border-border pt-4">
               <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Anthropic API</h3>
               {!a.configured ? (
                 <div className="text-xs text-muted-foreground">Not configured. Set <code className="font-mono">ANTHROPIC_ADMIN_KEY</code> (an Admin API key) to see API spend.</div>
               ) : (
                 <>
-                  {a.status !== 'ok' && a.message && <div className="flex items-center gap-2 text-xs text-amber-200"><AlertTriangle className="h-3.5 w-3.5" /> {a.message}</div>}
+                  {a.status !== 'ok' && a.message && <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-200"><AlertTriangle className="h-3.5 w-3.5" /> {a.message}</div>}
                   <div className="grid grid-cols-2 gap-3">
-                    <div><div className="text-[11px] text-muted-foreground">Today (UTC)</div><div className="font-mono text-sm text-slate-100">{money(a.today, a.currency)}</div></div>
-                    <div><div className="text-[11px] text-muted-foreground">This month</div><div className="font-mono text-sm text-slate-100">{money(a.month, a.currency)}</div></div>
+                    <div><div className="text-[11px] text-muted-foreground">Today (UTC)</div><div className="font-mono text-sm text-foreground">{money(a.today, a.currency)}</div></div>
+                    <div><div className="text-[11px] text-muted-foreground">This month</div><div className="font-mono text-sm text-foreground">{money(a.month, a.currency)}</div></div>
                   </div>
                   {a.budget ? <LimitBar label={`Monthly budget ${money(a.budget, a.currency)}`} percent={a.percent} thresholds={snap.thresholds} stale={a.stale} /> : null}
                   <div className="text-[11px] text-muted-foreground">{a.note}</div>

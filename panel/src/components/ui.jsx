@@ -15,7 +15,7 @@ export function Dot({ on, pulse, color }) {
 // (primary/ambar) e reservada pra "trabalhando"; os outros 3 estados usam as cores semanticas
 // do tema (success/destructive/muted) em vez de inventar um 5o acento.
 export const ACTIVITY = {
-  busy: { label: 'trabalhando', cls: 'bg-primary', text: 'text-primary', pulse: true },
+  busy: { label: 'trabalhando', cls: 'bg-warning', text: 'text-warning', pulse: true },
   prompt: { label: 'aguardando você', cls: 'bg-destructive', text: 'text-destructive', pulse: true },
   idle: { label: 'ocioso', cls: 'bg-success', text: 'text-success', pulse: false },
   off: { label: 'parado', cls: 'bg-muted-foreground/40', text: 'text-muted-foreground', pulse: false },

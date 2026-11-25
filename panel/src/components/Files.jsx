@@ -151,16 +151,16 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
   const parts = cur ? cur.split('/') : []
   const Crumbs = () => (
     <div className="flex min-w-0 flex-wrap items-center gap-0.5 text-sm">
-      <button type="button" onClick={() => go('')} title="/root" className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition hover:bg-accent ${parts.length === 0 ? 'text-slate-200 font-medium' : 'text-slate-500 hover:text-slate-300'}`}>
+      <button type="button" onClick={() => go('')} title="/root" className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition hover:bg-accent ${parts.length === 0 ? 'text-foreground font-medium' : 'text-muted-foreground hover:text-foreground/80'}`}>
         <Home className="h-3.5 w-3.5 text-primary" /> {!embedded && 'root'}
       </button>
       {parts.map((seg, i) => (
         <span key={i} className="inline-flex items-center gap-0.5">
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-700" />
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
           {i === parts.length - 1 ? (
-            <span className="max-w-[12rem] truncate px-1.5 py-0.5 font-medium text-slate-200">{seg}</span>
+            <span className="max-w-[12rem] truncate px-1.5 py-0.5 font-medium text-foreground">{seg}</span>
           ) : (
-            <button type="button" onClick={() => go(parts.slice(0, i + 1).join('/'))} className="max-w-[10rem] truncate rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-accent hover:text-slate-300">
+            <button type="button" onClick={() => go(parts.slice(0, i + 1).join('/'))} className="max-w-[10rem] truncate rounded px-1.5 py-0.5 text-muted-foreground transition hover:bg-accent hover:text-foreground/80">
               {seg}
             </button>
           )}
@@ -178,9 +178,9 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
               <ArrowLeft className="h-3.5 w-3.5" /> {!embedded && 'Voltar'}
             </Btn>
             <Crumbs />
-            {dirty && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">não salvo</span>}
+            {dirty && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-300">não salvo</span>}
             {!embedded && (
-              <span className="font-mono text-xs text-slate-500">
+              <span className="font-mono text-xs text-muted-foreground">
                 {fmtSize(file.size)} · {fmtDate(file.mtime)}
               </span>
             )}
@@ -237,12 +237,12 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
 
       <div className={`min-h-0 overflow-auto p-1.5 ${embedded ? 'flex-1' : 'max-h-[70vh]'}`}>
         {creating && (
-          <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-300">
+          <div className="flex items-center gap-2 px-3 py-2 text-sm text-foreground/80">
             {creating === 'dir' ? <FolderPlus className="h-4 w-4 text-primary" /> : <FilePlus className="h-4 w-4 text-primary" />}
             <InlineInput placeholder={creating === 'dir' ? 'nome da pasta' : 'nome do arquivo'} onSubmit={createItem} onCancel={() => setCreating('')} busy={busy === 'create'} />
           </div>
         )}
-        {cur !== '' && <Row onOpen={() => go(parentOf(cur))} icon={<Folder className="h-4 w-4 text-slate-400" />} name=".." muted />}
+        {cur !== '' && <Row onOpen={() => go(parentOf(cur))} icon={<Folder className="h-4 w-4 text-muted-foreground" />} name=".." muted />}
         {loading && entries.length === 0 && (
           <div className="space-y-1 p-2">
             <Skeleton className="h-8" />
@@ -261,7 +261,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
           if (renaming === e.name) {
             return (
               <div key={e.name} className="flex items-center gap-2 px-3 py-1.5 text-sm">
-                <Ic className="h-4 w-4 text-slate-400" />
+                <Ic className="h-4 w-4 text-muted-foreground" />
                 <InlineInput initial={e.name} onSubmit={(n) => renameItem(e, n)} onCancel={() => setRenaming('')} busy={busy === 'ren:' + e.name} />
               </div>
             )
@@ -269,7 +269,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
           if (deleting === e.name) {
             return (
               <div key={e.name} className="flex items-center gap-2 rounded-lg bg-rose-500/5 px-3 py-1.5 text-sm">
-                <Trash2 className="h-4 w-4 text-rose-300" />
+                <Trash2 className="h-4 w-4 text-rose-600 dark:text-rose-300" />
                 <InlineConfirm text={`Excluir "${e.name}"${e.type === 'dir' ? ' e todo o conteúdo' : ''}? Sem volta.`} onYes={() => delItem(e)} onNo={() => setDeleting('')} busy={busy === 'del:' + e.name} />
               </div>
             )
@@ -278,16 +278,16 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
             <Row
               key={e.name}
               onOpen={() => go(full)}
-              icon={<Ic className={`h-4 w-4 ${e.type === 'dir' ? 'text-primary' : 'text-slate-400'}`} />}
+              icon={<Ic className={`h-4 w-4 ${e.type === 'dir' ? 'text-primary' : 'text-muted-foreground'}`} />}
               name={e.name}
               right={
                 e.outside ? (
-                  <span className="text-xs text-amber-300" title="symlink que aponta para fora de /root — o painel não abre; você pode renomear ou excluir o link">
+                  <span className="text-xs text-amber-600 dark:text-amber-300" title="symlink que aponta para fora de /root — o painel não abre; você pode renomear ou excluir o link">
                     link p/ fora de /root
                   </span>
                 ) : (
                   !embedded && (
-                    <span className="hidden font-mono text-xs text-slate-500 sm:inline">
+                    <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
                       {e.type === 'file' ? fmtSize(e.size) + ' · ' : ''}
                       {fmtDate(e.mtime)}
                     </span>
@@ -297,7 +297,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
               actions={
                 <>
                   {e.type === 'file' && !e.outside ? (
-                    <a href={api.fsDownloadUrl(full)} onClick={(ev) => ev.stopPropagation()} title="baixar" className="rounded p-1 text-slate-500 hover:bg-accent hover:text-slate-200">
+                    <a href={api.fsDownloadUrl(full)} onClick={(ev) => ev.stopPropagation()} title="baixar" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
                       <Download className="h-3.5 w-3.5" />
                     </a>
                   ) : (
@@ -312,7 +312,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
                       setRenaming(e.name)
                     }}
                     title="renomear"
-                    className="rounded p-1 text-slate-500 hover:bg-accent hover:text-slate-200"
+                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
@@ -323,7 +323,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
                       setDeleting(e.name)
                     }}
                     title="excluir"
-                    className="rounded p-1 text-slate-500 hover:bg-rose-500/10 hover:text-rose-300"
+                    className="rounded p-1 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-300"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -346,7 +346,7 @@ function Row({ onOpen, icon, name, right, actions, muted }) {
       onKeyDown={(e) => {
         if (e.key === 'Enter') onOpen()
       }}
-      className={`group flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm transition hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${muted ? 'text-slate-500' : 'text-slate-200'}`}
+      className={`group flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm transition hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${muted ? 'text-muted-foreground' : 'text-foreground'}`}
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{name}</span>

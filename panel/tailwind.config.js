@@ -18,6 +18,8 @@ module.exports = {
         popover: { DEFAULT: 'rgb(var(--popover) / <alpha-value>)', foreground: 'rgb(var(--popover-foreground) / <alpha-value>)' },
         card: { DEFAULT: 'rgb(var(--card) / <alpha-value>)', foreground: 'rgb(var(--card-foreground) / <alpha-value>)' },
         success: 'rgb(var(--success) / <alpha-value>)',
+        warning: 'rgb(var(--warning) / <alpha-value>)',
+        brand: 'rgb(var(--brand) / <alpha-value>)',
         sidebar: {
           DEFAULT: 'rgb(var(--sidebar) / <alpha-value>)',
           foreground: 'rgb(var(--sidebar-foreground) / <alpha-value>)',

@@ -5,6 +5,11 @@ import App from './App.jsx'
 import './index.css'
 import { initPwaHooks } from './lib/push.js'
 import { installViewport } from './lib/viewport.js'
+import { applyTheme, readTheme, watchSystemTheme } from './lib/theme.js'
+
+// tema claro/escuro (a 1a aplicacao ja aconteceu no index.html, antes de pintar)
+applyTheme(readTheme())
+watchSystemTheme()
 
 // celular: altura visivel real (teclado virtual) -> --app-h / data-kb no <html>
 installViewport()

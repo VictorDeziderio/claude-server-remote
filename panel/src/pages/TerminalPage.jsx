@@ -33,10 +33,10 @@ const narrow = () => window.matchMedia('(max-width: 768px)').matches
 const coarse = () => window.matchMedia('(pointer: coarse)').matches
 
 const STATUS = {
-  connecting: { label: 'conectando…', Icon: Loader2, cls: 'text-amber-300', spin: true },
+  connecting: { label: 'conectando…', Icon: Loader2, cls: 'text-amber-600 dark:text-amber-300', spin: true },
   open: { label: 'conectado', Icon: Wifi, cls: 'text-success drop-shadow-[0_0_6px_rgba(79,224,203,.5)]' },
-  closed: { label: 'reconectando…', Icon: WifiOff, cls: 'text-amber-300' },
-  error: { label: 'erro', Icon: AlertTriangle, cls: 'text-rose-300' },
+  closed: { label: 'reconectando…', Icon: WifiOff, cls: 'text-amber-600 dark:text-amber-300' },
+  error: { label: 'erro', Icon: AlertTriangle, cls: 'text-rose-600 dark:text-rose-300' },
 }
 
 // Botao da barra de teclas: NAO tira o foco do terminal (senao o teclado do celular fecha) e,
@@ -67,7 +67,7 @@ function KeyBtn({ k, onPress, active, locked, hot }) {
       onClick={() => { if (!t.current.repeated) onPress(k); t.current.repeated = false }}
       className={cn(
         'h-10 min-w-[2.75rem] shrink-0 select-none rounded-md border px-2.5 font-mono text-[13px] transition active:scale-95 sm:h-8 sm:min-w-0 sm:text-xs',
-        active ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-accent text-slate-200 hover:bg-secondary hover:text-white active:bg-primary/30',
+        active ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-accent text-foreground hover:bg-secondary hover:text-primary-foreground active:bg-primary/30',
         locked && 'underline decoration-2 underline-offset-4',
         hot && 'border-destructive/60 text-destructive',
       )}
@@ -312,7 +312,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
   const proj = projects.find((p) => p.name === target)
   const actOf = (p) => (activity && activity[p.session] && activity[p.session].state) || p.activity || 'off'
   const waiting = proj && proj.claudeRunning && actOf(proj) === 'prompt'
-  const tabCls = (active) => `relative flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:h-auto sm:py-1.5 sm:text-xs ${active ? 'border border-transparent bg-primary/15 text-primary ring-1 ring-primary/25' : 'bg-accent text-slate-400 border hover:bg-secondary hover:text-slate-200'}`
+  const tabCls = (active) => `relative flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 sm:h-auto sm:py-1.5 sm:text-xs ${active ? 'border border-transparent bg-primary/15 text-primary ring-1 ring-primary/25' : 'bg-accent text-muted-foreground border hover:bg-secondary hover:text-foreground'}`
   const lost = status === 'closed' || (status === 'connecting' && statusInfo.attempt > 0)
   const menuItem = 'flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-left text-sm text-foreground hover:bg-muted'
 
@@ -374,32 +374,32 @@ export default function TerminalPage({ data, activity, onFlash }) {
       {/* Janelas do tmux + clientes (+ ferramentas no celular) */}
       <div className="flex items-center gap-1.5 border-b border-border px-2 py-1 text-[11px] sm:flex-wrap sm:px-3 sm:py-1.5">
         <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
-          <AppWindow className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+          <AppWindow className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           {win.windows.map((w) => (
-            <span key={w.index} className={`inline-flex shrink-0 items-center overflow-hidden rounded-md ${w.active ? 'border border-transparent ring-1 ring-primary/25 bg-primary/15 text-primary' : 'border border-border bg-accent text-slate-400'}`}>
-              <button type="button" onClick={() => winAction('select', w.index)} className="px-2 py-1.5 hover:text-white sm:py-0.5" title={`janela ${w.index} · ${w.cmd}`}>
+            <span key={w.index} className={`inline-flex shrink-0 items-center overflow-hidden rounded-md ${w.active ? 'border border-transparent ring-1 ring-primary/25 bg-primary/15 text-primary' : 'border border-border bg-accent text-muted-foreground'}`}>
+              <button type="button" onClick={() => winAction('select', w.index)} className="px-2 py-1.5 hover:text-foreground sm:py-0.5" title={`janela ${w.index} · ${w.cmd}`}>
                 {w.index}:{w.name}
               </button>
               {win.windows.length > 1 &&
                 (killIdx === w.index ? (
-                  <button type="button" onClick={() => winAction('kill', w.index)} className="bg-rose-500/20 px-1.5 py-1.5 text-rose-200 sm:py-0.5" title="confirmar fechar">
+                  <button type="button" onClick={() => winAction('kill', w.index)} className="bg-rose-500/20 px-1.5 py-1.5 text-rose-700 dark:text-rose-200 sm:py-0.5" title="confirmar fechar">
                     fechar?
                   </button>
                 ) : (
-                  <button type="button" onClick={() => setKillIdx(w.index)} className="px-1.5 py-1.5 text-slate-500 hover:text-rose-300 sm:px-1 sm:py-0.5" title="fechar janela">
+                  <button type="button" onClick={() => setKillIdx(w.index)} className="px-1.5 py-1.5 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-300 sm:px-1 sm:py-0.5" title="fechar janela">
                     <X className="h-3 w-3" />
                   </button>
                 ))}
             </span>
           ))}
-          <button type="button" onClick={() => winAction('new')} className="inline-flex shrink-0 items-center gap-0.5 rounded-md border bg-accent px-2 py-1.5 text-slate-400 hover:text-white sm:px-1.5 sm:py-0.5" title="nova janela tmux (Ctrl+b c)">
+          <button type="button" onClick={() => winAction('new')} className="inline-flex shrink-0 items-center gap-0.5 rounded-md border bg-accent px-2 py-1.5 text-muted-foreground hover:text-foreground sm:px-1.5 sm:py-0.5" title="nova janela tmux (Ctrl+b c)">
             <Plus className="h-3 w-3" />
           </button>
-          <span className="ml-auto inline-flex shrink-0 items-center gap-1 pl-1 text-slate-500" title="clientes tmux conectados nesta sessão (painel + Console)">
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1 pl-1 text-muted-foreground" title="clientes tmux conectados nesta sessão (painel + Console)">
             <Users className="h-3 w-3" /> {win.clients}
           </span>
           {win.clients > 1 && !detach && (
-            <button type="button" onClick={() => setDetach(true)} className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-amber-300 ring-1 ring-amber-500/25 hover:bg-amber-500/20 sm:py-0.5" title="derruba os outros clientes (tamanho da tela passa a ser o seu)">
+            <button type="button" onClick={() => setDetach(true)} className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-amber-600 dark:text-amber-300 ring-1 ring-amber-500/25 hover:bg-amber-500/20 sm:py-0.5" title="derruba os outros clientes (tamanho da tela passa a ser o seu)">
               <LogIn className="h-3 w-3" /> assumir sessão
             </button>
           )}
@@ -435,7 +435,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
             termRef.current?.findNext(search)
           }}
         >
-          <Search className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+          <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <input
             ref={searchRef}
             value={search}
@@ -470,19 +470,19 @@ export default function TerminalPage({ data, activity, onFlash }) {
         <div className="relative min-h-0 min-w-0 flex-1 sm:p-1">
           <XTerm ref={termRef} target={target} fontSize={font} detach={detach} onStatus={onStatus} onSearchToggle={toggleSearch} onCopy={onCopy} onLongPress={onLongPress} onPinch={onPinch} transformInput={withMods} className="sm:rounded-lg" />
           {lost && (
-            <div className="absolute inset-x-0 top-2 z-10 mx-auto flex w-fit max-w-[92%] items-center gap-2 rounded-lg bg-amber-950/90 px-3 py-2 text-xs text-amber-100 ring-1 ring-amber-500/30" role="status">
-              <WifiOff className="size-4 shrink-0 text-amber-300" />
+            <div className="absolute inset-x-0 top-2 z-10 mx-auto flex w-fit max-w-[92%] items-center gap-2 rounded-lg bg-amber-950/90 px-3 py-2 text-xs text-amber-800 dark:text-amber-100 ring-1 ring-amber-500/30" role="status">
+              <WifiOff className="size-4 shrink-0 text-amber-600 dark:text-amber-300" />
               <span>{status === 'closed' ? `Connection lost — retrying in ${Math.max(1, Math.round((statusInfo.retryIn || 0) / 1000))}s` : `Reconnecting… (attempt ${statusInfo.attempt})`}</span>
-              <button type="button" className="rounded-md bg-amber-500/20 px-2.5 py-1.5 font-medium text-amber-100 ring-1 ring-amber-500/40 hover:bg-amber-500/30" onClick={() => termRef.current?.reconnect()}>
+              <button type="button" className="rounded-md bg-amber-500/20 px-2.5 py-1.5 font-medium text-amber-800 dark:text-amber-100 ring-1 ring-amber-500/40 hover:bg-amber-500/30" onClick={() => termRef.current?.reconnect()}>
                 Reconnect now
               </button>
             </div>
           )}
           {status === 'error' && (
-            <div className="absolute inset-x-0 bottom-3 z-10 mx-auto flex w-fit max-w-[92%] flex-wrap items-center gap-2 rounded-lg bg-rose-950/90 px-3 py-2 text-xs text-rose-100 ring-1 ring-rose-500/30">
+            <div className="absolute inset-x-0 bottom-3 z-10 mx-auto flex w-fit max-w-[92%] flex-wrap items-center gap-2 rounded-lg bg-rose-950/90 px-3 py-2 text-xs text-rose-800 dark:text-rose-100 ring-1 ring-rose-500/30">
               {statusMsg || 'erro'} —
               {proj && proj.enabled === false ? (
-                <button type="button" className="inline-flex items-center gap-1 rounded-md bg-emerald-500/20 px-2 py-1 text-emerald-200 ring-1 ring-emerald-500/30 hover:bg-emerald-500/30" onClick={powerOn}>
+                <button type="button" className="inline-flex items-center gap-1 rounded-md bg-emerald-500/20 px-2 py-1 text-emerald-700 dark:text-emerald-200 ring-1 ring-emerald-500/30 hover:bg-emerald-500/30" onClick={powerOn}>
                   <Power className="h-3 w-3" /> ligar o projeto
                 </button>
               ) : (
@@ -523,7 +523,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
       )}
 
       {!full && (
-        <p className="hidden flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-1.5 text-xs text-slate-500 sm:flex">
+        <p className="hidden flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-1.5 text-xs text-muted-foreground sm:flex">
           <span className="inline-flex items-center gap-1 font-mono">
             <Cpu className="h-3 w-3" /> {proj ? `sessão ${proj.session} em ${proj.dir}` : 'bash em /root (sessão cr-shell)'}
           </span>
@@ -531,7 +531,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
           <span>· selecionar com o mouse já copia · Ctrl+C copia a seleção (sem seleção = interromper) · Ctrl+V / botão direito cola · Ctrl+Shift+F busca · roda do mouse rola</span>
           {target === 'shell' && (
             <span>
-              · para o Claude: <code className="font-mono text-slate-400">claude</code> ou <code className="font-mono text-slate-400">tmux attach -t claude-&lt;projeto&gt;</code>
+              · para o Claude: <code className="font-mono text-muted-foreground">claude</code> ou <code className="font-mono text-muted-foreground">tmux attach -t claude-&lt;projeto&gt;</code>
             </span>
           )}
         </p>
