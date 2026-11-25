@@ -115,6 +115,7 @@ function SelectSheet({ target, font, onClose, onFlash }) {
   )
 }
 
+// (the Modal sits above the fullscreen terminal: see the layers in components/ui.jsx)
 // Colar sem permissao de leitura da area de transferencia (HTTP, iOS negou...): caixa de texto
 // onde o "Colar" nativo do celular funciona sempre.
 function PasteSheet({ onSend, onClose }) {

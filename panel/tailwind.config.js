@@ -49,9 +49,13 @@ module.exports = {
           '0%': { opacity: '0', transform: 'translateY(6px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
+        // opacity only: for elements positioned with a translate (the modal is centered with
+        // -translate-y-1/2; an animated transform would undo it)
+        'fade-in': { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
       },
       animation: {
         'fade-up': 'fade-up 320ms cubic-bezier(0.16, 1, 0.3, 1) both',
+        'fade-in': 'fade-in 160ms ease-out both',
       },
     },
   },

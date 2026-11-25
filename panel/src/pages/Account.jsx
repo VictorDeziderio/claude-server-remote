@@ -505,7 +505,7 @@ function LoginModal({ onClose, onFlash }) {
   const idx = stepIndex(phase)
   const detail = working ? (SCREEN_TEXT[st.step] ? t(SCREEN_TEXT[st.step]) : '') : ''
   return (
-    <Modal title={t('login.modalTitle')} icon={LogIn} onClose={close} wide>
+    <Modal title={t('login.modalTitle')} icon={LogIn} onClose={close} wide dismissible={false}>
       <ol className="mb-4 flex items-center gap-2 text-xs">
         {STEPS.map((label, i) => (
           <li key={label} className="flex flex-1 items-center gap-2">

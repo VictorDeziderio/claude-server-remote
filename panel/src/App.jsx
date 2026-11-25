@@ -92,7 +92,7 @@ export default function App() {
   const stale = !!data && ((data.panelVersion && data.panelVersion !== __PANEL_VERSION__)
     || (__PANEL_BUILD__ && data.buildTime && data.buildTime !== __PANEL_BUILD__))
   const actions = pathname.startsWith('/dashboard')
-    ? <Btn variant="accent" onClick={() => setShowNew(true)}><Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline"> {t('projects.new')}</span></Btn>
+    ? <Btn variant="accent" onClick={() => setShowNew(true)} aria-label={t('projects.new')} title={t('projects.new')}><Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline"> {t('projects.new')}</span></Btn>
     : null
 
   return (

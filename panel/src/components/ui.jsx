@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Loader2, Check, X } from 'lucide-react'
+import { Dialog as DialogPrimitive } from 'radix-ui'
 import { Button } from './ui/button.jsx'
 import { Card as SCard, CardHeader, CardTitle, CardContent, CardAction } from './ui/card.jsx'
 import { Badge } from './ui/badge.jsx'
@@ -72,45 +73,53 @@ export function Chip({ on, onClick, busy, labelOn, labelOff, Icon }) {
   )
 }
 
-export function Modal({ title, icon: Icon, onClose, children, wide }) {
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose?.() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className={cn('max-h-[92vh] w-full animate-fade-up overflow-auto rounded-xl border border-border bg-popover p-4 text-popover-foreground', wide ? 'max-w-3xl' : 'max-w-sm')}
-        onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-base font-medium">{Icon && <Icon className="size-4 text-primary" />} {title}</div>
-          <button type="button" onClick={onClose} aria-label="fechar" className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"><X className="size-4" /></button>
-        </div>
-        {children}
-      </div>
+// ---- Modal (centered) and Drawer (side panel): ONE overlay system, built on the Radix Dialog of
+// shadcn (components/ui/dialog.jsx uses the same primitive). Radix gives what the hand-made version
+// lacked: portal to <body> (no parent with overflow/transform can clip it), focus trapped inside and
+// returned to the button that opened it, background scroll locked, Escape closes only the TOP one,
+// and an outside click counts only when the press STARTS outside (selecting text in a field and
+// releasing the mouse on the backdrop no longer closes it).
+// Layers (keep in this order): fullscreen terminal 60 · terminal text view 70 · MODALS 80 · toast 90.
+// Before, the modal was z-50 and the "Paste" box opened BEHIND the fullscreen terminal.
+// dismissible=false: only the X button closes it (a click outside or Escape would lose a flow
+// in progress, e.g. the Claude login).
+export const OVERLAY_Z = 'z-[80]'
+function Overlay({ title, icon: Icon, onClose, dismissible = true, side, wide, children }) {
+  const guard = dismissible ? undefined : (e) => e.preventDefault()
+  // focus back to whatever opened it (Radix only does this for its own <Dialog.Trigger>, which
+  // these callers do not use: without this the focus fell to <body>)
+  const opener = useRef(typeof document !== 'undefined' ? document.activeElement : null)
+  useEffect(() => () => { const el = opener.current; setTimeout(() => { if (el?.isConnected) el.focus?.() }, 0) }, [])
+  const head = (
+    <div className={cn('flex items-center justify-between gap-2', side ? 'border-b p-4' : 'mb-4')}>
+      <DialogPrimitive.Title className="flex min-w-0 items-center gap-2 text-base font-medium">
+        {Icon && <Icon className="size-4 shrink-0 text-primary" />} <span className="truncate">{title}</span>
+      </DialogPrimitive.Title>
+      <DialogPrimitive.Close aria-label={t('common.close')} className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"><X className="size-4" /></DialogPrimitive.Close>
     </div>
   )
-}
-
-// painel lateral (drawer) a direita — usado p/ "configurar projeto"
-export function Drawer({ title, icon: Icon, onClose, children }) {
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose?.() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
-      <aside className="flex h-full w-full max-w-lg animate-fade-up flex-col border-l bg-popover text-popover-foreground" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <div className="flex items-center justify-between border-b p-4">
-          <div className="flex items-center gap-2 text-base font-medium">{Icon && <Icon className="size-4 text-primary" />} {title}</div>
-          <button type="button" onClick={onClose} aria-label="fechar" className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"><X className="size-4" /></button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto p-4">{children}</div>
-      </aside>
-    </div>
+    <DialogPrimitive.Root open onOpenChange={(o) => { if (!o) onClose?.() }}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay data-slot="modal-overlay" className={cn('fixed inset-0 bg-black/40', OVERLAY_Z)} />
+        <DialogPrimitive.Content
+          data-slot={side ? 'drawer' : 'modal'}
+          aria-describedby={undefined}
+          onPointerDownOutside={guard} onEscapeKeyDown={guard} onCloseAutoFocus={(e) => e.preventDefault()}
+          className={cn('fixed flex flex-col bg-popover text-popover-foreground outline-none', OVERLAY_Z,
+            side
+              ? 'inset-y-0 right-0 h-full w-full max-w-lg animate-fade-in border-l pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]'
+              : cn('inset-x-0 top-1/2 mx-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] -translate-y-1/2 overflow-auto overscroll-contain rounded-xl border border-border p-4 animate-fade-in', wide ? 'max-w-3xl' : 'max-w-sm'))}>
+          {head}
+          {side ? <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-4">{children}</div> : children}
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   )
 }
+export const Modal = (props) => <Overlay {...props} />
+// side panel on the right — used for "configure project"
+export const Drawer = (props) => <Overlay {...props} side />
 
 export function Toast({ flash, onClose, position = 'bottom' }) {
   useEffect(() => {
@@ -126,7 +135,7 @@ export function Toast({ flash, onClose, position = 'bottom' }) {
     ? 'top-[calc(env(safe-area-inset-top)+1rem)] inset-x-0 mx-auto w-[min(92vw,26rem)] sm:left-auto sm:right-4 sm:mx-0'
     : 'bottom-[calc(env(safe-area-inset-bottom)+5rem)] inset-x-0 mx-auto w-[min(92vw,40rem)] sm:bottom-4'
   return (
-    <div className={cn('pointer-events-auto fixed z-[70] flex animate-fade-up items-start gap-2 rounded-lg border px-4 py-3 text-sm', pos,
+    <div className={cn('pointer-events-auto fixed z-[90] flex animate-fade-up items-start gap-2 rounded-lg border px-4 py-3 text-sm', pos,
       flash.ok ? 'border-success/30 bg-success/10 text-success' : 'border-destructive/30 bg-destructive/10 text-destructive')} role="status">
       {flash.ok ? <Check className="mt-0.5 size-4 shrink-0" /> : <X className="mt-0.5 size-4 shrink-0" />}
       <span className="min-w-0 flex-1 break-words text-foreground">{flash.msg}</span>
