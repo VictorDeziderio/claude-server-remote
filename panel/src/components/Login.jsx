@@ -29,18 +29,19 @@ export default function Login({ onSuccess }) {
       setBusy(false)
     }
   }
-  const field = 'flex items-center gap-2 rounded-md border border-input bg-input/20 px-3 transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-ring/40'
-  const input = 'w-full bg-transparent py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none'
+  const field = 'flex h-10 items-center gap-2 rounded-md border border-input bg-transparent px-3 shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/30'
+  const input = 'w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground'
 
   return (
-    <div className="flex h-full items-center justify-center overflow-auto px-4 py-10">
-      <form onSubmit={submit} className="w-full max-w-sm animate-fade-up rounded-lg border border-border bg-card p-7 text-card-foreground">
+    <div className="relative flex h-full items-center justify-center overflow-auto bg-background px-4 py-10">
+      {/* background: faint grid that fades out + a soft glow in the brand color */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,var(--border)_1px,transparent_1px),linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] bg-[size:44px_44px] [mask-image:radial-gradient(ellipse_60%_55%_at_50%_45%,#000_30%,transparent_100%)]" />
+      <div aria-hidden className="pointer-events-none absolute left-1/2 top-[38%] h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/20 blur-3xl" />
+      <form onSubmit={submit} className="relative w-full max-w-sm animate-fade-up rounded-xl border bg-card p-6 text-card-foreground shadow-xl sm:p-8">
         <div className="mb-6 flex flex-col items-center text-center">
-          <div className="mb-3 grid size-12 place-items-center rounded-xl bg-primary text-brand shadow-sm"><Logo size={26} /></div>
-          <h1 className="text-lg font-medium text-foreground">claude<span className="text-brand">/</span>remote</h1>
-          <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="inline-block size-1.5 rounded-full bg-success" /> {t('login.hint')}
-          </p>
+          <div className="mb-4 grid size-12 place-items-center rounded-xl border bg-background shadow-sm"><Logo size={26} /></div>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">claude<span className="text-brand">/</span>remote</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">{t('login.hint')}</p>
         </div>
 
         {err && (
@@ -49,31 +50,31 @@ export default function Login({ onSuccess }) {
           </div>
         )}
 
-        <label className="mb-3 block">
-          <span className="mb-1 block text-xs text-muted-foreground">{t('login.user')}</span>
+        <label className="mb-4 block">
+          <span className="mb-1.5 block text-sm font-medium">{t('login.user')}</span>
           <div className={field}><User className="size-4 text-muted-foreground" />
             <input value={form.login} onChange={(e) => setForm((f) => ({ ...f, login: e.target.value }))} autoFocus autoComplete="username" className={input} placeholder="admin" />
           </div>
         </label>
-        <label className="mb-3 block">
-          <span className="mb-1 block text-xs text-muted-foreground">{t('login.password')}</span>
+        <label className="mb-4 block">
+          <span className="mb-1.5 block text-sm font-medium">{t('login.password')}</span>
           <div className={field}><Lock className="size-4 text-muted-foreground" />
             <input type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} autoComplete="current-password" className={input} placeholder="••••••••" />
           </div>
         </label>
         {need2fa && (
-          <label className="mb-3 block">
-            <span className="mb-1 block text-xs text-muted-foreground">{t('login.code')}</span>
+          <label className="mb-4 block">
+            <span className="mb-1.5 block text-sm font-medium">{t('login.code')}</span>
             <div className={field}><ShieldCheck className="size-4 text-muted-foreground" />
               <input inputMode="numeric" pattern="[0-9 ]*" maxLength={7} value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} autoComplete="one-time-code" className={cn(input, 'tracking-widest')} placeholder="123 456" />
             </div>
           </label>
         )}
 
-        <Btn type="submit" variant="accent" busy={busy} className="mt-2 w-full justify-center py-2.5">
+        <Btn type="submit" variant="accent" busy={busy} className="mt-2 h-10 w-full justify-center">
           <LogIn className="size-4" /> {t('login.submit')}
         </Btn>
-        {ver && <p className="mt-4 text-center text-[10px] text-muted-foreground/60">{t('login.version', { v: ver })}</p>}
+        {ver && <p className="mt-5 text-center text-xs text-muted-foreground/70">{t('login.version', { v: ver })}</p>}
       </form>
     </div>
   )

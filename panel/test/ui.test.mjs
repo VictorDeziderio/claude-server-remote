@@ -136,6 +136,44 @@ try {
   ok('the deploy hook URL is not shown on the page', !(await page.content()).includes('never-called'))
   await page.goto(BASE + '/dashboard')
 
+  // ---- theme (shadcn on Tailwind v4): the classes the shadcn components use must produce CSS.
+  // Under Tailwind v3 classes like rounded-4xl / ring-3 / has-data-[...] silently produced nothing.
+  const look = await page.evaluate(() => {
+    const px = (v) => parseFloat(v) || 0
+    const card = document.querySelector('[data-slot="project-card"], [data-slot="stat-card"]')
+    const main = document.querySelector('main')
+    const btn = document.querySelector('[data-slot="button"]')
+    const probe = document.createElement('span'); probe.className = 'rounded-4xl shadow-xs bg-brand'; document.body.appendChild(probe)
+    const ps = getComputedStyle(probe); const out = {
+      cardRadius: card ? px(getComputedStyle(card).borderTopLeftRadius) : -1,
+      cardBorder: card ? px(getComputedStyle(card).borderTopWidth) : -1,
+      mainRadius: main ? px(getComputedStyle(main).borderTopLeftRadius) : -1,
+      btnRadius: btn ? px(getComputedStyle(btn).borderTopLeftRadius) : -1,
+      probeRadius: px(ps.borderTopLeftRadius), probeRing: ps.boxShadow, probeBg: ps.backgroundColor,
+      bg: getComputedStyle(document.body).backgroundColor,
+    }
+    probe.remove(); return out
+  })
+  ok('cards: rounded + thin border (theme tokens applied)', look.cardRadius >= 10 && look.cardBorder >= 1, JSON.stringify(look))
+  ok('layout "inset": the content is a rounded card on desktop', look.mainRadius >= 8, JSON.stringify(look))
+  ok('Tailwind v4 classes of the shadcn components generate CSS (rounded-4xl, shadow-xs, bg-brand)', look.probeRadius >= 20 && look.probeRing !== 'none' && !/rgba\(0, 0, 0, 0\)/.test(look.probeBg), JSON.stringify(look))
+
+  // ---- command palette: Ctrl+K opens, typing filters, Enter navigates, Escape closes
+  await page.keyboard.press('Control+k')
+  const cmd = page.locator('[data-slot="command-menu"]')
+  ok('Ctrl+K opens the command palette', await cmd.waitFor({ timeout: 3000 }).then(() => true).catch(() => false))
+  ok('the palette lists the pages and the projects', (await cmd.getByRole('option', { name: /logs/i }).count()) > 0 && (await cmd.getByRole('option', { name: /terminal · demo/i }).count()) > 0)
+  await page.keyboard.type('logs')
+  ok('typing filters the list', (await cmd.getByRole('option').count()) >= 1 && !(await cmd.getByRole('option', { name: /terminal · demo/i }).count()))
+  await page.keyboard.press('Enter')
+  ok('Enter opens the selected page', await page.waitForURL(/\/logs$/, { timeout: 5000 }).then(() => true).catch(() => false), page.url())
+  ok('the palette closes after running', !(await cmd.count()))
+  await page.getByTestId('cmd-open').click()
+  ok('the header search button opens it too', await cmd.isVisible().catch(() => false))
+  await page.keyboard.press('Escape')
+  ok('Escape closes the palette', !(await cmd.count()))
+  await page.goto(BASE + '/dashboard')
+
   // ---- mobile: the modal fits the screen
   await page.setViewportSize({ width: 375, height: 640 })
   await page.getByRole('button', { name: /new project/i }).first().click() // icon-only on the phone: needs its aria-label

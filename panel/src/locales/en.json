@@ -743,5 +743,15 @@
   "backup.volumeOff": "Off. Set `VOLUME_BACKUP_DIR` to a folder on another disk or mount (e.g. a host folder bound at `/backup`).",
   "backup.volumeDest": "Destination",
   "backup.volumeKeep": "keeps the last {n}",
-  "backup.volumeNever": "no copy yet (the first one runs 10 minutes after start)"
+  "backup.volumeNever": "no copy yet (the first one runs 10 minutes after start)",
+  "cmd.search": "Search…",
+  "cmd.placeholder": "Type a page, project or action…",
+  "cmd.pages": "Pages",
+  "cmd.projects": "Projects",
+  "cmd.actions": "Actions",
+  "cmd.empty": "Nothing found.",
+  "cmd.terminalOf": "Terminal · {name}",
+  "cmd.filesOf": "Files · {name}",
+  "cmd.theme": "Switch theme (system / light / dark)",
+  "cmd.hint": "↑ ↓ to move · Enter to open · Esc to close"
 }

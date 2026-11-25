@@ -70,7 +70,7 @@ export default function HistoryPage({ data, onFlash, refresh }) {
         ) : (
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map((p) => (
-              <Link key={p.name} to={'/history/' + encodeURIComponent(p.name)} className="flex items-center gap-3 rounded-xl bg-accent p-3 border transition hover:border-primary/30">
+              <Link key={p.name} to={'/history/' + encodeURIComponent(p.name)} className="flex items-center gap-3 rounded-lg bg-muted/40 p-3 border transition hover:border-primary/30">
                 <History className="h-5 w-5 shrink-0 text-primary" />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium text-foreground">{p.name}</div>

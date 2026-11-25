@@ -14,28 +14,31 @@ const SESSION_MODES = [
   ['pinned', 'smode.pinned'],
 ]
 
-function StatItem({ icon: Icon, label, children, warn, className = '' }) {
+// summary card in the style of the shadcn dashboard-01 "section cards": small label, big value,
+// a muted footer line; a soft gradient from the top. warn = needs attention (brand-colored edge).
+function StatCard({ icon: Icon, label, value, children, warn, className = '' }) {
   return (
-    <div className={`flex items-start gap-3 rounded-xl border bg-accent px-3 py-2.5 sm:p-3 ${warn ? 'border-amber-500/40' : 'border-border'} ${className}`}>
-      <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${warn ? 'text-amber-600 dark:text-amber-300' : 'text-primary'}`} />
-      <div className="min-w-0 flex-1">
-        <div className="text-[11px] text-muted-foreground">{label}</div>
-        <div className="break-words text-sm text-foreground sm:truncate">{children}</div>
+    <div data-slot="stat-card" className={`flex min-w-0 flex-col gap-2 rounded-xl border bg-linear-to-t from-primary/[0.03] to-card p-3.5 shadow-xs sm:gap-3 sm:p-5 dark:from-primary/[0.04] ${warn ? 'border-brand/50' : ''} ${className}`}>
+      <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+        <span>{label}</span>
+        <span className={`grid size-7 place-items-center rounded-md border ${warn ? 'border-brand/40 text-brand' : 'text-muted-foreground'}`}><Icon className="size-3.5" /></span>
       </div>
+      <div className="min-w-0 truncate text-xl font-semibold tabular-nums tracking-tight text-foreground sm:text-2xl">{value}</div>
+      <div className="min-w-0 text-xs text-muted-foreground sm:text-sm">{children}</div>
     </div>
   )
 }
-const pct = (p) => (p >= 90 ? 'bg-rose-400' : p >= 75 ? 'bg-amber-400' : 'bg-emerald-400')
+const pct = (p) => (p >= 90 ? 'bg-destructive' : p >= 75 ? 'bg-warning' : 'bg-success')
 function Meter({ icon: Icon, label, value, hint }) {
   return (
-    <div className="rounded-xl bg-accent p-3 border">
+    <div className="rounded-lg bg-muted/50 p-3">
       <div className="flex items-center justify-between text-[11px] text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
-          <Icon className="h-3.5 w-3.5 text-primary" /> {label}
+          <Icon className="h-3.5 w-3.5" /> {label}
         </span>
-        <span className="font-mono text-sm text-foreground/80">{value}%</span>
+        <span className="text-sm font-medium tabular-nums text-foreground">{value}%</span>
       </div>
-      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-background">
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-primary/10">
         <div className={`h-full rounded-full ${pct(value)}`} style={{ width: Math.min(100, value) + '%' }} />
       </div>
       {hint && <div className="mt-1 text-[11px] text-muted-foreground">{hint}</div>}
@@ -92,10 +95,10 @@ export function HealthCard({ onFlash, compact }) {
         <Meter icon={HardDrive} label={t('dash.disk')} value={h.disk?.pct ?? 0} hint={h.disk ? t('dash.diskHint', { used: fmtSize(h.disk.used), total: fmtSize(h.disk.total), free: fmtSize(h.disk.avail) }) : ''} />
         <Meter icon={MemoryStick} label={t('dash.mem')} value={h.mem?.pct ?? 0} hint={h.mem ? t('dash.memHint', { used: fmtSize(h.mem.used), total: fmtSize(h.mem.total) }) : ''} />
         <Meter icon={Gauge} label="CPU" value={h.cpu?.pct ?? 0} hint={h.cpu?.cores ? t('dash.cores', { n: h.cpu.cores }) : ''} />
-        <div className="rounded-xl bg-accent p-3 border">
+        <div className="rounded-lg bg-muted/50 p-3">
           <div className="text-[11px] text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
-              <Gauge className="h-3.5 w-3.5 text-primary" /> Load / CPUs
+              <Gauge className="h-3.5 w-3.5" /> Load / CPUs
             </span>
           </div>
           <div className="mt-1 font-mono text-sm text-foreground">
@@ -106,10 +109,10 @@ export function HealthCard({ onFlash, compact }) {
             {t('dash.uptime', { host: fmtUptime(h.uptime), panel: fmtUptime(h.panel?.uptime) })}
           </div>
         </div>
-        <div className={`col-span-2 rounded-xl border bg-accent p-3 lg:col-span-1 ${c.updateAvailable ? 'border-amber-500/40' : 'border-border'}`}>
+        <div className={`col-span-2 rounded-lg p-3 lg:col-span-1 ${c.updateAvailable ? 'bg-brand/10 ring-1 ring-brand/40' : 'bg-muted/50'}`}>
           <div className="text-[11px] text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
-              <Tag className="h-3.5 w-3.5 text-primary" /> Claude Code
+              <Tag className="h-3.5 w-3.5" /> Claude Code
             </span>
           </div>
           <div className="mt-1 truncate font-mono text-sm text-foreground" title={c.current}>
@@ -138,24 +141,24 @@ export function HealthCard({ onFlash, compact }) {
       {!compact && (history.length > 0 || top.length > 0) && (
         <div className="grid gap-3 lg:grid-cols-2">
           {history.length > 0 && (
-            <div className="rounded-xl bg-accent p-3 border">
+            <div className="rounded-lg bg-muted/50 p-3">
               <div className="mb-1 text-[11px] text-muted-foreground">{t('dash.last6h')}</div>
               <div className="mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="inline-block h-1.5 w-3 rounded-full bg-sky-400" /> CPU
-                <span className="ml-3 inline-block h-1.5 w-3 rounded-full bg-amber-400" /> {t('dash.mem')}
+                <span className="inline-block h-1.5 w-3 rounded-full bg-chart-2" /> CPU
+                <span className="ml-3 inline-block h-1.5 w-3 rounded-full bg-chart-1" /> {t('dash.mem')}
               </div>
               <div className="relative">
-                <MiniLine points={history.map((p) => p.cpu)} color="#38bdf8" />
+                <MiniLine points={history.map((p) => p.cpu)} color="var(--chart-2)" />
                 <div className="absolute inset-0">
-                  <MiniLine points={history.map((p) => p.mem)} color="#f0a83c" />
+                  <MiniLine points={history.map((p) => p.mem)} color="var(--chart-1)" />
                 </div>
               </div>
             </div>
           )}
           {top.length > 0 && (
-            <div className="rounded-xl bg-accent p-3 border">
+            <div className="rounded-lg bg-muted/50 p-3">
               <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <ListTree className="h-3.5 w-3.5 text-primary" /> {t('dash.top')}
+                <ListTree className="h-3.5 w-3.5" /> {t('dash.top')}
               </div>
               <table className="w-full text-xs">
                 <tbody>
@@ -222,42 +225,36 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
 
   return (
     <div className="flex flex-col gap-4 sm:gap-5">
-      {/* Resumo */}
-      <section className="order-1 rounded-lg border bg-card p-3 sm:p-5">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
-          <StatItem icon={UserRound} label={t('account.claude')} warn={!login.logged} className="col-span-2 sm:col-span-1">
-            <Link to={login.logged ? '/account' : '/account?login=1'} className="inline-flex items-center gap-2 hover:underline">
-              <Dot on={login.logged} /> {login.logged ? login.account || t('account.loggedIn') : t('dash.loggedOutClick')}
-            </Link>
-          </StatItem>
-          <StatItem icon={Cpu} label={t('dash.sessions')}>
-            <span className="font-mono text-sm text-foreground">
-              {running}/{projects.length}
-            </span>{' '}
-            {t('dash.withClaude')}{off ? <span className="text-muted-foreground">{t('dash.offCount', { n: off })}</span> : ''}
-            {waiting ? <span className="text-rose-600 dark:text-rose-300">{t('dash.waitingCount', { n: waiting })}</span> : ''}
-          </StatItem>
-          <StatItem icon={BarChart3} label={t('dash.today')}>
-            <Link to="/report" className="text-sm hover:underline">
-              <span className="font-mono">{fmtTok((u.today?.in || 0) + (u.today?.out || 0))}</span> tokens · <span className="font-mono">{fmtUsd(u.today?.cost)}</span> · <span className="font-mono">{fmtInt(u.today?.messages)}</span> msgs
-            </Link>
-          </StatItem>
+      {/* Summary: 3 stat cards + plan usage */}
+      <section className="order-1 space-y-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
+          <StatCard icon={UserRound} label={t('account.claude')} warn={!login.logged} className="col-span-2 sm:col-span-1"
+            value={<span className="inline-flex max-w-full items-center gap-2"><Dot on={login.logged} /> <span className="truncate text-lg font-medium sm:text-xl">{login.logged ? login.account || t('account.loggedIn') : t('account.loggedOut')}</span></span>}>
+            <Link to={login.logged ? '/account' : '/account?login=1'} className="hover:text-foreground hover:underline">{login.logged ? t('dash.details') : t('dash.loggedOutClick')}</Link>
+          </StatCard>
+          <StatCard icon={Cpu} label={t('dash.sessions')} value={<>{running}<span className="text-muted-foreground">/{projects.length}</span></>}>
+            {t('dash.withClaude')}{off ? <span>{t('dash.offCount', { n: off })}</span> : ''}
+            {waiting ? <span className="text-destructive">{t('dash.waitingCount', { n: waiting })}</span> : ''}
+          </StatCard>
+          <StatCard icon={BarChart3} label={t('dash.today')} value={<Link to="/report" className="hover:underline">{fmtTok((u.today?.in || 0) + (u.today?.out || 0))} <span className="text-base font-normal text-muted-foreground">tokens</span></Link>}>
+            <span className="tabular-nums">{fmtUsd(u.today?.cost)}</span> · <span className="tabular-nums">{fmtInt(u.today?.messages)}</span> msgs
+          </StatCard>
         </div>
-        <div className="mt-4 border-t border-border pt-4 empty:hidden">
+        <div className="rounded-xl border bg-card p-4 shadow-xs empty:hidden sm:p-5">
           <UsageWidget />
         </div>
       </section>
 
       {/* Host health: on the phone it comes AFTER the projects (what you open the panel to see) */}
-      <section className="order-3 rounded-lg border bg-card p-3 sm:order-2 sm:p-5">
+      <section className="order-3 rounded-xl border bg-card p-4 shadow-xs sm:order-2 sm:p-5">
         <HealthCard onFlash={onFlash} />
       </section>
 
       {/* Projetos */}
       <section className="order-2 space-y-3 sm:order-3">
         <div className="flex items-center justify-between px-1">
-          <h2 className="text-sm font-medium text-foreground">
-            {t('dash.projects')} <span className="font-mono text-xs text-muted-foreground">({projects.length})</span>
+          <h2 className="text-base font-semibold tracking-tight text-foreground">
+            {t('dash.projects')} <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">{projects.length}</span>
           </h2>
           {data.remoteNameForced ? (
             <span className="text-[11px] text-muted-foreground">
@@ -268,7 +265,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
           )}
         </div>
         {projects.length === 0 && (
-          <div className="rounded-lg bg-card p-8 text-center text-sm text-muted-foreground border">
+          <div className="rounded-xl border border-dashed bg-card p-10 text-center text-sm text-muted-foreground">
             {t('dash.noProjects')}{' '}
             <button type="button" className="text-primary hover:underline" onClick={() => setShowNew(true)}>
               {t('dash.createFirst')}
@@ -279,15 +276,15 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
         {projects.map((p, idx) => {
           const act = actOf(p)
           const on = p.enabled !== false
-          const accent = !on ? 'bg-muted' : act === 'prompt' ? 'bg-rose-400 animate-pulse' : act === 'busy' ? 'bg-amber-400 animate-pulse' : p.claudeRunning ? 'bg-success/60' : 'bg-muted'
+          const accent = !on ? 'bg-transparent' : act === 'prompt' ? 'bg-destructive animate-pulse' : act === 'busy' ? 'bg-brand animate-pulse' : p.claudeRunning ? 'bg-success/70' : 'bg-transparent'
           return (
-            <div key={p.name} className={`relative animate-fade-up overflow-hidden rounded-lg border bg-card p-4 transition duration-200 hover:border-primary/30 sm:p-5 sm:hover:-translate-y-px ${!on ? 'opacity-70' : ''}`} style={{ animationDelay: `${idx * 40}ms` }}>
+            <div key={p.name} data-slot="project-card" className={`relative animate-fade-up overflow-hidden rounded-xl border bg-card p-4 shadow-xs transition-shadow duration-200 hover:shadow-md sm:p-5 ${!on ? 'opacity-70' : ''}`} style={{ animationDelay: `${idx * 40}ms` }}>
               <div className={`absolute inset-y-0 left-0 w-[3px] ${accent}`} />
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start gap-2">
                     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                      <Link to={'/terminal/' + encodeURIComponent(p.name)} className="truncate text-lg font-semibold text-foreground hover:underline sm:text-base">
+                      <Link to={'/terminal/' + encodeURIComponent(p.name)} className="truncate text-base font-semibold tracking-tight text-foreground hover:underline">
                         {p.name}
                       </Link>
                       {!on ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground border">{t('dash.off')}</span> : p.claudeRunning ? <ActivityBadge state={act} since={p.activitySince} /> : <ActivityBadge state="off" />}
@@ -329,11 +326,11 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                 </div>
                 {/* actions: on the phone, a grid of big buttons (1 tap, thumb-sized) */}
                 <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
-                  <Link to={'/terminal/' + encodeURIComponent(p.name)} className={`${act === 'prompt' && on ? 'ring-2 ring-destructive/60 ' : ''}inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 sm:h-auto sm:py-1.5 sm:text-[13px]`}>
+                  <Link to={'/terminal/' + encodeURIComponent(p.name)} className={`${act === 'prompt' && on ? 'ring-2 ring-destructive/60 ' : ''}inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground shadow-xs transition hover:bg-primary/90 sm:h-8 sm:text-[13px]`}>
                     <SquareTerminal className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> Terminal
                   </Link>
                   {p.remoteUrl ? (
-                    <a href={p.remoteUrl} target="_blank" rel="noreferrer" title={t('dash.openRemoteTitle')} className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-sky-500/90 px-3 text-sm font-medium text-white transition hover:bg-sky-500 sm:h-auto sm:py-1.5 sm:text-[13px]">
+                    <a href={p.remoteUrl} target="_blank" rel="noreferrer" title={t('dash.openRemoteTitle')} className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border bg-background px-3 text-sm font-medium text-foreground shadow-xs transition hover:bg-accent sm:h-8 sm:text-[13px]">
                       <ExternalLink className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> {t('dash.openRemote')}
                     </a>
                   ) : (
@@ -349,7 +346,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                   <Btn busy={busy === `restart:${p.name}`} className="h-11 justify-center sm:h-8" onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title={on ? t('dash.restartTitle') : t('dash.powerOnTitle')}>
                     <RefreshCw className="h-3.5 w-3.5" /> {on ? t('dash.restart') : t('dash.powerOn')}
                   </Btn>
-                  <Link to={'/files/projects/' + encodeURIComponent(p.name)} className={`${p.remoteUrl ? 'inline-flex' : 'hidden sm:inline-flex'} h-11 items-center justify-center gap-1.5 rounded-lg bg-secondary px-3 text-sm font-medium text-foreground transition hover:bg-secondary/80 sm:h-auto sm:py-1.5 sm:text-[13px]`}>
+                  <Link to={'/files/projects/' + encodeURIComponent(p.name)} className={`${p.remoteUrl ? 'inline-flex' : 'hidden sm:inline-flex'} h-11 items-center justify-center gap-1.5 rounded-lg bg-secondary px-3 text-sm font-medium text-foreground transition hover:bg-secondary/80 sm:h-8 sm:text-[13px]`}>
                     <FolderOpen className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> {t('nav.files')}
                   </Link>
                   {p.paused ? (
@@ -392,13 +389,13 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
           />
           <div className="mt-4 space-y-2">
             <div className="text-xs text-muted-foreground">{t('dash.services')}</div>
-            <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-background px-3 py-2 text-sm text-foreground border">
-              <input type="checkbox" checked={form.autoStartClaude} onChange={(e) => setForm((f) => ({ ...f, autoStartClaude: e.target.checked }))} className="accent-[#D97757]" />
-              <Cpu className="h-4 w-4 text-primary" /> {t('settings.autoStart')}
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm text-foreground transition-colors hover:bg-accent/50">
+              <input type="checkbox" checked={form.autoStartClaude} onChange={(e) => setForm((f) => ({ ...f, autoStartClaude: e.target.checked }))} className="size-4 accent-primary" />
+              <Cpu className="h-4 w-4 text-muted-foreground" /> {t('settings.autoStart')}
             </label>
-            <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-background px-3 py-2 text-sm text-foreground border">
-              <input type="checkbox" checked={form.autoRemote} onChange={(e) => setForm((f) => ({ ...f, autoRemote: e.target.checked }))} className="accent-[#D97757]" />
-              <Radio className="h-4 w-4 text-primary" /> {t('settings.autoRemote')}
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm text-foreground transition-colors hover:bg-accent/50">
+              <input type="checkbox" checked={form.autoRemote} onChange={(e) => setForm((f) => ({ ...f, autoRemote: e.target.checked }))} className="size-4 accent-primary" />
+              <Radio className="h-4 w-4 text-muted-foreground" /> {t('settings.autoRemote')}
             </label>
           </div>
           <div className="mt-5 flex justify-end gap-2">
@@ -437,7 +434,7 @@ function DiskSection({ name, onFlash }) {
   }
   const why = (w) => (w.inUse ? t('disk.inUse') : w.dirty ? t('disk.dirty') : w.removable ? t('disk.old') : t('disk.recent'))
   return (
-    <section className="rounded-xl border border-border bg-sidebar p-4" data-testid="disk-section">
+    <section className="rounded-xl border bg-muted/30 p-4" data-testid="disk-section">
       <h4 className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground"><HardDrive className="h-3.5 w-3.5" /> {t('disk.title')}</h4>
       {!d ? <Skeleton className="h-10" /> : !d.ok ? <p className="text-xs text-destructive">{d.msg || t('disk.error')}</p> : (
         <div className="space-y-2 text-xs">

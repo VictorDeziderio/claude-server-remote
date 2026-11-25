@@ -8,7 +8,7 @@ import { TR } from '../lib/i18n-rich.jsx'
 
 function Toggle({ on, onChange, label, hint, icon: Icon, busy }) {
   return (
-    <button type="button" disabled={busy} onClick={() => onChange(!on)} className={`flex w-full items-center gap-3 rounded-xl border bg-accent p-3 text-left transition hover:border-primary/30 disabled:opacity-50 ${on ? 'border-success/30' : 'border-border'}`}>
+    <button type="button" disabled={busy} onClick={() => onChange(!on)} className={`flex w-full items-center gap-3 rounded-lg border bg-muted/30 p-3 text-left transition-colors hover:bg-muted/70 disabled:opacity-50`}>
       {Icon && <Icon className={`h-4 w-4 shrink-0 ${on ? 'text-success' : 'text-muted-foreground'}`} />}
       <div className="min-w-0 flex-1">
         <div className="text-sm text-foreground">{label}</div>
@@ -118,7 +118,7 @@ export default function SettingsPage({ onFlash, refresh, notif, onToggleNotif })
       <Card title={t('settings.notif')} subtitle={t('settings.notifSub')}>
         <div className="grid gap-2 sm:grid-cols-2">
           <Toggle icon={Bell} on={s.settings.notifications !== false} busy={busy === 'notifications'} onChange={(v) => setPref('notifications', v)} label={t('settings.toasts')} hint={t('settings.toastsHint')} />
-          <button type="button" onClick={onToggleNotif} className={`flex w-full items-center gap-3 rounded-xl border bg-accent p-3 text-left transition hover:border-primary/30 ${notif === 'granted' ? 'border-success/30' : 'border-border'}`}>
+          <button type="button" onClick={onToggleNotif} className={`flex w-full items-center gap-3 rounded-lg border bg-muted/30 p-3 text-left transition-colors hover:bg-muted/70 border-border`}>
             <NotifIcon className={`h-4 w-4 shrink-0 ${notif === 'granted' ? 'text-success' : 'text-muted-foreground'}`} />
             <div className="min-w-0 flex-1">
               <div className="text-sm text-foreground">{t('settings.browserNotif')}</div>

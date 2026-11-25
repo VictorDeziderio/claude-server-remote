@@ -743,5 +743,15 @@
   "backup.volumeOff": "Desligado. Defina `VOLUME_BACKUP_DIR` com uma pasta em outro disco ou montagem (ex.: uma pasta do servidor montada em `/backup`).",
   "backup.volumeDest": "Destino",
   "backup.volumeKeep": "mantém as últimas {n}",
-  "backup.volumeNever": "nenhuma cópia ainda (a primeira roda 10 minutos depois de ligar)"
+  "backup.volumeNever": "nenhuma cópia ainda (a primeira roda 10 minutos depois de ligar)",
+  "cmd.search": "Buscar…",
+  "cmd.placeholder": "Digite uma página, projeto ou ação…",
+  "cmd.pages": "Páginas",
+  "cmd.projects": "Projetos",
+  "cmd.actions": "Ações",
+  "cmd.empty": "Nada encontrado.",
+  "cmd.terminalOf": "Terminal · {name}",
+  "cmd.filesOf": "Arquivos · {name}",
+  "cmd.theme": "Trocar tema (sistema / claro / escuro)",
+  "cmd.hint": "↑ ↓ para mover · Enter para abrir · Esc para fechar"
 }

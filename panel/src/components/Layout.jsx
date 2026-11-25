@@ -3,8 +3,9 @@ import { NavLink, Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, BarChart3, FolderTree, SquareTerminal, UserRound, LogOut, RefreshCw, History, ScrollText,
   Settings, DatabaseBackup, PanelLeftClose, PanelLeftOpen, Bell, BellOff, BellRing, HardDrive, MemoryStick, Gauge, Radio, ArrowUpCircle,
-  AlertTriangle, Trash2, Ellipsis, X, Sun, Moon, Monitor,
+  AlertTriangle, Trash2, Ellipsis, X, Sun, Moon, Monitor, Search, ChevronRight,
 } from 'lucide-react'
+import CommandMenu, { useCommandMenuHotkey } from './CommandMenu.jsx'
 import { readTheme, saveTheme, nextTheme } from '../lib/theme.js'
 import Logo from './Logo.jsx'
 import { Dot, Btn, Empty } from './ui.jsx'
@@ -143,12 +144,14 @@ function AlertsBell({ alerts, onClear }) {
   )
 }
 
-export default function Layout({ data, live, onLogout, onRefresh, actions, notif, onToggleNotif, alerts = [], onClearAlerts, children }) {
+export default function Layout({ data, live, onLogout, onRefresh, actions, notif, onToggleNotif, alerts = [], onClearAlerts, onNewProject, children }) {
   const { pathname } = useLocation()
   const login = data?.login || { logged: false, account: '' }
   const isTerm = pathname.startsWith('/terminal')
   const [collapsed, setCollapsed] = useState(() => readLS(LS_NAV, false))
   const [health, setHealth] = useState(null)
+  const [cmdOpen, setCmdOpen] = useState(false)
+  useCommandMenuHotkey(setCmdOpen)
   const toggle = () => setCollapsed((c) => { try { localStorage.setItem(LS_NAV, JSON.stringify(!c)) } catch { /* */ } return !c })
 
   // only queries /api/health with the tab visible (found by @qa 2026-10-09: "CPU-light" panel)
@@ -165,87 +168,107 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
   }, [ready])
 
   const navCls = ({ isActive }) =>
-    cn('flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-      collapsed && 'justify-center',
+    cn('flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
+      collapsed && 'justify-center px-0',
       isActive ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground' : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground')
   const NotifIcon = notif === 'granted' ? BellRing : notif === 'denied' ? BellOff : Bell
+  const initial = (login.account || 'C').trim().charAt(0).toUpperCase()
 
   return (
-    <div className="flex h-full">
-      {/* Sidebar (desktop) */}
-      <aside className={cn('hidden h-full shrink-0 flex-col border-r border-sidebar-border bg-sidebar sm:flex', collapsed ? 'w-14 p-2' : 'w-60 p-3')}>
-        <NavLink to="/dashboard" className={cn('mb-5 flex items-center gap-2.5 px-1', collapsed && 'justify-center')} title="Claude Remote">
-          <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-brand shadow-sm"><Logo size={18} /></div>
+    <div className="flex h-full bg-sidebar">
+      {/* Sidebar (desktop): shadcn "inset" layout — the sidebar frames the content card */}
+      <aside data-slot="sidebar" data-state={collapsed ? 'collapsed' : 'expanded'} className={cn('hidden h-full shrink-0 flex-col text-sidebar-foreground transition-[width] duration-200 sm:flex', collapsed ? 'w-14 p-2' : 'w-64 p-2')}>
+        <NavLink to="/dashboard" className={cn('flex h-12 items-center gap-2.5 rounded-md px-2 hover:bg-sidebar-accent', collapsed && 'justify-center px-0')} title="Claude Remote">
+          <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"><Logo size={18} /></div>
           {!collapsed && (
-            <div className="leading-tight">
-              <div className="text-sm font-semibold text-sidebar-accent-foreground">claude<span className="text-brand">/</span>remote</div>
-              <div className="text-[11px] text-sidebar-foreground/60">{t('brand.subtitle')}</div>
+            <div className="grid flex-1 leading-tight">
+              <span className="truncate text-sm font-semibold">claude<span className="text-brand">/</span>remote</span>
+              <span className="truncate text-xs text-sidebar-foreground/60">{t('brand.subtitle')}</span>
             </div>
           )}
         </NavLink>
-        <nav className="space-y-4">
+        <nav className="mt-2 flex-1 space-y-4 overflow-y-auto">
           {NAV_GROUPS.map((g) => (
             <div key={g} className="space-y-0.5">
-              {!collapsed && <div className="px-2.5 pb-1 text-[11px] font-medium text-sidebar-foreground/50">{t('nav.group.' + g)}</div>}
+              {!collapsed && <div className="flex h-8 items-center px-2 text-xs font-medium text-sidebar-foreground/60">{t('nav.group.' + g)}</div>}
               {NAV.filter((n) => n.group === g).map((n) => (
-                <NavLink key={n.to} to={n.to} className={navCls} title={n.label}><n.icon className="size-4 shrink-0" /> {!collapsed && n.label}</NavLink>
+                <NavLink key={n.to} to={n.to} className={navCls} title={n.label}><n.icon className="size-4 shrink-0" /> {!collapsed && <span className="truncate">{n.label}</span>}</NavLink>
               ))}
             </div>
           ))}
         </nav>
-        <div className="mt-auto space-y-2 pt-4">
-          {!collapsed && (
-            <NavLink to="/account" className="block rounded-md border border-sidebar-border p-2.5 transition-colors hover:border-primary/40">
-              <div className="text-[10px] text-sidebar-foreground/50">{t('account.claude')}</div>
-              <div className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-sidebar-foreground/80"><Dot on={login.logged} /> {login.logged ? (login.account || t('account.loggedIn')) : t('account.loggedOut')}</div>
-            </NavLink>
-          )}
-          <button type="button" onClick={onLogout} title={t('nav.logout')} className={cn('flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground', collapsed && 'justify-center')}><LogOut className="size-4" /> {!collapsed && t('nav.logout')}</button>
-          <button type="button" onClick={toggle} title={collapsed ? t('nav.expand') : t('nav.collapseMenu')} className={cn('flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs text-sidebar-foreground/40 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground/70', collapsed && 'justify-center')}>
-            {collapsed ? <PanelLeftOpen className="size-4" /> : <><PanelLeftClose className="size-4" /> {t('nav.collapse')}</>}
-          </button>
+        <div className="space-y-1 pt-2">
+          <NavLink to="/account" title={login.logged ? (login.account || t('account.loggedIn')) : t('account.loggedOut')}
+            className={cn('flex items-center gap-2.5 rounded-md p-2 transition-colors hover:bg-sidebar-accent', collapsed && 'justify-center p-1.5')}>
+            <span className="relative grid size-8 shrink-0 place-items-center rounded-lg bg-sidebar-accent text-sm font-medium">
+              {initial}
+              <span className={cn('absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-sidebar', login.logged ? 'bg-success' : 'bg-destructive')} />
+            </span>
+            {!collapsed && (
+              <span className="grid min-w-0 flex-1 leading-tight">
+                <span className="truncate text-sm font-medium">{t('account.claude')}</span>
+                <span className="truncate text-xs text-sidebar-foreground/60">{login.logged ? (login.account || t('account.loggedIn')) : t('account.loggedOut')}</span>
+              </span>
+            )}
+          </NavLink>
+          <button type="button" onClick={onLogout} title={t('nav.logout')} className={cn('flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground', collapsed && 'justify-center px-0')}><LogOut className="size-4" /> {!collapsed && t('nav.logout')}</button>
           {!collapsed && data?.panelVersion && (
-            <div className="px-2.5 text-[10px] text-sidebar-foreground/30" title={data.buildTime ? 'build ' + data.buildTime : t('build.local')}>
+            <div className="px-2 pt-1 text-[10px] text-sidebar-foreground/40" title={data.buildTime ? 'build ' + data.buildTime : t('build.local')}>
               v{data.panelVersion}{data.buildTime ? ` · ${data.buildTime.slice(0, 10)} ${data.buildTime.slice(11, 16)}` : ''}
             </div>
           )}
         </div>
       </aside>
 
-      {/* Conteudo */}
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      {/* Content: a card inset in the sidebar background on desktop, full screen on the phone */}
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background sm:my-2 sm:mr-2 sm:rounded-xl sm:border sm:shadow-sm">
         {/* phone: on the Terminal the header goes away (every line counts; the tab stays in the bottom nav) */}
-        <div className={cn('flex items-center justify-between gap-2 border-b border-border bg-background/80 px-4 py-2 backdrop-blur sm:px-6 sm:py-3', isTerm && 'hidden sm:flex sm:py-2.5')}>
-          <div className="flex min-w-0 items-center gap-3">
-            <h1 className="truncate text-base font-semibold tracking-tight text-foreground">{titleOf(pathname)}</h1>
-            <span className={cn('hidden items-center gap-1.5 text-xs sm:inline-flex', live ? 'text-success' : 'text-muted-foreground')} title={live ? t('header.liveTitle') : t('header.pollingTitle')}>
+        <header className={cn('flex h-14 shrink-0 items-center gap-2 border-b px-3 sm:px-4', isTerm && 'hidden sm:flex sm:h-12')}>
+          <button type="button" onClick={toggle} title={collapsed ? t('nav.expand') : t('nav.collapseMenu')} aria-label={collapsed ? t('nav.expand') : t('nav.collapseMenu')}
+            className="-ml-1 hidden size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:grid">
+            {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+          </button>
+          <div className="mx-1 hidden h-4 w-px bg-border sm:block" />
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="sm:hidden"><Logo size={18} /></span>
+            <span className="hidden text-sm text-muted-foreground md:inline">Claude Remote</span>
+            <ChevronRight className="hidden size-3.5 text-muted-foreground/60 md:inline" />
+            <h1 className="truncate text-sm font-medium text-foreground">{titleOf(pathname)}</h1>
+            <span className={cn('hidden items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] sm:inline-flex', live ? 'text-success' : 'text-muted-foreground')} title={live ? t('header.liveTitle') : t('header.pollingTitle')}>
               <Dot color={live ? 'bg-success' : 'bg-muted-foreground/40'} pulse={live} /> {live ? t('header.live') : t('header.polling')}
             </span>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={() => setCmdOpen(true)} data-testid="cmd-open" aria-label={t('cmd.search')}
+            className="hidden h-8 w-56 items-center gap-2 rounded-md border bg-muted/40 px-2.5 text-sm text-muted-foreground shadow-xs transition-colors hover:bg-accent hover:text-foreground lg:flex">
+            <Search className="size-3.5" /> <span className="flex-1 text-left">{t('cmd.search')}</span>
+            <kbd className="rounded border bg-background px-1.5 font-mono text-[10px]">{/Mac|iPhone|iPad/.test(navigator.platform || '') ? '⌘' : 'Ctrl'} K</kbd>
+          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            <Btn variant="ghost" size="sm" className="lg:hidden" onClick={() => setCmdOpen(true)} title={t('cmd.search')}><Search className="size-3.5" /></Btn>
             {health && (
-              <Link to={health.claude?.updateAvailable ? '/account' : '/dashboard'} className={cn('hidden items-center gap-3 rounded-md border px-2.5 py-1 text-xs lg:flex', health.claude?.updateAvailable ? 'border-primary/40 text-primary' : 'border-border text-muted-foreground')} title={health.claude?.updateAvailable ? t('header.updateTitle', { latest: health.claude.latest, current: health.claude.currentNum }) : t('header.healthTitle')}>
-                <span className={cn('inline-flex items-center gap-1', pctCls(health.disk?.pct || 0))}><HardDrive className="size-3" /> {health.disk?.pct ?? '?'}%</span>
-                <span className={cn('inline-flex items-center gap-1', pctCls(health.mem?.pct || 0))}><MemoryStick className="size-3" /> {health.mem?.pct ?? '?'}%</span>
-                <span className="inline-flex items-center gap-1"><Gauge className="size-3" /> {health.load?.[0] ?? '?'}</span>
+              <Link to={health.claude?.updateAvailable ? '/account' : '/dashboard'} className={cn('mr-1 hidden h-8 items-center gap-3 rounded-md border px-2.5 text-xs xl:flex', health.claude?.updateAvailable ? 'border-brand/40 text-brand' : 'text-muted-foreground')} title={health.claude?.updateAvailable ? t('header.updateTitle', { latest: health.claude.latest, current: health.claude.currentNum }) : t('header.healthTitle')}>
+                <span className={cn('inline-flex items-center gap-1 tabular-nums', pctCls(health.disk?.pct || 0))}><HardDrive className="size-3" /> {health.disk?.pct ?? '?'}%</span>
+                <span className={cn('inline-flex items-center gap-1 tabular-nums', pctCls(health.mem?.pct || 0))}><MemoryStick className="size-3" /> {health.mem?.pct ?? '?'}%</span>
+                <span className="inline-flex items-center gap-1 tabular-nums"><Gauge className="size-3" /> {health.load?.[0] ?? '?'}</span>
                 {health.claude?.updateAvailable && <span className="inline-flex items-center gap-1"><ArrowUpCircle className="size-3" /> {health.claude.latest}</span>}
               </Link>
             )}
-            {actions}
             <ThemeToggle />
             <AlertsBell alerts={alerts} onClear={onClearAlerts} />
             <Btn variant="ghost" size="sm" onClick={onToggleNotif} title={notif === 'granted' ? t('header.notifOn') : notif === 'denied' ? t('header.notifBlocked') : t('header.notifEnable')}>
               <NotifIcon className={cn('size-3.5', notif === 'granted' && 'text-success')} />
             </Btn>
-            <Btn variant="ghost" size="sm" onClick={onRefresh} title={t('header.refresh')}><RefreshCw className="size-3.5" /></Btn>
+            <Btn variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={onRefresh} title={t('header.refresh')}><RefreshCw className="size-3.5" /></Btn>
+            {actions && <div className="ml-1">{actions}</div>}
           </div>
-        </div>
+        </header>
 
-        <div className={cn('min-h-0 flex-1', isTerm ? 'flex flex-col sm:px-6 sm:pb-5' : 'overflow-auto px-3 pb-6 pt-3 sm:px-6 sm:pt-4')}>
+        <div className={cn('min-h-0 flex-1', isTerm ? 'flex flex-col sm:px-4 sm:pb-4 sm:pt-3' : 'overflow-auto px-3 pb-6 pt-4 sm:px-6 sm:pt-6')}>
           {children}
         </div>
         <MobileNav onLogout={onLogout} />
       </main>
+      <CommandMenu open={cmdOpen} setOpen={setCmdOpen} nav={NAV} projects={data?.projects || []} onNewProject={onNewProject} onLogout={onLogout} />
     </div>
   )
 }

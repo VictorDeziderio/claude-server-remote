@@ -64,8 +64,8 @@ export function Chip({ on, onClick, busy, labelOn, labelOff, Icon }) {
   return (
     <button type="button" onClick={onClick} disabled={busy} title={t('chip.toggle')}
       className={cn(
-        'group/badge inline-flex h-9 shrink-0 items-center gap-1.5 rounded-4xl border px-3 py-0.5 text-xs font-medium transition-all disabled:pointer-events-none disabled:opacity-50 sm:h-5 sm:px-2', // bigger touch target on the phone
-        on ? 'border-transparent bg-success/15 text-success' : 'border-transparent bg-destructive/10 text-destructive'
+        'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 sm:h-6 sm:px-2.5', // bigger touch target on the phone
+        on ? 'border-success/30 bg-success/10 text-success hover:bg-success/15' : 'border-border bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground'
       )}>
       {busy ? <Loader2 className="size-3 animate-spin" /> : <Icon className="size-3" />}
       {on ? labelOn : labelOff}
@@ -166,9 +166,7 @@ export function Toast({ flash, onClose, position = 'bottom' }) {
 // props) so no page needs to rebuild CardHeader/CardContent by hand.
 export function Card({ title, subtitle, children, className = '', actions }) {
   return (
-    // overrides shadcn's default ring (ring-foreground/10 -- almost invisible in the current dark
-    // theme: low contrast between the ring and bg-card) with the theme's real border color
-    <SCard className={cn('ring-border', className)}>
+    <SCard className={className}>
       {(title || subtitle || actions) && (
         <CardHeader>
           <CardTitle className={subtitle ? 'self-center' : ''}>{title}</CardTitle>
@@ -210,4 +208,4 @@ export function InlineInput({ initial = '', placeholder, onSubmit, onCancel, bus
   )
 }
 
-export const inputCls = 'rounded-md border border-input bg-input/20 px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50 transition'
+export const inputCls = 'rounded-md border border-input bg-transparent px-2.5 py-1.5 text-sm text-foreground shadow-xs placeholder:text-muted-foreground outline-none transition-[color,box-shadow] focus:border-ring focus:ring-[3px] focus:ring-ring/50 dark:bg-input/30'

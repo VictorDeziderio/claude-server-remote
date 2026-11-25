@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,7 +16,7 @@ const pkgVersion = JSON.parse(fs.readFileSync(new URL('./package.json', import.m
 // SPA of the "Claude Remote" panel. Build -> dist/ (served by server.js in production).
 // In dev (`npm run dev`), API and WebSocket are forwarded to a local server.js on 7001.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },

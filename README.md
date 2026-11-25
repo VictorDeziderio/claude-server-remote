@@ -38,7 +38,8 @@ Your projects and your Claude login live in a volume, so nothing is lost on rebu
   and optionally an incremental copy of the whole volume to another disk (`VOLUME_BACKUP_DIR`).
 - **Secure by default:** own login with signed, revocable sessions, optional 2FA (TOTP), rate limit,
   CSRF/Origin checks, CSP, audit log. The panel refuses to start without a password.
-- **Light/dark theme** and **multiple languages** (English and Português; adding one is copying a JSON file).
+- **Command palette** (Ctrl/⌘ + K): jump to any page, project terminal or files from the keyboard.
+- **Light/dark theme** (shadcn/ui on Tailwind v4) and **multiple languages** (English and Português; adding one is copying a JSON file).
 - **Any Docker host:** amd64 and arm64, plain `docker compose`, optional automatic HTTPS.
 
 ## Screenshots
@@ -48,8 +49,12 @@ Your projects and your Claude login live in a volume, so nothing is lost on rebu
 | ![Terminal](docs/screenshots/terminal-dark.png) | ![Files](docs/screenshots/files-dark.png) |
 | **Report** | **History** |
 | ![Report](docs/screenshots/report-dark.png) | ![History](docs/screenshots/history-dark.png) |
-| **Light theme** | **Projects (with auto-resume)** |
+| **Light theme** | **Projects** |
 | ![Light theme](docs/screenshots/dashboard-light.png) | ![Projects](docs/screenshots/projects-dark.png) |
+
+| **Command palette (Ctrl/⌘ + K)** | **Login** |
+|---|---|
+| ![cmd](docs/screenshots/command-palette-dark.png) | ![login](docs/screenshots/login.png) |
 
 <p align="center"><img src="docs/screenshots/terminal-mobile.png" alt="Terminal on a phone" width="300"></p>
 
@@ -129,7 +134,7 @@ npm run check && npm run build && npm test
 cd .. && bash tests/claude-loop.test.sh && bash tests/gateway.test.sh && bash tests/backup-volume.test.sh && shellcheck -S error *.sh tests/*.sh
 ```
 
-- Panel: React + Tailwind (shadcn-style) + xterm.js + CodeMirror, built with Vite. Server: Node
+- Panel: React + Tailwind v4 + shadcn/ui + xterm.js + CodeMirror, built with Vite. Server: Node
   (`panel/server.js` + `panel/server/*.js`), runtime deps `ws` and `node-pty`.
 - **Translations:** UI and server texts are keys in `panel/src/locales/<lang>.json`
   (`en.json` is the default and the fallback). To add a language, copy `en.json` to `<code>.json`

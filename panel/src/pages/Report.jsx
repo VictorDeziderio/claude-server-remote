@@ -54,12 +54,12 @@ const PERIODS = [
 
 function Kpi({ icon: Icon, label, value, hint, hero }) {
   return (
-    <div className="rounded-lg bg-card p-4 border">
-      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-        <Icon className="h-3.5 w-3.5 text-primary" /> {label}
+    <div className="flex min-w-0 flex-col gap-1.5 rounded-xl border bg-linear-to-t from-primary/[0.03] to-card p-4 shadow-xs dark:from-primary/[0.04]">
+      <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+        <span className="truncate">{label}</span> <Icon className="size-3.5 shrink-0" />
       </div>
-      <div className={`mt-1.5 font-mono text-foreground ${hero ? 'text-2xl font-semibold' : 'text-lg'}`}>{value}</div>
-      {hint && <div className="mt-0.5 font-mono text-xs text-muted-foreground">{hint}</div>}
+      <div className={`truncate font-semibold tabular-nums tracking-tight text-foreground ${hero ? 'text-2xl' : 'text-xl'}`}>{value}</div>
+      {hint && <div className="truncate text-xs tabular-nums text-muted-foreground">{hint}</div>}
     </div>
   )
 }
@@ -92,7 +92,7 @@ function DailyChart({ daily, metric }) {
               const h = Math.max(2, Math.round((v / max) * 100))
               return (
                 <div key={d.date} className="group relative flex h-full flex-1 items-end" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
-                  <div className={`w-full rounded-t transition ${hover === i ? 'bg-primary' : 'bg-primary/70'}`} style={{ height: h + '%' }} />
+                  <div className={`w-full rounded-t transition ${hover === i ? 'bg-chart-2' : 'bg-chart-2/75'}`} style={{ height: h + '%' }} />
                 </div>
               )
             })}
@@ -158,7 +158,7 @@ export default function Report({ data }) {
       setRange({ from: custom.from, to: custom.to })
     }
   }
-  const pill = (active) => `rounded-lg px-3 py-1.5 text-[13px] font-medium transition ${active ? 'bg-primary text-primary-foreground' : 'bg-accent text-foreground/80 border hover:bg-secondary'}`
+  const pill = (active) => `rounded-lg px-3 py-1.5 text-[13px] font-medium transition ${active ? 'bg-primary text-primary-foreground' : 'border bg-background text-foreground/80 shadow-xs hover:bg-accent'}`
 
   const u = usage || {}
   const byProject = Object.entries(u.byProject || {})
@@ -301,7 +301,7 @@ export default function Report({ data }) {
                   </span>
                 </div>
                 <div className="h-2.5 w-full overflow-hidden rounded-full bg-background border">
-                  <div className="h-full rounded-full bg-primary" style={{ width: Math.round((p.cost / maxProj) * 100) + '%' }} />
+                  <div className="h-full rounded-full bg-chart-2" style={{ width: Math.round((p.cost / maxProj) * 100) + '%' }} />
                 </div>
               </div>
             ))}

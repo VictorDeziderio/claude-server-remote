@@ -37,7 +37,8 @@ notificações push. Os projetos e o login do Claude ficam num volume, então na
   se quiser, uma cópia incremental do volume inteiro em outro disco (`VOLUME_BACKUP_DIR`).
 - **Seguro por padrão:** login próprio com sessões assinadas e revogáveis, 2FA (TOTP) opcional, limite de
   tentativas, checagem de origem (CSRF), CSP e registro de auditoria. Sem senha, o painel não sobe.
-- **Tema claro/escuro** e **vários idiomas** (inglês e português; um idioma novo é só copiar um arquivo JSON).
+- **Paleta de comandos** (Ctrl/⌘ + K): vai para qualquer página, terminal ou arquivos de um projeto pelo teclado.
+- **Tema claro/escuro** (shadcn/ui com Tailwind v4) e **vários idiomas** (inglês e português; um idioma novo é só copiar um arquivo JSON).
 - **Qualquer Docker:** amd64 e arm64, `docker compose` simples, HTTPS automático opcional.
 
 ## Telas
@@ -47,8 +48,12 @@ notificações push. Os projetos e o login do Claude ficam num volume, então na
 | ![Terminal](docs/screenshots/terminal-dark.png) | ![Arquivos](docs/screenshots/files-dark.png) |
 | **Relatório** | **Histórico** |
 | ![Relatório](docs/screenshots/report-dark.png) | ![Histórico](docs/screenshots/history-dark.png) |
-| **Configurações em português (tema claro)** | **Projetos (com o "continua às…")** |
+| **Configurações em português (tema claro)** | **Projetos** |
 | ![Configurações](docs/screenshots/settings-light-ptbr.png) | ![Projetos](docs/screenshots/projects-dark.png) |
+
+| **Paleta de comandos (Ctrl/⌘ + K)** | **Login** |
+|---|---|
+| ![cmd](docs/screenshots/command-palette-dark.png) | ![login](docs/screenshots/login.png) |
 
 <p align="center"><img src="docs/screenshots/terminal-mobile.png" alt="Terminal no celular" width="300"></p>
 
@@ -129,7 +134,7 @@ npm run check && npm run build && npm test
 cd .. && bash tests/claude-loop.test.sh && bash tests/gateway.test.sh && bash tests/backup-volume.test.sh && shellcheck -S error *.sh tests/*.sh
 ```
 
-- Painel: React + Tailwind (estilo shadcn) + xterm.js + CodeMirror, com Vite. Servidor: Node
+- Painel: React + Tailwind v4 + shadcn/ui + xterm.js + CodeMirror, com Vite. Servidor: Node
   (`panel/server.js` + `panel/server/*.js`), dependências `ws` e `node-pty`.
 - **Traduções:** os textos da interface e do servidor são chaves em `panel/src/locales/<idioma>.json`
   (`en.json` é o padrão e a reserva). Para um idioma novo, copie `en.json` para `<código>.json` e traduza

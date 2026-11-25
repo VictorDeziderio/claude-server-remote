@@ -99,7 +99,7 @@ export default function App() {
     : null
 
   return (
-    <Layout data={data} live={live} onLogout={doLogout} onRefresh={refresh} actions={actions} notif={notifPerm} onToggleNotif={toggleNotif} alerts={alerts} onClearAlerts={clearAlerts}>
+    <Layout data={data} live={live} onLogout={doLogout} onRefresh={refresh} actions={actions} onNewProject={() => setShowNew(true)} notif={notifPerm} onToggleNotif={toggleNotif} alerts={alerts} onClearAlerts={clearAlerts}>
       {stale && (
         <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-sky-500/10 px-4 py-2.5 text-sm text-sky-800 dark:text-sky-100 ring-1 ring-sky-500/30">
           <RefreshCw className="h-4 w-4 text-sky-600 dark:text-sky-300" />

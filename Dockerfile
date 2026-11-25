@@ -42,7 +42,7 @@ RUN npm run build \
     && npm prune --omit=dev \
     && npm cache clean --force \
     && mkdir -p /tmp/keep/lib && cp src/lib/i18n-core.js /tmp/keep/lib/ && cp -r src/locales /tmp/keep/ \
-    && rm -rf src public test index.html vite.config.mjs tailwind.config.js postcss.config.js \
+    && rm -rf src public test index.html vite.config.mjs \
     && mv /tmp/keep src
 # The server also reads src/lib/i18n-core.js and src/locales/*.json at runtime (texts and
 # language rules shared with the browser), so those two stay; the rest of src/ is in dist/.
