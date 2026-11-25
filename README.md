@@ -37,12 +37,17 @@ redimensionamento automático, mouse/rolagem, colar, busca no histórico, recone
 - Fechar a aba **não** encerra a sessão. Também dá pelo Console do EasyPanel: `tmux attach -t claude-<projeto>`.
 
 ### 3. Primeiro login do Claude
-**Conta → Logar no Claude** (ou "deslogado — clique p/ logar" no Dashboard): o painel roda o `claude`
-numa sessão própria (`cr-login`, 500 colunas → o link nunca quebra), **passa sozinho** pela tela de tema e
-**seleciona "Claude account with subscription"**. Você só: **Abrir link** (ou **Copiar link**) → autoriza →
-cola o código → **Conectar**. Fica salvo em `/root/.claude` (volume) e **não pede de novo**; projetos que
-subiram antes do login e ficaram parados na tela de login são reiniciados sozinhos. Já logado, o mesmo
-fluxo vira **Trocar de conta**. Telas inesperadas aparecem no modal com teclas (↑ ↓ Enter Esc).
+**Conta → Connect Claude** (ou "deslogado — clique p/ logar" no Dashboard): o painel roda o `claude`
+numa sessão própria (`cr-login`, 500 colunas → o link nunca quebra) e **responde sozinho todas as telas**
+do 1º uso e do login — tema, **"Claude account with subscription"**, notas de segurança, terminal setup,
+pasta confiável, aviso do modo bypass e os "Press Enter" depois do login. Você só vê o progresso, o link
+(**Open link** / **Copy link**), o campo do código e o sucesso. Fica salvo em `/root/.claude` (volume) e
+**não pede de novo**; projetos que subiram antes do login e ficaram parados na tela de login são
+reiniciados sozinhos. Já logado, o mesmo fluxo vira **Switch account** (o painel manda o `/login`).
+As telas ficam numa tabela (`SCREENS` em `panel/server/login.js`): tela desconhecida → espera parar e
+tenta Enter (até 3x, nunca quando a opção marcada é "sair"); só em último caso mostra a tela com teclas
+(↑ ↓ Enter Esc). Toda tela desconhecida vai para o log do painel (`login: unknown screen`) para virar
+uma linha nova na tabela.
 
 > 🔓 **Permissões:** roda como usuário **não-root** (`ubuntu`) com política global em
 > `/etc/claude-code/managed-settings.json` → `"defaultMode": "bypassPermissions"` +

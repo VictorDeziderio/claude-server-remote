@@ -55,13 +55,13 @@ export default function Account({ data, onFlash, refresh }) {
                   <LogOut className="h-4 w-4" /> Deslogar do Claude
                 </Btn>
                 <Btn onClick={() => setShowLogin(true)} className="px-4 py-2 text-sm">
-                  <LogIn className="h-4 w-4" /> Trocar de conta
+                  <LogIn className="h-4 w-4" /> Switch account
                 </Btn>
               </>
             )
           ) : (
             <Btn variant="accent" onClick={() => setShowLogin(true)} className="px-4 py-2 text-sm">
-              <LogIn className="h-4 w-4" /> Logar no Claude
+              <LogIn className="h-4 w-4" /> Connect Claude
             </Btn>
           )}
           <Link to="/terminal/shell" className="inline-flex items-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm font-medium text-slate-100 transition hover:bg-accent">
@@ -69,7 +69,7 @@ export default function Account({ data, onFlash, refresh }) {
           </Link>
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          O login é por conta (OAuth): o painel já escolhe “Claude account with subscription”, você abre o link, autoriza, cola o código e clica em Conectar. As credenciais ficam em <code>~/.claude</code> (volume) e persistem entre deploys.
+          Sign-in uses your Claude subscription account (OAuth). The panel answers every Claude Code setup screen for you: open the link, authorize and paste the code. Credentials are stored in <code>~/.claude</code> (volume) and survive redeploys.
         </p>
       </Card>
 
@@ -402,24 +402,49 @@ function SessionsCard({ onFlash }) {
   )
 }
 
-// Login do Claude GUIADO: o servidor roda o `claude` numa sessao tmux larga (cr-login), avanca
-// sozinho as telas (tema, "Claude account with subscription") e devolve o link OAuth INTEIRO.
-// Aqui: abrir/copiar o link, colar o codigo e Conectar. Telas inesperadas aparecem com teclas.
+// Login do Claude GUIADO: o servidor roda o `claude` numa sessao tmux larga (cr-login) e responde
+// sozinho TODAS as telas (1o uso, metodo de login, pos-login). Aqui o dono so ve: progresso ->
+// link (Abrir/Copiar) + campo do codigo -> sucesso. A tela crua so aparece no ULTIMO recurso
+// (fase "attention": tela desconhecida que o painel nao conseguiu passar).
 const STEP_TEXT = {
-  idle: 'iniciando…',
-  starting: 'abrindo o Claude Code…',
-  method: 'selecionando “Claude account with subscription”…',
-  url: 'autorize no link abaixo e cole o código',
-  'code-sent': 'validando o código…',
-  success: 'conta conectada!',
-  error: 'não deu certo',
-  attention: 'o Claude está pedindo uma decisão sua',
+  idle: 'Starting…',
+  starting: 'Preparing Claude Code…',
+  url: 'Authorize on the link below, then paste the code',
+  'code-sent': 'Checking the code…',
+  finishing: 'Signed in — finishing setup…',
+  success: 'Claude connected!',
+  error: 'Something went wrong',
+  attention: 'Claude Code is showing a screen the panel does not know yet',
 }
+// telas que o painel passa sozinho (o id vem da tabela SCREENS do server/login.js)
+const SCREEN_TEXT = {
+  theme: 'choosing the theme',
+  'login-method': 'choosing “Claude account with subscription”',
+  'api-key': 'skipping the API key',
+  'login-command': 'opening /login',
+  'login-success': 'login confirmed',
+  'security-notes': 'accepting the security notes',
+  'terminal-setup': 'skipping terminal setup',
+  'trust-folder': 'trusting the home folder',
+  'bypass-warning': 'confirming the permission mode',
+  'press-enter': 'continuing',
+}
+const STEPS = ['Prepare', 'Authorize', 'Finish']
+const stepIndex = (phase) => (phase === 'url' ? 1 : ['code-sent', 'finishing'].includes(phase) ? 2 : phase === 'success' ? 3 : 0)
+const LOGIN_KEYS = [
+  ['↑', 'Up'],
+  ['↓', 'Down'],
+  ['Enter', 'Enter'],
+  ['Esc', 'Escape'],
+  ['1', '1'],
+  ['2', '2'],
+]
+
 function LoginModal({ onClose, onFlash }) {
   const [st, setSt] = useState({ phase: 'idle', url: '', msg: '', screen: '' })
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
-  const [showScreen, setShowScreen] = useState(false)
+  const [copied, setCopied] = useState(false)
   const doneRef = useRef(false)
 
   const begin = useCallback(async () => {
@@ -446,9 +471,8 @@ function LoginModal({ onClose, onFlash }) {
   useEffect(() => {
     if (st.phase === 'success' && !doneRef.current) {
       doneRef.current = true
-      onFlash?.({ ok: true, msg: 'Claude conectado — projetos parados na tela de login foram reiniciados' })
+      onFlash?.({ ok: true, msg: 'Claude connected — projects waiting on the login screen were restarted' })
     }
-    if (st.phase === 'attention') setShowScreen(true)
   }, [st.phase, onFlash])
 
   const close = () => {
@@ -463,50 +487,88 @@ function LoginModal({ onClose, onFlash }) {
     if (!r.ok) onFlash?.(r)
     else setCode('')
   }
-  const copyUrl = async () => onFlash?.((await copyText(st.url)) ? { ok: true, msg: 'link copiado' } : { ok: false, msg: 'não consegui copiar — selecione o link e copie' })
+  const copyUrl = async () => {
+    const done = await copyText(st.url)
+    setCopied(done)
+    if (done) setTimeout(() => setCopied(false), 2000)
+    else onFlash?.({ ok: false, msg: 'could not copy — select the link below and copy it' })
+  }
   const key = (k) => api.loginKey(k).catch(() => {})
 
   const phase = st.phase || 'idle'
-  const working = ['idle', 'starting', 'method', 'code-sent'].includes(phase)
+  const working = ['idle', 'starting', 'code-sent', 'finishing'].includes(phase)
+  const showLink = st.url && ['url', 'code-sent'].includes(phase)
+  const idx = stepIndex(phase)
+  const detail = working ? SCREEN_TEXT[st.step] || '' : ''
   return (
-    <Modal title="Conectar conta do Claude" icon={LogIn} onClose={close} wide>
-      <div className="mb-4 flex items-center gap-2 text-sm">
-        {working && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
-        {phase === 'success' && <CheckCircle2 className="h-4 w-4 text-emerald-300" />}
-        {(phase === 'error' || phase === 'attention') && <AlertTriangle className="h-4 w-4 text-amber-300" />}
-        <span className={phase === 'success' ? 'text-emerald-300' : phase === 'error' ? 'text-rose-300' : 'text-slate-200'}>{STEP_TEXT[phase] || phase}</span>
-        {st.msg && phase !== 'success' && <span className="text-xs text-slate-500">— {st.msg}</span>}
+    <Modal title="Connect your Claude account" icon={LogIn} onClose={close} wide>
+      <ol className="mb-4 flex items-center gap-2 text-xs">
+        {STEPS.map((label, i) => (
+          <li key={label} className="flex flex-1 items-center gap-2">
+            <span
+              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
+                i < idx ? 'bg-emerald-500/20 text-emerald-300' : i === idx ? 'bg-primary/20 text-primary ring-1 ring-primary/40' : 'bg-secondary text-slate-500'
+              }`}
+            >
+              {i < idx ? <Check className="h-3.5 w-3.5" /> : i + 1}
+            </span>
+            <span className={i === idx ? 'text-slate-200' : 'text-slate-500'}>{label}</span>
+            {i < STEPS.length - 1 && <span className="h-px flex-1 bg-border" />}
+          </li>
+        ))}
+      </ol>
+
+      <div className="mb-4 flex items-start gap-2 text-sm">
+        {working && <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />}
+        {phase === 'success' && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />}
+        {(phase === 'error' || phase === 'attention') && <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />}
+        <div className="min-w-0">
+          <div className={phase === 'success' ? 'text-emerald-300' : phase === 'error' ? 'text-rose-300' : 'text-slate-200'}>{STEP_TEXT[phase] || phase}</div>
+          {detail && <div className="text-xs text-slate-500">{detail}…</div>}
+          {st.msg && phase !== 'success' && <div className="text-xs text-slate-500">{st.msg}</div>}
+        </div>
       </div>
 
-      {st.url && phase !== 'success' && (
+      {showLink && (
         <div className="space-y-3">
           <div className="rounded-xl bg-primary/5 p-3 ring-1 ring-primary/20">
-            <div className="mb-2 text-xs font-medium text-primary">1. Abra o link e autorize com a sua conta Claude (Pro/Max/Team/Enterprise)</div>
-            <div className="flex flex-wrap gap-2">
-              <a href={st.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary">
-                <ExternalLink className="h-4 w-4" /> Abrir link de autorização
+            <div className="mb-2 text-xs font-medium text-primary">1. Open the link and sign in with your Claude account (Pro/Max/Team/Enterprise)</div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <a
+                href={st.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-base font-medium text-white hover:bg-primary/90"
+              >
+                <ExternalLink className="h-5 w-5" /> Open link
               </a>
-              <Btn onClick={copyUrl}>
-                <Copy className="h-4 w-4" /> Copiar link
-              </Btn>
+              <button
+                type="button"
+                onClick={copyUrl}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border bg-secondary px-4 py-3 text-base font-medium text-slate-100 hover:bg-accent"
+              >
+                {copied ? <Check className="h-5 w-5 text-emerald-300" /> : <Copy className="h-5 w-5" />} {copied ? 'Copied' : 'Copy link'}
+              </button>
             </div>
-            <code className="mt-2 block max-h-24 select-all overflow-auto break-all rounded-lg bg-background px-2.5 py-2 font-mono text-[11px] text-sky-300">{st.url}</code>
+            <code className="mt-2 block max-h-16 select-all overflow-auto break-all rounded-lg bg-background px-2.5 py-2 font-mono text-[11px] text-sky-300">{st.url}</code>
           </div>
-          <div className="rounded-xl bg-sidebar p-3 border">
-            <div className="mb-2 text-xs font-medium text-slate-300">2. Cole o código que aparece depois de autorizar</div>
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="rounded-xl border bg-sidebar p-3">
+            <div className="mb-2 text-xs font-medium text-slate-300">2. Paste the code shown after you authorize</div>
+            <div className="flex flex-col gap-2 sm:flex-row">
               <input
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') connect()
                 }}
-                autoFocus
-                placeholder="código de autorização"
-                className={`min-w-0 flex-1 font-mono ${inputCls} px-3 py-2`}
+                placeholder="authorization code"
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                className={`min-w-0 flex-1 font-mono ${inputCls} px-3 py-3 text-base`}
               />
-              <Btn variant="accent" busy={busy || phase === 'code-sent'} disabled={!code.trim()} onClick={connect}>
-                <Link2 className="h-4 w-4" /> Conectar
+              <Btn variant="accent" busy={busy || phase === 'code-sent'} disabled={!code.trim()} onClick={connect} className="min-h-12 justify-center px-5 text-base">
+                <Link2 className="h-4 w-4" /> Connect
               </Btn>
             </div>
           </div>
@@ -515,41 +577,31 @@ function LoginModal({ onClose, onFlash }) {
 
       {phase === 'success' && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl bg-emerald-500/10 p-4 text-sm text-emerald-100 ring-1 ring-emerald-500/25">
-          <CheckCircle2 className="h-5 w-5 text-emerald-300" /> Login salvo em <code>~/.claude</code> — vale para todos os projetos e persiste entre deploys.
+          <CheckCircle2 className="h-5 w-5 text-emerald-300" /> Signed in. The login is saved in <code>~/.claude</code>, works for every project and survives redeploys.
           <Btn variant="accent" className="ml-auto" onClick={onClose}>
-            Fechar
+            Close
           </Btn>
         </div>
       )}
       {phase === 'error' && (
-        <Btn variant="accent" busy={busy} onClick={begin}>
-          <RefreshCw className="h-4 w-4" /> Tentar de novo
+        <Btn variant="accent" busy={busy} onClick={begin} className="min-h-12 px-5 text-base">
+          <RefreshCw className="h-4 w-4" /> Try again
         </Btn>
       )}
 
-      {phase !== 'success' && (
+      {/* ultimo recurso: tela desconhecida que o painel nao passou sozinho */}
+      {(phase === 'attention' || (phase === 'error' && st.screen)) && (
         <div className="mt-4">
-          <button type="button" onClick={() => setShowScreen((v) => !v)} className="text-xs text-slate-500 hover:text-slate-300">
-            {showScreen ? '▾ esconder' : '▸ ver'} a tela do Claude
-          </button>
-          {showScreen && (
-            <>
-              <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-background p-2.5 font-mono text-[11px] leading-snug text-slate-300">{st.screen || '…'}</pre>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {[
-                  ['↑', 'Up'],
-                  ['↓', 'Down'],
-                  ['Enter', 'Enter'],
-                  ['Esc', 'Escape'],
-                  ['1', '1'],
-                  ['2', '2'],
-                ].map(([l, k]) => (
-                  <button key={k} type="button" onClick={() => key(k)} className="rounded-md bg-accent px-2.5 py-1 font-mono text-xs text-slate-300 border hover:bg-secondary hover:text-white">
-                    {l}
-                  </button>
-                ))}
-              </div>
-            </>
+          {phase === 'attention' && <div className="mb-2 text-xs text-slate-400">Pick the right option with the keys below. The panel carries on by itself afterwards.</div>}
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-background p-2.5 font-mono text-[11px] leading-snug text-slate-300">{st.screen || '…'}</pre>
+          {phase === 'attention' && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {LOGIN_KEYS.map(([l, k]) => (
+                <button key={k} type="button" onClick={() => key(k)} className="min-h-10 min-w-10 rounded-md border bg-accent px-3 py-1.5 font-mono text-sm text-slate-300 hover:bg-secondary hover:text-white">
+                  {l}
+                </button>
+              ))}
+            </div>
           )}
         </div>
       )}
