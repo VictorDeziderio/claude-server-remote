@@ -1,4 +1,4 @@
-# Nao enviar artefatos locais pro contexto de build (o Dockerfile builda o painel)
+# Do not send local artifacts to the build context (the Dockerfile builds the panel)
 panel/node_modules
 panel/dist
 **/.DS_Store

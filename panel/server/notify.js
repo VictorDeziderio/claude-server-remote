@@ -32,7 +32,7 @@ const cfg = require('./config');
 const autoresume = require('./autoresume');
 const { log, validName, clampInt } = require('./util');
 const push = require('./push');
-// titulo/corpo: texto pronto ou [chave srv.*, vars] — traduzido no idioma de CADA aparelho
+// title/body: ready text or [srv.* key, vars] — translated into the language of EACH device
 const L = (key, vars) => [key, vars || {}];
 const txt = (x, lang) => (Array.isArray(x) ? tr(x[0], x[1], lang) : String(x || ''));
 

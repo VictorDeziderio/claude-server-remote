@@ -33,7 +33,7 @@ slog() { printf '[%s] %s: %s\n' "$(date '+%F %T')" "$SESS" "$*" >> "$LOG_DIR/ses
 
 # ---------- reading the screen (tmux) ----------
 screen() { tmux capture-pane -t "=$SESS:" -p -S -80 2>/dev/null; }
-# TUI do Claude pronta p/ receber comando? (rodape/prompt visiveis)
+# Claude's TUI ready to take a command? (footer/prompt visible)
 tui_ready() { screen | grep -qE '(\? for shortcuts|bypass permissions|shift\+tab to cycle|^[[:space:]]*[>❯][[:space:]]*$)'; }
 # remote already active? (remote-control link or status on screen)
 remote_up() { screen | grep -qE '(claude\.ai/code/|[Rr]emote[- ]control (is )?(on|active|enabled|started|conectado|ativo))'; }
@@ -175,7 +175,7 @@ while true; do
   accept_trust_prompt &
   TRUST_PID=$!
 
-  # remote-control em paralelo ao claude (espera a TUI ficar pronta)
+  # remote-control in parallel with claude (waits for the TUI to be ready)
   REMOTE_PID=""
   if [ "$CFG_REMOTE" = "true" ]; then
     send_remote_when_ready "$(remote_cmd "$PROJ_NAME")" &

@@ -35,19 +35,19 @@ proj_config() {  # $1 = project
   # file fails to parse (e.g. read in the middle of a non-atomic external write).
   "$NODE_BIN" -e '
     const fs = require("fs");
-    const [, file, proj] = process.argv; // com -e, argv[1] ja e o 1o argumento
+    const [, file, proj] = process.argv; // with -e, argv[1] is already the first argument
     let c = {}, corrupt = false;
     try {
       const raw = fs.readFileSync(file, "utf8");
       try { c = JSON.parse(raw) || {}; } catch { c = {}; corrupt = true; }
-    } catch { /* arquivo ausente: normal, cai nos defaults abaixo */ }
+    } catch { /* missing file: normal, falls back to the defaults below */ }
     if (corrupt) {
       process.stdout.write("enabled=false\nautoStartClaude=false\nautoRemote=false\ninitLine=\nsessionMode=new\npinnedSession=\n");
     } else {
       const d = c.defaults || {}, p = (c.projects && c.projects[proj]) || {};
       const pick = (k) => (k in p ? p[k] !== false : (k in d ? d[k] !== false : true));
       const il = typeof p.initLine === "string" ? p.initLine : "";
-      // sessionMode: new (padrao) | continue (ultima conversa da pasta) | pinned (pinnedSession)
+      // sessionMode: new (default) | continue (latest conversation of the folder) | pinned (pinnedSession)
       const sm = ["new", "continue", "pinned"].includes(p.sessionMode) ? p.sessionMode : "new";
       const ps = typeof p.pinnedSession === "string" && /^[A-Za-z0-9_-]{6,80}$/.test(p.pinnedSession) ? p.pinnedSession : "";
       process.stdout.write(

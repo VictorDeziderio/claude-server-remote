@@ -12,7 +12,7 @@ import { TR } from '../lib/i18n-rich.jsx'
 
 export default function Account({ data, onFlash, refresh }) {
   const login = data.login || { logged: false, account: '', org: '', method: '' }
-  // /account?login=1 (link "deslogado — clique p/ logar" do Dashboard) ja abre o login
+  // /account?login=1 (the Dashboard's "logged out — click to log in" link) opens the login at once
   const [params, setParams] = useSearchParams()
   const [showLogin, setShowLogin] = useState(() => params.get('login') === '1')
   useEffect(() => {
@@ -94,7 +94,7 @@ export default function Account({ data, onFlash, refresh }) {
   )
 }
 
-// Versao do Claude Code: atual x ultima no npm, alerta de desatualizado e botao de atualizar
+// Claude Code version: current x latest on npm, outdated warning and update button
 function ClaudeVersionCard({ onFlash, refresh }) {
   const [h, setH] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -183,7 +183,7 @@ function ClaudeVersionCard({ onFlash, refresh }) {
   )
 }
 
-// 2FA (TOTP): ativar com QR + codigo, desativar com codigo
+// 2FA (TOTP): turn on with QR + code, turn off with code
 function TwoFactorCard({ onFlash }) {
   const [st, setSt] = useState(null)
   const [setup, setSetup] = useState(null) // { secret, otpauth, qr }
@@ -324,7 +324,7 @@ function TwoFactorCard({ onFlash }) {
   )
 }
 
-// Sessoes ativas do painel: lista, encerrar uma, encerrar todas as outras
+// Active panel sessions: list, end one, end all the others
 function SessionsCard({ onFlash }) {
   const [list, setList] = useState(null)
   const [busy, setBusy] = useState('')
@@ -406,10 +406,10 @@ function SessionsCard({ onFlash }) {
   )
 }
 
-// Login do Claude GUIADO: o servidor roda o `claude` numa sessao tmux larga (cr-login) e responde
-// sozinho TODAS as telas (1o uso, metodo de login, pos-login). Aqui o dono so ve: progresso ->
-// link (Abrir/Copiar) + campo do codigo -> sucesso. A tela crua so aparece no ULTIMO recurso
-// (fase "attention": tela desconhecida que o painel nao conseguiu passar).
+// GUIDED Claude login: the server runs `claude` in a wide tmux session (cr-login) and answers
+// ALL the screens by itself (first run, login method, post-login). Here the owner only sees: progress ->
+// link (Open/Copy) + code field -> success. The raw screen only shows up as the LAST resort
+// ("attention" phase: an unknown screen the panel could not get past).
 const STEP_TEXT = {
   idle: 'login.phase.idle',
   starting: 'login.phase.starting',
@@ -420,7 +420,7 @@ const STEP_TEXT = {
   error: 'login.phase.error',
   attention: 'login.phase.attention',
 }
-// telas que o painel passa sozinho (o id vem da tabela SCREENS do server/login.js)
+// screens the panel passes by itself (the id comes from the SCREENS table in server/login.js)
 const SCREEN_TEXT = {
   theme: 'login.screen.theme',
   'login-method': 'login.screen.login-method',
@@ -593,7 +593,7 @@ function LoginModal({ onClose, onFlash }) {
         </Btn>
       )}
 
-      {/* ultimo recurso: tela desconhecida que o painel nao passou sozinho */}
+      {/* last resort: an unknown screen the panel did not get past by itself */}
       {(phase === 'attention' || (phase === 'error' && st.screen)) && (
         <div className="mt-4">
           {phase === 'attention' && <div className="mb-2 text-xs text-muted-foreground">{t('login.attention')}</div>}

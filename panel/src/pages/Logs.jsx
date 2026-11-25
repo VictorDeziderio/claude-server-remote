@@ -5,7 +5,7 @@ import { fmtSize, fmtDate } from '../lib/format.js'
 import * as api from '../api.js'
 import { t, tOr } from '../lib/i18n.js'
 
-// /logs — tail dos logs (painel, backup, auditoria) com auto-refresh e filtro
+// /logs — tail of the logs (panel, backup, audit) with auto-refresh and filter
 export default function LogsPage() {
   const [files, setFiles] = useState([])
   const [cur, setCur] = useState('panel')

@@ -95,7 +95,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
-# 4) Playwright (versao pinada) + gerenciadores JS (global). O Claude Code vem na etapa 8.
+# 4) Playwright (pinned version) + JS package managers (global). Claude Code comes in step 8.
 RUN npm install -g "playwright@${PLAYWRIGHT_VERSION}" pnpm yarn bun \
     && npm cache clean --force
 
@@ -165,7 +165,7 @@ ENV \
     PROJECT_FOLDER=claude \
     REMOTE_CONTROL_NAME= \
     CLAUDE_AUTOCMD_DELAY=15 \
-    # Backup automatico dos projetos: liga/desliga + intervalo (segundos); config 1x/dia
+    # Automatic project backup: on/off + interval (seconds); config 1x/day
     BACKUP_ENABLED=true \
     BACKUP_INTERVAL=3600 \
     CONFIG_BACKUP_INTERVAL=86400 \
@@ -196,7 +196,7 @@ COPY backup.sh /usr/local/bin/backup.sh
 COPY devbox-hook.sh /usr/local/bin/devbox-hook.sh
 # "Claude Remote" panel already built (stage 1): server.js + server/ + dist/ + node_modules (runtime)
 COPY --from=panel-build --chown=ubuntu:ubuntu /panel /usr/local/bin/panel
-# Semente do panel.json (config dos projetos) — copiada p/ o volume na 1a subida (start.sh)
+# Seed of panel.json (project config) — copied to the volume on the first start (start.sh)
 COPY panel.json /usr/local/share/claude/panel.json
 RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/claude-loop.sh \
         /usr/local/bin/claude-session.sh /usr/local/bin/backup.sh /usr/local/bin/devbox-hook.sh

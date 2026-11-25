@@ -1,4 +1,4 @@
-// Logo "sunburst" do Claude (SVG inline, sem dependencias). Laranja caracteristico.
+// Claude "sunburst" logo (inline SVG, no dependencies). Signature orange.
 export default function Logo({ size = 30, className = '' }) {
   const rays = Array.from({ length: 12 })
   return (

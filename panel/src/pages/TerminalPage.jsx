@@ -41,8 +41,8 @@ const STATUS = {
   error: { get label() { return t('term.error') }, Icon: AlertTriangle, cls: 'text-rose-600 dark:text-rose-300' },
 }
 
-// Botao da barra de teclas: NAO tira o foco do terminal (senao o teclado do celular fecha) e,
-// nas teclas com repeat (setas/PgUp/PgDn), segurar repete.
+// Key bar button: does NOT take the focus away from the terminal (otherwise the phone keyboard closes) and,
+// on keys with repeat (arrows/PgUp/PgDn), holding repeats.
 function KeyBtn({ k, onPress, active, locked, hot }) {
   const rep = useRef({ delay: null, rep: null, repeated: false })
   const stop = () => { clearTimeout(rep.current.delay); clearInterval(rep.current.rep) }
@@ -79,8 +79,8 @@ function KeyBtn({ k, onPress, active, locked, hot }) {
   )
 }
 
-// "Selecionar texto": o historico do tmux como TEXTO normal da pagina -> a selecao nativa do
-// celular (segurar + arrastar as alcas + Copiar) funciona; no xterm/tmux o dedo nao seleciona.
+// "Select text": the tmux history as normal page TEXT -> the phone's native selection
+// (hold + drag the handles + Copy) works; in xterm/tmux the finger does not select.
 function SelectSheet({ target, font, onClose, onFlash }) {
   const [text, setText] = useState(null)
   const preRef = useRef(null)
@@ -116,8 +116,8 @@ function SelectSheet({ target, font, onClose, onFlash }) {
 }
 
 // (the Modal sits above the fullscreen terminal: see the layers in components/ui.jsx)
-// Colar sem permissao de leitura da area de transferencia (HTTP, iOS negou...): caixa de texto
-// onde o "Colar" nativo do celular funciona sempre.
+// Paste without clipboard read permission (HTTP, iOS refused...): a text box
+// where the phone's native "Paste" always works.
 function PasteSheet({ onSend, onClose }) {
   const [v, setV] = useState('')
   return (
@@ -132,7 +132,7 @@ function PasteSheet({ onSend, onClose }) {
   )
 }
 
-// /terminal/:name -> "shell" (bash em /root) ou nome de um projeto (sessao claude-<projeto>)
+// /terminal/:name -> "shell" (bash in /root) or a project name (claude-<project> session)
 export default function TerminalPage({ data, activity, onFlash }) {
   const { name = 'shell' } = useParams()
   const navigate = useNavigate()
@@ -200,7 +200,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
       return !s
     })
 
-  // Ctrl/Alt grudentos: aplicados a PROXIMA tecla do teclado do celular (ou da barra)
+  // sticky Ctrl/Alt: applied to the NEXT key of the phone keyboard (or of the bar)
   const withMods = useCallback((d) => {
     const m = modsRef.current
     if ((m.ctrl === 'off' && m.alt === 'off') || !isUserInput(d)) return d
@@ -210,7 +210,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
     setMods(next)
     return out
   }, [])
-  // no celular NAO devolve o foco ao terminal (abriria o teclado a cada toque num botao)
+  // on the phone it does NOT give the focus back to the terminal (it would open the keyboard on each button tap)
   const refocus = () => { if (!coarse()) termRef.current?.focus() }
   const paste = async () => {
     const ok = await termRef.current?.paste()
@@ -241,7 +241,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
     else if (phase === 'move') setFontSafe(pinchRef.current * scale)
   }, [setFontSafe])
 
-  // janelas do tmux (lista a cada 5s enquanto a pagina esta aberta)
+  // tmux windows (list every 5s while the page is open)
   const loadWin = useCallback(
     () =>
       api
@@ -257,7 +257,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
     const t = setInterval(loadWin, 5000)
     return () => clearInterval(t)
   }, [loadWin])
-  // conectou (ou reconectou): atualiza logo a lista de janelas/clientes
+  // connected (or reconnected): refresh the list of windows/clients right away
   useEffect(() => { if (status === 'open') loadWin() }, [status, loadWin])
   const winAction = async (action, index) => {
     const r = await api.termWindow(target, action, index)
@@ -289,7 +289,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
     return () => { clearTimeout(t); document.removeEventListener('click', close) }
   }, [menu])
 
-  // redimensiona o painel lateral arrastando a divisoria
+  // resizes the side panel by dragging the divider
   const onDragStart = (e) => {
     e.preventDefault()
     const startX = e.clientX,
@@ -304,8 +304,8 @@ export default function TerminalPage({ data, activity, onFlash }) {
     window.addEventListener('mouseup', up)
     dragRef.current = up
   }
-  // se a pagina trocar de alvo/desmontar no meio do arrasto, os listeners em `window` ficavam
-  // presos (dragRef nunca era lido) reagindo a todo mousemove da pagina ate o proximo mouseup
+  // if the page changed target/unmounted in the middle of the drag, the listeners on `window` stayed
+  // stuck (dragRef was never read) reacting to every mousemove on the page until the next mouseup
   useEffect(() => () => dragRef.current?.(), [])
   useEffect(() => {
     writeLS(LS_SIDEW, sideW)
@@ -374,7 +374,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
         </div>
       </div>
 
-      {/* Janelas do tmux + clientes (+ ferramentas no celular) */}
+      {/* tmux windows + clients (+ tools on the phone) */}
       <div className="flex items-center gap-1.5 border-b border-border px-2 py-1 text-[11px] sm:flex-wrap sm:px-3 sm:py-1.5">
         <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
           <AppWindow className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -407,7 +407,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
             </button>
           )}
         </div>
-        {/* ferramentas no celular: fonte, selecionar texto, teclas, mais */}
+        {/* tools on the phone: font, select text, keys, more */}
         <div className="flex shrink-0 items-center gap-1 sm:hidden">
           <IconBtn title={t('term.fontSmaller')} onClick={() => setFontSafe(font - 1)}><ZoomOut className="h-4 w-4" /></IconBtn>
           <IconBtn title={t('term.fontBigger')} onClick={() => setFontSafe(font + 1)}><ZoomIn className="h-4 w-4" /></IconBtn>
@@ -468,7 +468,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
         </form>
       )}
 
-      {/* Terminal (+ arquivos ao lado) */}
+      {/* Terminal (+ files beside it) */}
       <div className="flex min-h-0 flex-1">
         <div className="relative min-h-0 min-w-0 flex-1 sm:p-1">
           <XTerm ref={termRef} target={target} fontSize={font} detach={detach} onStatus={onStatus} onSearchToggle={toggleSearch} onCopy={onCopy} onLongPress={onLongPress} onPinch={onPinch} transformInput={withMods} className="sm:rounded-lg" />
@@ -506,7 +506,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
         )}
       </div>
 
-      {/* Barras de teclas (celular): atalhos do Claude + teclas extras */}
+      {/* Key bars (phone): Claude shortcuts + extra keys */}
       {keys && (
         <div className="border-t border-border bg-sidebar">
           {target !== 'shell' && (

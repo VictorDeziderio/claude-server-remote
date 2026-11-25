@@ -13,9 +13,9 @@ export function Dot({ on, pulse, color }) {
   return <span className={cn('inline-block h-2 w-2 shrink-0 rounded-full', c, pulse && 'animate-pulse')} />
 }
 
-// estado de atividade do Claude numa sessao (watcher do servidor). Uma unica cor de destaque
-// (primary/ambar) e reservada pra "trabalhando"; os outros 3 estados usam as cores semanticas
-// do tema (success/destructive/muted) em vez de inventar um 5o acento.
+// Claude activity state in a session (server watcher). A single highlight color
+// (primary/amber) is reserved for "working"; the other 3 states use the semantic colors
+// of the theme (success/destructive/muted) instead of inventing a 5th accent.
 export const ACTIVITY = {
   busy: { get label() { return t('activity.busy') }, cls: 'bg-warning', text: 'text-warning', pulse: true },
   prompt: { get label() { return t('activity.prompt') }, cls: 'bg-destructive', text: 'text-destructive', pulse: true },
@@ -35,8 +35,8 @@ export function ActivityBadge({ state, since }) {
   )
 }
 
-// mapeia a API antiga (default/accent/ghost/danger/sky) pras variantes do Button do shadcn.
-// "accent" = a acao primaria (ambar) = variant "default" do shadcn (que ja e' bg-primary).
+// maps the old API (default/accent/ghost/danger/sky) to the shadcn Button variants.
+// "accent" = the primary action (amber) = shadcn's "default" variant (which already is bg-primary).
 const VARIANT_MAP = { default: 'secondary', accent: 'default', ghost: 'ghost', danger: 'destructive', sky: 'secondary' }
 export function Btn({ onClick, busy, children, variant = 'default', title, className = '', type = 'button', disabled, size }) {
   return (
@@ -58,13 +58,13 @@ export function IconBtn({ onClick, title, children, active, className = '', disa
   )
 }
 
-// toggle on/off (Power/Claude/Remote nos cards de projeto) -- Badge clicavel, nao um Button:
-// e' um ESTADO que se le, nao uma acao que se dispara.
+// on/off toggle (Power/Claude/Remote on the project cards) -- a clickable Badge, not a Button:
+// it is a STATE you read, not an action you fire.
 export function Chip({ on, onClick, busy, labelOn, labelOff, Icon }) {
   return (
     <button type="button" onClick={onClick} disabled={busy} title={t('chip.toggle')}
       className={cn(
-        'group/badge inline-flex h-9 shrink-0 items-center gap-1.5 rounded-4xl border px-3 py-0.5 text-xs font-medium transition-all disabled:pointer-events-none disabled:opacity-50 sm:h-5 sm:px-2', // alvo de toque maior no celular
+        'group/badge inline-flex h-9 shrink-0 items-center gap-1.5 rounded-4xl border px-3 py-0.5 text-xs font-medium transition-all disabled:pointer-events-none disabled:opacity-50 sm:h-5 sm:px-2', // bigger touch target on the phone
         on ? 'border-transparent bg-success/15 text-success' : 'border-transparent bg-destructive/10 text-destructive'
       )}>
       {busy ? <Loader2 className="size-3 animate-spin" /> : <Icon className="size-3" />}
@@ -146,9 +146,9 @@ export function Toast({ flash, onClose, position = 'bottom' }) {
     return () => clearTimeout(t)
   }, [flash, onClose])
   if (!flash) return null
-  // centralizado com inset-x + mx-auto (e nao left-1/2 + -translate-x-1/2): a animacao fade-up
-  // mexe no transform e anulava o translate -> o aviso saia metade fora da tela no celular.
-  // No celular fica acima da navegacao de baixo.
+  // centered with inset-x + mx-auto (not left-1/2 + -translate-x-1/2): the fade-up animation
+  // touches the transform and cancelled the translate -> the notice came out half off screen on the phone.
+  // On the phone it sits above the bottom navigation.
   const pos = position === 'top-right'
     ? 'top-[calc(env(safe-area-inset-top)+1rem)] inset-x-0 mx-auto w-[min(92vw,26rem)] sm:left-auto sm:right-4 sm:mx-0'
     : 'bottom-[calc(env(safe-area-inset-bottom)+5rem)] inset-x-0 mx-auto w-[min(92vw,40rem)] sm:bottom-4'
@@ -162,12 +162,12 @@ export function Toast({ flash, onClose, position = 'bottom' }) {
   )
 }
 
-// wrapper fino sobre o Card do shadcn preservando a API antiga (title/subtitle/actions como
-// props) pra nenhuma pagina precisar recompor CardHeader/CardContent manualmente.
+// thin wrapper over shadcn's Card keeping the old API (title/subtitle/actions as
+// props) so no page needs to rebuild CardHeader/CardContent by hand.
 export function Card({ title, subtitle, children, className = '', actions }) {
   return (
-    // sobrescreve o ring padrao do shadcn (ring-foreground/10 -- quase invisivel no tema escuro
-    // atual: baixo contraste entre o ring e o bg-card) pela cor de borda real do tema
+    // overrides shadcn's default ring (ring-foreground/10 -- almost invisible in the current dark
+    // theme: low contrast between the ring and bg-card) with the theme's real border color
     <SCard className={cn('ring-border', className)}>
       {(title || subtitle || actions) && (
         <CardHeader>
@@ -185,7 +185,7 @@ export const Empty = ({ children = t('common.noData') }) => <div className="py-8
 
 export const Skeleton = SSkeleton
 
-// confirmacao inline (substitui window.confirm): "Excluir X? [Sim] [Nao]"
+// inline confirmation (replaces window.confirm): "Delete X? [Yes] [No]"
 export function InlineConfirm({ text, onYes, onNo, busy, danger = true }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-2 text-xs text-foreground">
@@ -196,7 +196,7 @@ export function InlineConfirm({ text, onYes, onNo, busy, danger = true }) {
   )
 }
 
-// input inline com Enter/Esc (substitui window.prompt)
+// inline input with Enter/Esc (replaces window.prompt)
 export function InlineInput({ initial = '', placeholder, onSubmit, onCancel, busy, className = '' }) {
   const [v, setV] = useState(initial)
   return (

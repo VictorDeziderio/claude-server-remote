@@ -1,7 +1,7 @@
 'use strict';
-// Sessoes do painel (stateful, persistidas em ~/.claude/.panel-sessions.json):
-// cada login gera um id; o cookie carrega esse id assinado. Revogar = apagar do store
-// ("sair deste dispositivo" / "sair de todos"). Sobrevive a restart do painel.
+// Panel sessions (stateful, persisted in ~/.claude/.panel-sessions.json):
+// each login creates an id; the cookie carries that id, signed. Revoke = delete it from the store
+// ("sign out of this device" / "sign out everywhere"). Survives a panel restart.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -46,7 +46,7 @@ function get(id) {
   if (s.exp < Date.now() / 1000) { delete store[id]; dirty = true; return null; }
   return s;
 }
-// atualiza "visto por ultimo" no maximo 1x por minuto (evita gravar a cada request)
+// updates "last seen" at most 1x per minute (avoids writing on every request)
 function touch(id, ip) {
   const s = store[id];
   if (!s) return;
@@ -66,7 +66,7 @@ function list(currentId) {
     .map(([id, s]) => ({ id: id.slice(0, 8), current: id === currentId, iat: s.iat, exp: s.exp, last: s.last, ip: s.ip, ua: s.ua, _id: id }))
     .sort((a, b) => (b.last || 0) - (a.last || 0));
 }
-// id completo a partir do prefixo exibido (p/ revogar)
+// full id from the displayed prefix (to revoke)
 function resolve(prefix) {
   if (typeof prefix !== 'string' || prefix.length < 8) return null;
   return Object.keys(store).find((id) => id.startsWith(prefix)) || null;

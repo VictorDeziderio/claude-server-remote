@@ -37,11 +37,11 @@ module.exports = {
         sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
-        // interface (titulos, nav, botoes, corpo de texto) -- legivel, nao mono
+        // interface (titles, nav, buttons, body text) -- readable, not mono
         sans: ['"Geist Variable"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        // dados de UI (metricas, IDs, caminhos, comandos) -- so onde a className diz "font-mono"
+        // UI data (metrics, IDs, paths, commands) -- only where the className says "font-mono"
         mono: ['"Geist Mono Variable"', '"JetBrains Mono"', 'ui-monospace', 'monospace'],
-        // terminal (xterm) e CodeMirror -- cobertura de box-drawing p/ TUIs (tmux etc.)
+        // terminal (xterm) and CodeMirror -- box-drawing coverage for TUIs (tmux etc.)
         term: ['"JetBrains Mono"', '"Cascadia Code"', 'Menlo', 'Consolas', '"DejaVu Sans Mono"', 'monospace'],
       },
       keyframes: {
@@ -59,7 +59,7 @@ module.exports = {
       },
     },
   },
-  // animacoes de data-state (Radix) vem do "tw-animate-css" importado em index.css --
-  // nao precisa do plugin JS tailwindcss-animate
+  // data-state animations (Radix) come from "tw-animate-css" imported in index.css --
+  // no need for the tailwindcss-animate JS plugin
   plugins: [],
 }

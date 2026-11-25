@@ -1,8 +1,8 @@
 'use strict';
 const { tr } = require('./i18n');
-// Backup: status por projeto (lido do backup.log), "backup agora" (roda o backup.sh), e backup da
-// CONFIG (~/.claude + ~/.claude.json): tarball local rotacionado (start.sh agenda 1x/dia) +
-// download direto pelo painel (stream `tar czf -`).
+// Backup: status per project (read from backup.log), "backup now" (runs backup.sh), and backup of the
+// CONFIG (~/.claude + ~/.claude.json): rotated local tarball (start.sh schedules it 1x/day) +
+// direct download from the panel (stream `tar czf -`).
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -10,7 +10,7 @@ const cfg = require('./config');
 const { sh, validName, log } = require('./util');
 const { listProjects } = require('./projects-list');
 
-// backup.log tem linhas "[YYYY-MM-DD HH:MM:SS] ok    nome: msg" / "WARN  nome: ..." / "skip  nome: ..."
+// backup.log has lines "[YYYY-MM-DD HH:MM:SS] ok    name: msg" / "WARN  name: ..." / "skip  name: ..."
 function backupStatus() {
   const p = path.join(cfg.LOGS_DIR, 'backup.log');
   let text = '';
@@ -20,7 +20,7 @@ function backupStatus() {
     const buf = Buffer.alloc(want);
     const fd = fs.openSync(p, 'r'); fs.readSync(fd, buf, 0, want, st.size - want); fs.closeSync(fd);
     text = buf.toString('utf8');
-  } catch { /* sem log ainda */ }
+  } catch { /* no log yet */ }
   const byProject = {};
   let lastRun = '';
   for (const line of text.split('\n')) {
@@ -40,7 +40,7 @@ function backupStatus() {
   const volume = process.env.VOLUME_BACKUP_DIR ? { dir: process.env.VOLUME_BACKUP_DIR, keep: parseInt(process.env.VOLUME_BACKUP_KEEP || '7', 10), interval: parseInt(process.env.VOLUME_BACKUP_INTERVAL || '86400', 10), last: byProject['(volume)'] || null } : null;
   return { ok: true, enabled: process.env.BACKUP_ENABLED !== 'false', interval: parseInt(process.env.BACKUP_INTERVAL || '3600', 10), lastRun, projects, volume };
 }
-// origin de cada repo (spawn por projeto; so quando a pagina de backup abre)
+// origin of each repo (one spawn per project; only when the backup page opens)
 async function backupStatusFull() {
   const s = backupStatus();
   await Promise.all(s.projects.map(async (p) => {
@@ -72,7 +72,7 @@ function listConfigBackups() {
       .sort((a, b) => b.mtime - a.mtime);
   } catch { return []; }
 }
-// download de um tarball ja gerado (nome validado) ou de um NOVO gerado na hora (stream)
+// download of an already generated tarball (validated name) or of a NEW one generated on the fly (stream)
 function downloadConfig(res, file, full) {
   if (file) {
     if (!/^config-[A-Za-z0-9_.-]+\.tgz$/.test(file)) { res.writeHead(400); return res.end(tr('srv.badName')); }
@@ -81,8 +81,8 @@ function downloadConfig(res, file, full) {
     res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': st.size, 'Content-Disposition': `attachment; filename="${file}"`, 'Cache-Control': 'no-store' });
     return fs.createReadStream(p).pipe(res);
   }
-  // +PID: mesma razao do backup.sh (achado @qa 2026-09-28) -- evita colisao de nome se
-  // duas gerações caírem no mesmo segundo
+  // +PID: same reason as in backup.sh (found by @qa 2026-09-28) -- avoids a name collision if
+  // two generations land in the same second
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '-' + process.pid;
   const name = `config-${ts}${full ? '-full' : ''}.tgz`;
   const args = ['czf', '-', '-C', cfg.HOME, '--ignore-failed-read'];

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Smoke test do server.js do painel. Sobe o servidor num HOME temporario e exercita: auth
-// (login, cookie assinado, rate-limit, CSRF, 2FA, sessoes), arquivos (sandbox, upload/download),
-// projetos/config, relatorio, logs, saude, backup, settings, SSE e o WebSocket do terminal.
-// Com `tmux` disponivel (Linux/CI) o WebSocket abre um PTY REAL e valida a saida da sessao.
-// Uso: node test/smoke.mjs   (ou npm test)
+// Smoke test of the panel's server.js. Starts the server in a temporary HOME and exercises: auth
+// (login, signed cookie, rate limit, CSRF, 2FA, sessions), files (sandbox, upload/download),
+// projects/config, report, logs, health, backup, settings, SSE and the terminal WebSocket.
+// With `tmux` available (Linux/CI) the WebSocket opens a REAL PTY and checks the session output.
+// Usage: node test/smoke.mjs   (or npm test)
 import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -21,31 +21,31 @@ const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-smoke-'))
 fs.mkdirSync(path.join(ROOT, 'projects', 'demo'), { recursive: true })
 const HAS_TMUX = spawnSync('tmux', ['-V']).status === 0
 const PORT = 7000 + Math.floor(Math.random() * 900), BASE = `http://127.0.0.1:${PORT}`
-// claude-session.sh REAL (respeita enabled/autoStartClaude do panel.json) + supervisor FALSO
-// (no lugar do claude-loop.sh: imprime um banner e vira um bash)
+// REAL claude-session.sh (respects enabled/autoStartClaude of panel.json) + FAKE supervisor
+// (in place of claude-loop.sh: prints a banner and becomes a bash)
 const DEVBOX = path.resolve(PANEL, '..')
 const SESSION_SCRIPT = path.join(DEVBOX, 'claude-session.sh')
 const FAKE_LOOP = path.join(ROOT, 'loop.sh')
 fs.writeFileSync(FAKE_LOOP, '#!/usr/bin/env bash\necho SMOKE-READY-$2; exec bash --norc\n')
-// `claude` FALSO: reproduz as telas REAIS do 1o uso do Claude Code 2.1.332 (conferidas ao vivo
-// num HOME descartavel): tema -> metodo de login (cursor comeca na opcao ERRADA) -> link OAuth
-// LONGO -> codigo -> "Login successful" -> notas de seguranca -> terminal setup -> pasta confiavel
-// e aviso do bypass (default "No, exit": Enter as cegas FECHA o claude) -> uma tela que o painel
-// NAO conhece (passa com Enter) -> prompt. Ja logado, abre no prompt e espera o /login.
-// Cada escolha vai para $HOME/.fake-claude-picks (o teste confere). Script: test/fake-claude.sh.
+// FAKE `claude`: reproduces the REAL first-run screens of Claude Code 2.1.332 (checked live
+// in a throwaway HOME): theme -> login method (cursor starts on the WRONG option) -> LONG
+// OAuth link -> code -> "Login successful" -> security notes -> terminal setup -> trusted folder
+// and the bypass warning (default "No, exit": a blind Enter CLOSES claude) -> a screen the panel
+// does NOT know (passes with Enter) -> prompt. Already logged in, it opens at the prompt and waits for /login.
+// Each choice goes to $HOME/.fake-claude-picks (the test checks it). Script: test/fake-claude.sh.
 const BIN = path.join(ROOT, 'bin')
 fs.mkdirSync(BIN)
-const LONG = 'x'.repeat(700) // link maior que a janela de 500 colunas: testa a juncao das linhas
+const LONG = 'x'.repeat(700) // link longer than the 500-column window: tests the joining of lines
 const FAKE_CLAUDE = fs.readFileSync(path.join(PANEL, 'test', 'fake-claude.sh'), 'utf8').replace('__LONG__', LONG)
 fs.writeFileSync(path.join(BIN, 'claude'), FAKE_CLAUDE, { mode: 0o755 })
 const BACKUP_SCRIPT = path.join(ROOT, 'backup.sh')
 fs.writeFileSync(BACKUP_SCRIPT, '#!/usr/bin/env bash\nmkdir -p "$HOME/.claude/logs"; echo "[2026-01-01 00:00:00] ok    demo: snapshot enviado" | tee -a "$HOME/.claude/logs/backup.log"; if [ "$1" = "--config" ]; then mkdir -p "$HOME/.claude-backups"; tar czf "$HOME/.claude-backups/config-smoke.tgz" -C "$HOME" .claude; echo "[2026-01-01 00:00:00] ok    config: config-smoke.tgz"; fi\n')
 
-// Anthropic FALSO (limites do plano + Admin API): o painel aponta pra ca via USAGE_API_BASE_URL.
-// Nunca chama a Anthropic de verdade nos testes. `fake.mode` muda a resposta do /api/oauth/usage.
+// FAKE Anthropic (plan limits + Admin API): the panel points here via USAGE_API_BASE_URL.
+// Never calls the real Anthropic in the tests. `fake.mode` changes the /api/oauth/usage answer.
 const FAKE_TOKEN = 'fake-oauth-token-SECRET-123', FAKE_ADMIN = 'sk-ant-admin01-FAKE-SECRET-456'
-const fake = { mode: 'ok', usageReqs: [], costReqs: [], shift: 0, deploys: [] } // shift: empurra o reset (novo periodo)
-const FAKE_T0 = Date.now() // reset fixo como na API real (senao virar o minuto parece novo periodo)
+const fake = { mode: 'ok', usageReqs: [], costReqs: [], shift: 0, deploys: [] } // shift: pushes the reset (new period)
+const FAKE_T0 = Date.now() // fixed reset like the real API (otherwise a new minute looks like a new period)
 const isoIn = (ms) => new Date(FAKE_T0 + ms + fake.shift).toISOString().replace('Z', '123+00:00') // formato real: microssegundos + offset
 const todayIso = new Date().toISOString().slice(0, 10)
 const fakeSrv = http.createServer((req, res) => {
@@ -83,24 +83,24 @@ const fakeSrv = http.createServer((req, res) => {
 })
 await new Promise((r) => fakeSrv.listen(0, '127.0.0.1', r))
 const FAKE_BASE = `http://127.0.0.1:${fakeSrv.address().port}`
-const CREDS = path.join(ROOT, 'fake-credentials.json') // fora de ~/.claude: o teste de login espera "deslogado"
+const CREDS = path.join(ROOT, 'fake-credentials.json') // outside ~/.claude: the login test expects "logged out"
 const writeCreds = (token, expiresAt = Date.now() + 3600e3) => fs.writeFileSync(CREDS, JSON.stringify({ claudeAiOauth: { accessToken: token, refreshToken: 'fake-refresh-SECRET', expiresAt, subscriptionType: 'max' } }))
 writeCreds(FAKE_TOKEN)
 
-// no Windows, bash/tar do Git for Windows (p/ os scripts falsos de backup)
+// on Windows, bash/tar from Git for Windows (for the fake backup scripts)
 let PATH = BIN + path.delimiter + (process.env.PATH || '')
 if (process.platform === 'win32') {
   for (const d of ['C:\\Program Files\\Git\\usr\\bin', 'C:\\Program Files\\Git\\bin']) if (fs.existsSync(d)) PATH = d + path.delimiter + PATH
 }
 const env = {
   ...process.env, PATH, HOME: ROOT, PANEL_PORT: String(PORT), PANEL_BIND: '127.0.0.1', PANEL_LOGIN: 'admin', PANEL_PASSWORD: 'test123',
-  // teste roda em http puro em localhost: so o teste desliga o Secure do cookie (producao real,
-  // atras do Traefik em https, nunca passa essa flag — ver server/auth.js)
+  // the test runs on plain http on localhost: only the test turns off the cookie's Secure (real production,
+  // behind a reverse proxy on https, never passes this flag — see server/auth.js)
   PANEL_TEST_INSECURE_COOKIE: '1',
   PROJECTS_DIR: path.join(ROOT, 'projects'), PANEL_CONFIG: path.join(ROOT, '.claude', 'panel.json'),
   SESSION_SCRIPT, BACKUP_SCRIPT, TMUX_TMPDIR: ROOT,
   DEVBOX_LIB: path.join(DEVBOX, 'devbox-lib.sh'), CLAUDE_LOOP: FAKE_LOOP,
-  // limites do plano / gasto da API contra o Anthropic FALSO (poll automatico raro; o teste usa o refresh)
+  // plan limits / API spend against the FAKE Anthropic (rare automatic poll; the test uses refresh)
   USAGE_API_BASE_URL: FAKE_BASE, USAGE_CREDENTIALS_FILE: CREDS, ANTHROPIC_ADMIN_KEY: FAKE_ADMIN, ANTHROPIC_API_BUDGET_USD: '20',
   USAGE_POLL_INTERVAL: '600', USAGE_MIN_REFRESH_SECONDS: '0', USAGE_THRESHOLDS: '80,95',
   // Web Push: nothing goes to the network — deliveries (encrypted + VAPID-signed for real) land
@@ -119,18 +119,18 @@ fs.writeFileSync(path.join(ROOT, '.claude', '.panel-push.json'), JSON.stringify(
 // the final `tmux kill-server` would kill every live session on the box. Isolate the socket.
 delete env.TMUX
 delete env.TMUX_PANE
-// historico falso do Claude (usado pelo relatorio de custo e pela pagina Historico) — antes de
-// subir o servidor, porque o relatorio cacheia a varredura (usage.js) por 60s e o teste nao
-// espera esse tempo: a 1a chamada precisa achar o arquivo ja no lugar
+// fake Claude history (used by the cost report and the History page) — before
+// starting the server, because the report caches the scan (usage.js) for 60s and the test does not
+// wait that long: the first call must find the file already in place
 const encDir = path.join(ROOT, '.claude', 'projects', path.join(ROOT, 'projects', 'demo').replace(/[^a-zA-Z0-9]/g, '-'))
 fs.mkdirSync(encDir, { recursive: true })
 fs.writeFileSync(path.join(encDir, 'abc123def456.jsonl'), [
   JSON.stringify({ timestamp: '2026-08-01T10:00:00Z', message: { role: 'user', content: 'Cria um README' } }),
   JSON.stringify({ timestamp: '2026-08-01T10:00:05Z', message: { role: 'assistant', model: 'claude-opus-5', content: [{ type: 'text', text: 'Feito.' }], usage: { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 500 } } }),
 ].join('\n') + '\n')
-// FAIL-CLOSED: o painel expoe um shell — nao pode subir sem senha nem com uma senha sabidamente
-// publica. O default antigo que ja esteve versionado NAO fica no repo (o projeto e publico):
-// o auth.js guarda so o sha256 dele, e aqui conferimos que esse hash continua na lista de bloqueio.
+// FAIL-CLOSED: the panel exposes a shell — it must not start without a password nor with a password known to be
+// public. The old default that was once versioned is NOT in the repo (the project is public):
+// auth.js keeps only its sha256, and here we check that this hash is still in the block list.
 const LEAKED_DEFAULT_SHA256 = '98a2fc5119f2b61af6d90d9d7bb59813820e6cd43411eeb0a91484a769a0ccb9'
 const bootWith = (pass) => new Promise((resolve) => {
   const p = spawn(process.execPath, ['server.js'], { cwd: PANEL, env: { ...env, PANEL_PASSWORD: pass, PANEL_PORT: String(PORT + 1) }, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -147,10 +147,10 @@ for (const [label, pass] of [['vazia', ''], ['changeme', 'changeme']]) {
   const authTxt = fs.readFileSync(path.join(PANEL, 'server', 'auth.js'), 'utf8')
   failClosed.push(['auth.js ainda bloqueia o default antigo (sha256)', authTxt.includes(LEAKED_DEFAULT_SHA256), 'KNOWN_PUBLIC'])
 }
-// o default nao pode voltar a ser versionado (Dockerfile / .env.example)
+// the default must not be versioned again (Dockerfile / .env.example)
 for (const f of ['Dockerfile', '.env.example']) {
   const txt = fs.readFileSync(path.join(DEVBOX, f), 'utf8')
-  // nenhum PANEL_PASSWORD com valor (vazio ou ausente sao ok: o Dockerfile nao declara mais o ENV)
+  // no PANEL_PASSWORD with a value (empty or missing are ok: the Dockerfile no longer declares the ENV)
   failClosed.push([`${f} sem senha default`, !/^[ \t]*PANEL_PASSWORD=[ \t]*[^\s\\]/m.test(txt), f])
 }
 const srv = spawn(process.execPath, ['server.js'], { cwd: PANEL, env, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -188,7 +188,7 @@ try {
   r = await j('GET', '/api/state'); ok('state sem auth -> 401', r.status === 401)
   r = await j('POST', '/api/login', { login: 'admin', password: 'errada' }); ok('login errado', r.data.ok === false)
   r = await j('POST', '/api/login', '{bad json'); ok('login corpo invalido -> 400', r.status === 400)
-  // corpo acima do limite: readJson tem que resolver (nao travar a request pra sempre no req.destroy())
+  // body over the limit: readJson must resolve (not hang the request forever on req.destroy())
   {
     const ac = new AbortController()
     const t = setTimeout(() => ac.abort(), 5000)
@@ -206,13 +206,13 @@ try {
   ok('segredo persistido', fs.existsSync(path.join(ROOT, '.claude', '.panel-secret')))
   ok('store de sessoes persistido', fs.existsSync(path.join(ROOT, '.claude', '.panel-sessions.json')))
 
-  // cookie forjado com sid inexistente -> 401
+  // forged cookie with a nonexistent sid -> 401
   const forged = cookie.replace(/^cr_auth=/, '')
   const [payload] = forged.split('.')
   const fakePayload = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(payload, 'base64url').toString()), sid: 'deadbeef' })).toString('base64url')
   r = await fetch(BASE + '/api/state', { headers: { cookie: `cr_auth=${fakePayload}.${forged.split('.')[1]}` } }); ok('cookie com assinatura errada -> 401', r.status === 401)
 
-  await new Promise((s) => setTimeout(s, 2500)) // watcher roda o 1o tick
+  await new Promise((s) => setTimeout(s, 2500)) // the watcher runs its first tick
   r = await j('GET', '/api/state'); ok('state com auth', r.status === 200 && Array.isArray(r.data.projects) && r.data.projects[0]?.name === 'demo', JSON.stringify(r.data).slice(0, 200))
   ok('state: shellSession + settings', r.data.shellSession === 'cr-shell' && typeof r.data.settings === 'object')
   r = await j('GET', '/api/report?from=2026-01-01&to=2026-12-31'); ok('report', r.data.ok === true && 'cost' in r.data.usage.total && Array.isArray(r.data.usage.unknownModels))
@@ -234,13 +234,13 @@ try {
   r = await j('POST', '/api/fs/delete', { path: '.claude' }); ok('fs delete .claude protegido', r.data.ok === false)
   r = await j('POST', '/api/fs/delete', { path: 'projects/demo/b.txt' }); ok('fs delete', r.data.ok)
 
-  // sandbox x SYMLINK: link dentro de HOME apontando PARA FORA nao pode ler/gravar/apagar la fora
+  // sandbox x SYMLINK: a link inside HOME pointing OUTSIDE must not read/write/delete out there
   {
     const OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-outside-'))
     fs.writeFileSync(path.join(OUT, 'secret.txt'), 'SEGREDO')
-    fs.symlinkSync(OUT, path.join(ROOT, 'escape'))                                  // pasta -> fora
-    fs.symlinkSync(path.join(OUT, 'secret.txt'), path.join(ROOT, 'filelink.txt'))  // arquivo -> fora
-    fs.symlinkSync(path.join(ROOT, 'projects'), path.join(ROOT, 'inlink'))         // pasta -> DENTRO
+    fs.symlinkSync(OUT, path.join(ROOT, 'escape'))                                  // folder -> outside
+    fs.symlinkSync(path.join(OUT, 'secret.txt'), path.join(ROOT, 'filelink.txt'))  // file -> outside
+    fs.symlinkSync(path.join(ROOT, 'projects'), path.join(ROOT, 'inlink'))         // folder -> INSIDE
     const outside = () => fs.readdirSync(OUT).sort().join(',')
     const secret = () => fs.readFileSync(path.join(OUT, 'secret.txt'), 'utf8')
     const refused = (d) => d && d.ok === false && /symlink/i.test(d.msg || '')
@@ -262,8 +262,8 @@ try {
     r = await j('POST', '/api/fs/delete', { path: 'escape' }); ok('apagar o PROPRIO link p/ fora: permitido, alvo intacto', r.data.ok && !fs.existsSync(path.join(ROOT, 'escape')) && secret() === 'SEGREDO', JSON.stringify(r.data).slice(0, 160))
     r = await j('GET', '/api/fs/list?path=../..'); ok('controle textual ../.. continua recusado', r.data.ok === false)
 
-    // symlink QUEBRADO (alvo nao existe) p/ fora: realOf() tratava o link como "arquivo novo"
-    // (ENOENT ao resolver) e deixava escrever ATRAVES dele — tem de recusar sem criar nada em OUT
+    // BROKEN symlink (target does not exist) to the outside: realOf() treated the link as a "new file"
+    // (ENOENT when resolving) and let writes go THROUGH it — it must refuse without creating anything in OUT
     fs.symlinkSync(path.join(OUT, 'nao-existe-1.txt'), path.join(ROOT, 'dangling1.txt'))
     r = await j('POST', '/api/fs/save', { path: 'dangling1.txt', content: 'x' })
     ok('symlink quebrado p/ fora: save recusado', refused(r.data) && !fs.existsSync(path.join(OUT, 'nao-existe-1.txt')), JSON.stringify(r.data).slice(0, 160))
@@ -297,11 +297,11 @@ try {
   r = await j('GET', '/api/logs/tail?file=nada'); ok('log desconhecido', r.data.ok === false)
   r = await j('GET', '/api/health'); ok('health', r.data.ok && r.data.mem && Array.isArray(r.data.load) && r.data.claude, JSON.stringify(r.data).slice(0, 200))
   ok('health: cpu/top/history (sampler D)', typeof r.data.cpu?.pct === 'number' && Array.isArray(r.data.top) && Array.isArray(r.data.history), JSON.stringify({ cpu: r.data.cpu, topLen: r.data.top?.length, histLen: r.data.history?.length }))
-  // contrato @panel-ui: ps da rss em KB, top[].rss tem de estar em BYTES (x1024) — pcpu continua numero
+  // @panel-ui contract: ps gives rss in KB, top[].rss must be in BYTES (x1024) — pcpu stays a number
   ok('health: top[].rss em bytes (nao KB)', r.data.top.length === 0 || (typeof r.data.top[0].rss === 'number' && r.data.top[0].rss >= 1024 && typeof r.data.top[0].pcpu === 'number'), JSON.stringify(r.data.top[0]))
   r = await j('GET', '/api/usage'); ok('usage sob demanda (fora do buildState)', r.data.ok && 'total' in r.data.usage && 'today' in r.data.usage, JSON.stringify(r.data).slice(0, 200))
   r = await j('GET', '/api/state'); ok('state nao traz mais usage (tirado do tick de 2s)', !('usage' in r.data))
-  // limites do plano Claude + gasto da API (server/limits.js) contra o Anthropic FALSO
+  // Claude plan limits + API spend (server/limits.js) against the FAKE Anthropic
   {
     const L = async () => (await j('POST', '/api/limits/refresh', {})).data
     r = await fetch(BASE + '/api/limits'); ok('limits sem auth -> 401', r.status === 401)
@@ -324,17 +324,17 @@ try {
     ok('limits: cache gravado no volume sem token/chave', cacheTxt.includes('five_hour') && !leak(cacheTxt))
     ok('limits: resposta da API sem token/chave', !leak(JSON.stringify(d)))
     r = await j('GET', '/api/limits'); ok('GET /api/limits devolve o cache (sem rede)', r.data.claude?.status === 'ok' && r.data.thresholds.join(',') === '80,95')
-    // limiares -> alertas do painel (1x por janela/periodo, o maior limiar cruzado)
+    // thresholds -> panel alerts (1x per window/period, the highest threshold crossed)
     d = await L()
     r = await j('GET', '/api/alerts')
     const ua = (r.data.alerts || []).filter((a) => a.kind === 'usage')
     ok('limiares: alerta 80% (5h) e 95% (Fable), uma vez so', ua.length === 2 && ua.some((a) => /Current session.*85%/.test(a.msg) && a.level === 'warn') && ua.some((a) => /Fable.*96%/.test(a.msg) && a.level === 'error'), JSON.stringify(ua))
-    // token expirado: nao manda nada (o CLI e quem renova), mantem o ultimo valor marcado como velho
+    // expired token: sends nothing (the CLI is the one that refreshes), keeps the last value marked as stale
     let n = fake.usageReqs.length
     writeCreds('expired-token', Date.now() - 1000)
     d = await L()
     ok('token expirado: nao chama a API, avisa e mantem os dados (stale)', d.claude.status === 'expired' && fake.usageReqs.length === n && d.claude.stale === true && d.claude.windows.length === 3, JSON.stringify({ s: d.claude.status, n: fake.usageReqs.length - n }))
-    // 401: "Reconnect Claude"; o mesmo token nao e reenviado; token novo no arquivo volta a funcionar
+    // 401: "Reconnect Claude"; the same token is not resent; a new token in the file works again
     writeCreds('rejected-token'); fake.mode = '401'
     d = await L(); n = fake.usageReqs.length
     ok('401 -> auth_error "Reconnect Claude"', d.claude.status === 'auth_error' && /reconnect claude/i.test(d.claude.message), JSON.stringify(d.claude).slice(0, 200))
@@ -342,7 +342,7 @@ try {
     ok('401: mesmo token nao e reenviado', d.claude.status === 'auth_error' && fake.usageReqs.length === n)
     writeCreds('new-token'); fake.mode = 'ok'
     d = await L(); ok('token novo (CLI renovou/relogou) -> volta ao normal', d.claude.status === 'ok' && d.claude.stale === false)
-    // erro 5xx: mantem os dados, marca stale e faz backoff (proximo poll > intervalo)
+    // 5xx error: keeps the data, marks it stale and backs off (next poll > interval)
     fake.mode = '500'
     d = await L()
     ok('5xx: status error + dados mantidos + backoff', d.claude.status === 'error' && d.claude.stale && d.claude.windows.length === 3 && d.nextPollAt - d.updatedAt >= 1100e3, JSON.stringify({ s: d.claude.status, next: d.nextPollAt - d.updatedAt }))
@@ -352,7 +352,7 @@ try {
     writeCreds(FAKE_TOKEN)
     ok('log do painel nunca tem token/chave', !leak(logs))
 
-    // hooks p/ outros modulos (push): onUsage/onThreshold, num processo separado com HOME proprio
+    // hooks for other modules (push): onUsage/onThreshold, in a separate process with its own HOME
     const H2 = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-limits-'))
     const script = path.join(H2, 'hook.cjs')
     fs.writeFileSync(script, `const l = require(${JSON.stringify(path.join(PANEL, 'server', 'limits.js'))});
@@ -378,7 +378,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
   r = await j('GET', '/api/history?name=demo'); ok('history list', r.data.ok && r.data.sessions[0]?.title === 'Cria um README' && r.data.sessions[0].model === 'claude-opus-5', JSON.stringify(r.data).slice(0, 200))
   r = await j('GET', '/api/history/conversation?name=demo&id=abc123def456'); ok('history conversation', r.data.ok && r.data.conversation.items.length === 2)
 
-  // A: modo de sessao (new/continue/pinned) — pinned exige um id que exista no historico
+  // A: session mode (new/continue/pinned) — pinned requires an id that exists in the history
   r = await j('POST', '/api/session-mode', { name: 'demo', mode: 'pinned', id: 'nao-existe-123' })
   ok('session-mode pinned com id inexistente recusado', r.data.ok === false, JSON.stringify(r.data))
   r = await j('POST', '/api/session-mode', { name: 'demo', mode: 'pinned', id: 'abc123def456' })
@@ -389,7 +389,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
   r = await j('POST', '/api/session-mode', { name: 'demo', mode: 'new' }); ok('session-mode volta pra new', r.data.ok === true)
   r = await j('POST', '/api/session-mode', { name: 'demo', mode: 'invalido' }); ok('session-mode invalido recusado', r.data.ok === false)
 
-  // B: pausa manual — grava/remove o flag, estado reflete em paused
+  // B: manual pause — writes/removes the flag, the state reflects it in paused
   const pausedFlagFile = path.join(ROOT, '.claude', 'run', 'claude-demo.paused')
   r = await j('POST', '/api/pause', { name: 'demo' }); ok('pause grava flag', r.data.ok, r.data.msg)
   ok('flag .paused existe com conteudo', fs.existsSync(pausedFlagFile) && fs.readFileSync(pausedFlagFile, 'utf8').trim().length > 0)
@@ -404,7 +404,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
   ok('alerta anexado pelo script aparece em /api/alerts', r.data.ok && r.data.alerts.some((a) => a.kind === 'backup' && a.project === 'demo' && a.msg === 'backup atrasado'), JSON.stringify(r.data).slice(0, 300))
   ok('alerta: t em epoch ms', typeof r.data.alerts.find((a) => a.kind === 'backup')?.t === 'number' && r.data.alerts.find((a) => a.kind === 'backup').t > 1e12)
   r = await j('POST', '/api/alerts/clear', {}); ok('alerts/clear ok', r.data.ok)
-  // texto traduzivel: chave srv.* + vars passam; chave estranha e vars nao-simples sao descartadas
+  // translatable text: srv.* key + vars pass; an odd key and non-simple vars are dropped
   fs.appendFileSync(path.join(ROOT, '.claude', 'run', 'alerts.jsonl'), JSON.stringify({ t: Date.now(), level: 'error', kind: 'crash-loop', project: 'demo', msg: 'Claude crashed 3 times', key: 'srv.alert.crashLoop', vars: { n: '3', rc: 1, evil: { x: 1 } } }) + '\n' + JSON.stringify({ t: Date.now(), level: 'info', kind: 'x', msg: 'm', key: '<script>' }) + '\n')
   r = await j('GET', '/api/alerts')
   { const [a1, a2] = r.data.alerts.slice(-2); ok('alerta com chave + vars simples (o navegador traduz)', a1.key === 'srv.alert.crashLoop' && a1.vars.n === '3' && a1.vars.rc === '1' && !('evil' in a1.vars) && !a2.key, JSON.stringify([a1, a2])) }
@@ -413,7 +413,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
 
   r = await j('GET', '/api/report'); ok('report custo por modelo', r.data.ok && r.data.usage.byModel['claude-opus-5'] && r.data.usage.total.cost > 0, JSON.stringify(r.data.usage.byModel))
   r = await j('GET', '/api/sessions'); ok('sessoes ativas lista a atual', r.data.ok && r.data.sessions.some((s) => s.current))
-  // segunda sessao + revogar
+  // second session + revoke
   const r2 = await j('POST', '/api/login', { login: 'admin', password: 'test123' })
   const cookie2 = (r2.headers.get('set-cookie') || '').split(';')[0]
   r = await j('GET', '/api/sessions'); const other = r.data.sessions.find((s) => !s.current); ok('segunda sessao aparece', !!other)
@@ -606,7 +606,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
     const badOrigin = await wsOpen(`ws://127.0.0.1:${PORT}/ws/term?name=shell`, { cookie, origin: 'http://evil.example' })
     ok('ws origem errada -> recusado', refused(badOrigin), JSON.stringify({ code: badOrigin.code, reason: badOrigin.reason }))
     if (HAS_TMUX) {
-      // sessao real: espera "ready" + banner do session.sh falso, manda um echo e le a resposta
+      // real session: waits for "ready" + the fake session.sh banner, sends an echo and reads the answer
       const probe = await new Promise((resolve) => {
         const ws = new WSLib(`ws://127.0.0.1:${PORT}/ws/term?name=demo&cols=100&rows=30`, { headers: { cookie, origin: BASE } })
         let data = ''; const ctl = []
@@ -646,7 +646,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
         ok('auto-resume: finished turn clears it', st && !st.autoResumeAt)
         fs.rmSync(path.join(RUN, 'claude-demo.running'), { force: true }); fake.mode = 'ok'; await j('POST', '/api/limits/refresh', {})
       }
-      // "Selecionar texto" (celular): capture com MAIS historico (lines=), limitado no servidor
+      // "Select text" (phone): capture with MORE history (lines=), limited on the server
       r = await j('POST', '/api/term/send', { name: 'demo', text: "seq -f 'HIST-%04g' 1 600", key: 'Enter' }); ok('term send (historico)', r.data.ok, r.data.msg)
       await new Promise((s) => setTimeout(s, 800))
       r = await j('GET', '/api/term/capture?name=demo'); ok('capture padrao (200 linhas) nao traz o inicio do historico', r.data.ok && r.data.lines === 200 && /HIST-0600/.test(r.data.content) && !/HIST-0001\b/.test(r.data.content), r.data.lines)
@@ -654,7 +654,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
       ok('capture sem linhas vazias no fim', /\S\n$/.test(r.data.content), JSON.stringify(r.data.content.slice(-20)))
       r = await j('GET', '/api/term/capture?name=demo&lines=99999999'); ok('capture lines limitado a 5000', r.data.ok && r.data.lines === 5000, r.data.lines)
       r = await j('GET', '/api/term/capture?name=demo&lines=abc'); ok('capture lines invalido -> 200', r.data.ok && r.data.lines === 200, r.data.lines)
-      // heartbeat do cliente: {type:'ping'} -> {type:'pong'} (o terminal do celular usa p/ detectar conexao morta)
+      // client heartbeat: {type:'ping'} -> {type:'pong'} (the phone terminal uses it to detect a dead connection)
       const pong = await new Promise((resolve) => {
         const ws = new WSLib(`ws://127.0.0.1:${PORT}/ws/term?name=demo&cols=100&rows=30`, { headers: { cookie, origin: BASE } })
         const ctl = []
@@ -666,7 +666,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
       await new Promise((s) => setTimeout(s, 4500)) // watcher: 2 ticks quietos -> activity
       r = await j('GET', '/api/state'); ok('state: activity do watcher', ['idle', 'busy', 'prompt', 'off'].includes(r.data.projects[0].activity), JSON.stringify(r.data.projects[0]))
 
-      // Ctrl+A ("\x01") e TECLADO, nao frame de controle: vai pro inicio da linha no bash
+      // Ctrl+A ("\x01") is KEYBOARD, not a control frame: goes to the start of the line in bash
       const ctrlA = await new Promise((resolve) => {
         const ws = new WSLib(`ws://127.0.0.1:${PORT}/ws/term?name=demo&cols=100&rows=30`, { headers: { cookie, origin: BASE } })
         let data = ''
@@ -677,7 +677,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
       })
       ok('ws: Ctrl+A chega ao terminal', /CTRLA-2/.test(ctrlA), ctrlA.slice(-300))
 
-      // ciclo de vida: DESLIGAR persiste (boot/watchdog nao recriam), LIGAR volta
+      // lifecycle: turning OFF persists (boot/watchdog do not recreate), turning ON comes back
       const has = () => spawnSync('tmux', ['has-session', '-t', '=claude-demo'], { env }).status === 0
       const watchdog = () => spawnSync('bash', [SESSION_SCRIPT, '--all'], { env, stdio: 'ignore', timeout: 15000 })
       r = await j('POST', '/api/power', { name: 'demo', on: false }); ok('power off', r.data.ok && !has(), r.data.msg)
@@ -686,7 +686,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
       const offWs = await wsOpen(`ws://127.0.0.1:${PORT}/ws/term?name=demo`, { cookie, origin: BASE })
       ok('ws em projeto desligado -> 4006', offWs.code === 4006, JSON.stringify({ code: offWs.code, reason: offWs.reason }))
       ok('ws em projeto desligado nao recria a sessao', !has())
-      await new Promise((s) => setTimeout(s, 2500)) // estado vem do watcher (tick de 2s)
+      await new Promise((s) => setTimeout(s, 2500)) // state comes from the watcher (2s tick)
       r = await j('GET', '/api/state'); ok('state: enabled=false', r.data.projects[0].enabled === false && r.data.projects[0].up === false)
       r = await j('POST', '/api/power', { name: 'demo', on: true }); ok('power on', r.data.ok && has(), r.data.msg)
       spawnSync('tmux', ['kill-session', '-t', '=claude-demo'], { env, stdio: 'ignore' }); watchdog(); ok('watchdog recria projeto ligado', has())
@@ -694,14 +694,14 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
       await new Promise((s) => setTimeout(s, 600))
       r = await j('GET', '/api/term/capture?name=demo'); ok('Claude OFF: sessao so com shell', r.data.ok && /Claude is OFF|Claude OFF/.test(r.data.content) && !/SMOKE-READY/.test(r.data.content), r.data.content?.slice(0, 200))
       r = await j('POST', '/api/restart', { name: 'demo' }); ok('restart com Claude OFF', r.data.ok && /shell only/.test(r.data.msg), r.data.msg)
-      // mensagens do servidor no idioma de quem pede (cookie cr_lang > Accept-Language > ingles)
+      // server messages in the language of whoever asks (cr_lang cookie > Accept-Language > English)
       r = await j('POST', '/api/restart', { name: 'demo' }, { headers: { cookie: cookie + '; cr_lang=pt-BR' } }); ok('i18n: cookie cr_lang=pt-BR -> mensagem em portugues', /só shell/.test(r.data.msg), r.data.msg)
       r = await j('POST', '/api/restart', { name: 'demo' }, { headers: { 'accept-language': 'pt-PT,pt;q=0.9' } }); ok('i18n: Accept-Language pt -> pt-BR', /só shell/.test(r.data.msg), r.data.msg)
       r = await j('POST', '/api/restart', { name: 'demo' }, { headers: { cookie: cookie + '; cr_lang=xx', 'accept-language': 'ja' } }); ok('i18n: idioma sem arquivo -> ingles', /shell only/.test(r.data.msg), r.data.msg)
       r = await j('POST', '/api/restart', { name: 'nao-existe-xyz' }, { headers: { cookie: cookie + '; cr_lang=pt-BR' } }); ok('i18n: erro simples traduzido', r.data.ok === false && r.data.msg === 'projeto inexistente', r.data.msg)
 
-      // login guiado (com o `claude` falso): TODAS as telas do 1o uso passam sozinhas, o link sai
-      // INTEIRO, e depois do codigo as telas pos-login tambem passam sozinhas (nada p/ selecionar)
+      // guided login (with the fake `claude`): ALL first-run screens pass by themselves, the link comes out
+      // WHOLE, and after the code the post-login screens also pass by themselves (nothing to select)
       r = await j('GET', '/api/claude/login/status'); ok('login status idle', r.data.ok && r.data.phase === 'idle' && r.data.logged === false)
       r = await j('POST', '/api/claude/login/start', {}); ok('login start', r.data.ok && r.data.phase === 'starting', JSON.stringify(r.data))
       const waitPhase = async (want, ms) => { const t0 = Date.now(); let d; while (Date.now() - t0 < ms) { d = (await j('GET', '/api/claude/login/status')).data; if (want.includes(d.phase)) break; await new Promise((s) => setTimeout(s, 400)) } return d }
@@ -722,7 +722,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
       ok('login: tela desconhecida passou com Enter e foi pro log', /unknown-passed/.test(p1) && /login: unknown screen/.test(logs), p1)
       await new Promise((s) => setTimeout(s, 2000))
       ok('login: sessao cr-login encerrada no fim', spawnSync('tmux', ['has-session', '-t', '=cr-login'], { env }).status !== 0)
-      // troca de conta: ja logado, o claude abre no prompt -> painel manda /login sozinho
+      // switching account: already logged in, claude opens at the prompt -> the panel sends /login by itself
       fs.writeFileSync(path.join(ROOT, '.fake-claude-picks'), '')
       r = await j('POST', '/api/claude/login/start', {}); ok('troca de conta: start', r.data.ok, JSON.stringify(r.data))
       ls = await waitPhase(['url', 'error', 'attention'], 40000)
@@ -740,7 +740,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
     }
   }
 
-  // tabela de telas do login (funcao pura) com o texto REAL das telas do Claude Code 2.1.332
+  // table of login screens (pure function) with the REAL text of Claude Code 2.1.332's screens
   {
     const { classify } = require(path.join(PANEL, 'server', 'login.js'))
     const real = {

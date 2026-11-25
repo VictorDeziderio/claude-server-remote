@@ -7,11 +7,11 @@ import { initPwaHooks } from './lib/push.js'
 import { installViewport } from './lib/viewport.js'
 import { applyTheme, readTheme, watchSystemTheme } from './lib/theme.js'
 
-// tema claro/escuro (a 1a aplicacao ja aconteceu no index.html, antes de pintar)
+// light/dark theme (the first application already happened in index.html, before painting)
 applyTheme(readTheme())
 watchSystemTheme()
 
-// celular: altura visivel real (teclado virtual) -> --app-h / data-kb no <html>
+// phone: real visible height (virtual keyboard) -> --app-h / data-kb on <html>
 installViewport()
 
 createRoot(document.getElementById('root')).render(
@@ -22,7 +22,7 @@ createRoot(document.getElementById('root')).render(
   </React.StrictMode>,
 )
 
-// PWA: service worker minimo (permite "instalar" no celular; nao faz cache da API/terminal)
+// PWA: minimal service worker (allows "installing" on the phone; does not cache the API/terminal)
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}) })
 }

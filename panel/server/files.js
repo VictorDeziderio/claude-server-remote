@@ -1,22 +1,22 @@
 'use strict';
 const { tr } = require('./i18n');
-// Gerenciador de arquivos CONFINADO a FS_BASE (=/root): listar, stat, ler, salvar, criar,
-// excluir, renomear, download e upload.
+// File manager CONFINED to FS_BASE (=/root): list, stat, read, save, create,
+// delete, rename, download and upload.
 //
-// Confinamento (guard): duas checagens, nesta ordem.
-//  1. TEXTUAL: o caminho pedido, normalizado (path.resolve), tem de ficar dentro da base
-//     -> barra "../..", "/etc", "..\\..".
-//  2. REAL (symlinks): o caminho e resolvido com realpath — o do proprio alvo quando ele
-//     existe; o do ancestral existente mais proximo quando ainda vai ser criado — e o
-//     resultado tem de ficar dentro do realpath da base.
-//     - symlink que aponta para DENTRO da base: permitido (e so um atalho);
-//     - symlink que aponta para FORA: recusado, com a mensagem dizendo o motivo;
-//     - excluir/renomear o PROPRIO link: permitido (age no link, nunca no alvo) — assim da
-//       para remover um link perigoso pelo painel. Para isso checa-se o diretorio-pai.
-//  Na listagem, um link para fora aparece marcado (outside:true) sem stat do alvo.
-//  Risco aceito: entre a checagem e o uso (TOCTOU) outro processo pode trocar um caminho
-//  por um symlink. Quem tem acesso ao painel ja tem um shell no servidor; a sandbox protege
-//  contra engano/clique errado no gerenciador, nao contra o proprio usuario do shell.
+// Confinement (guard): two checks, in this order.
+//  1. TEXTUAL: the requested path, normalized (path.resolve), must stay inside the base
+//     -> blocks "../..", "/etc", "..\\..".
+//  2. REAL (symlinks): the path is resolved with realpath — the target's own when it
+//     exists; the nearest existing ancestor's when it is still going to be created — and the
+//     result must stay inside the realpath of the base.
+//     - a symlink pointing INSIDE the base: allowed (it is just a shortcut);
+//     - a symlink pointing OUTSIDE: refused, with a message saying why;
+//     - deleting/renaming the link ITSELF: allowed (acts on the link, never on the target) — so a
+//       dangerous link can be removed from the panel. For that the parent directory is checked.
+//  In the listing, a link to the outside shows up marked (outside:true) without a stat of the target.
+//  Accepted risk: between the check and the use (TOCTOU) another process may swap a path
+//  for a symlink. Whoever has panel access already has a shell on the server; the sandbox protects
+//  against mistakes/wrong clicks in the manager, not against the shell user themselves.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -35,8 +35,8 @@ const realBase = () => {
 const inside = (p, base) => p === base || p.startsWith(base + path.sep);
 const OUTSIDE_MSG = 'recusado: esse caminho passa por um symlink que aponta para fora de ' + BASE;
 
-// realpath de `full`; se ele (ou parte do fim) ainda nao existe, realpath do ancestral
-// existente mais proximo + o resto do caminho
+// realpath of `full`; if it (or the end part of it) does not exist yet, the realpath of the nearest
+// existing ancestor + the rest of the path
 function realOf(full) {
   let cur = full;
   const rest = [];
@@ -50,8 +50,8 @@ function realOf(full) {
   }
 }
 
-// -> { full } | { err }.  self=true: a operacao age no PROPRIO caminho (excluir/renomear),
-// entao um symlink no fim do caminho e aceito e so o diretorio-pai precisa ser real-dentro.
+// -> { full } | { err }.  self=true: the operation acts on the path ITSELF (delete/rename),
+// so a symlink at the end of the path is accepted and only the parent directory needs to be really inside.
 function guard(rel, { self = false } = {}) {
   const full = path.resolve(BASE, String(rel == null ? '' : rel).replace(/^[/\\]+/, ''));
   if (!inside(full, BASE)) return { err: tr('srv.badPath') };
@@ -60,14 +60,14 @@ function guard(rel, { self = false } = {}) {
     if (self && full !== BASE) {
       real = path.join(realOf(path.dirname(full)), path.basename(full));
     } else {
-      // achado @security: se `full` e um symlink QUEBRADO (aponta p/ algo que nao existe),
-      // fs.realpathSync(full) da ENOENT e o realOf() caia no fallback de "ainda nao existe,
-      // sobe pro ancestral mais proximo" — tratando o PROPRIO link como se fosse so um nome
-      // de arquivo novo, nunca resolvendo pra onde ele apontava. O resultado "real" sai de
-      // dentro da base (o diretorio que contem o link e' real), guard() libera, e o
-      // writeFileSync/openSync que vem depois SEGUE o link de verdade -> escreve fora da
-      // sandbox. Symlink no fim do caminho tem de ser resolvido por completo aqui; se nao
-      // resolver (quebrado), recusa — nunca trata como "arquivo novo".
+      // found by @security: if `full` is a BROKEN symlink (points to something that does not exist),
+      // fs.realpathSync(full) gives ENOENT and realOf() fell into the "does not exist yet,
+      // go up to the nearest ancestor" fallback — treating the link ITSELF as if it were just a new
+      // file name, never resolving where it pointed. The "real" result came out
+      // inside the base (the directory holding the link is real), guard() allowed it, and the
+      // writeFileSync/openSync that came after really FOLLOWED the link -> wrote outside the
+      // sandbox. A symlink at the end of the path must be fully resolved here; if it does not
+      // resolve (broken), refuse — never treat it as a "new file".
       let lst;
       try { lst = fs.lstatSync(full); } catch { lst = null; }
       if (lst && lst.isSymbolicLink()) {
@@ -81,9 +81,9 @@ function guard(rel, { self = false } = {}) {
   if (!inside(real, realBase())) return { err: OUTSIDE_MSG };
   return { full };
 }
-// escreve um arquivo NOVO/truncado recusando seguir um symlink no ultimo componente (O_NOFOLLOW):
-// defesa em profundidade contra TOCTOU entre o guard() acima e a escrita real.
-const NOFOLLOW = fs.constants.O_NOFOLLOW || 0; // indisponivel no Windows -> degrada sem o reforco
+// writes a NEW/truncated file refusing to follow a symlink in the last component (O_NOFOLLOW):
+// defense in depth against TOCTOU between the guard() above and the real write.
+const NOFOLLOW = fs.constants.O_NOFOLLOW || 0; // not available on Windows -> degrades without the extra check
 function writeFileNoFollow(full, data) {
   const fd = fs.openSync(full, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | NOFOLLOW);
   try { fs.writeSync(fd, data); } finally { fs.closeSync(fd); }
@@ -100,7 +100,7 @@ const MIME = {
 function statEntry(full, name) {
   try {
     if (fs.lstatSync(full).isSymbolicLink() && !inside(realOf(full), realBase())) {
-      return { name, type: 'file', size: 0, mtime: 0, link: true, outside: true }; // sem stat do alvo
+      return { name, type: 'file', size: 0, mtime: 0, link: true, outside: true }; // no stat of the target
     }
     const st = fs.statSync(full);
     return { name, type: st.isDirectory() ? 'dir' : 'file', size: st.isFile() ? st.size : 0, mtime: st.mtimeMs };
@@ -162,10 +162,10 @@ function fsCreate(rel, kind) {
   } catch (e) { return { ok: false, msg: e.message }; }
 }
 function fsDelete(rel) {
-  const { full, err } = guard(rel, { self: true }); // apagar um link remove o LINK, nunca o alvo
+  const { full, err } = guard(rel, { self: true }); // deleting a link removes the LINK, never the target
   if (err) return { ok: false, msg: err };
   if (full === BASE) return { ok: false, msg: tr('srv.badPath') };
-  // protege o coracao do volume (login do Claude, config do painel)
+  // protects the heart of the volume (Claude login, panel config)
   if (full === path.join(BASE, '.claude') || full === path.join(BASE, '.claude.json')) return { ok: false, msg: tr('srv.protected') };
   try { fs.rmSync(full, { recursive: true, force: true }); return { ok: true, msg: tr('srv.removed', { path: relOf(full) }) }; }
   catch (e) { return { ok: false, msg: e.message }; }
@@ -179,7 +179,7 @@ function fsRename(rel, newRel) {
   try { fs.mkdirSync(path.dirname(b), { recursive: true }); fs.renameSync(a, b); return { ok: true, msg: tr('srv.renamed', { path: relOf(b) }), path: relOf(b) }; }
   catch (e) { return { ok: false, msg: e.message }; }
 }
-// download: stream do arquivo com Content-Disposition (qualquer tipo/tamanho)
+// download: streams the file with Content-Disposition (any type/size)
 function fsDownload(rel, res) {
   const { full, err } = guard(rel);
   if (err) { res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end(err); }
@@ -199,13 +199,13 @@ function fsDownload(rel, res) {
   });
   fs.createReadStream(full).pipe(res);
 }
-// upload: ESTREAMADO direto pro disco (achado @security: um Buffer por upload, ate 100MB,
-// sem limite de quantos em paralelo, deixava a RAM do painel proporcional a uploads simultaneos).
-// Escreve num temp na MESMA pasta (rename e atomico) e so troca pro nome final no final; se
-// passar do limite so para de GRAVAR (sem acumular em memoria) e deixa o corpo dre nar sozinho
-// ate o 'end' natural — do mesmo jeito que o readRaw (nao pode destruir o socket e perder a
-// resposta). Cap de uploads simultaneos: protege contra varios uploads grandes ao mesmo tempo
-// saturando disco/CPU (hash/gzip de proxy, etc.).
+// upload: STREAMED straight to disk (found by @security: one Buffer per upload, up to 100MB,
+// with no limit on how many in parallel, made the panel's RAM proportional to simultaneous uploads).
+// Writes to a temp file in the SAME folder (rename is atomic) and only switches to the final name at the end; if
+// it goes over the limit it just stops WRITING (without buffering in memory) and lets the body drain by itself
+// until the natural 'end' — the same way as readRaw (it must not destroy the socket and lose the
+// response). Cap on simultaneous uploads: protects against several big uploads at the same time
+// saturating disk/CPU (proxy hash/gzip, etc.).
 const MAX_CONCURRENT_UPLOADS = 2;
 let activeUploads = 0;
 function fsUploadStream(rel, req, overwrite) {
@@ -234,7 +234,7 @@ function fsUploadStream(rel, req, overwrite) {
     req.on('data', (chunk) => {
       if (over || writeErr) return;
       size += chunk.length;
-      if (size > MAX_UPLOAD) { over = true; return; } // para de gravar, mas deixa o corpo drenar
+      if (size > MAX_UPLOAD) { over = true; return; } // stops writing, but lets the body drain
       try { fs.writeSync(fd, chunk); } catch (e) { writeErr = e; }
     });
     req.on('end', () => {

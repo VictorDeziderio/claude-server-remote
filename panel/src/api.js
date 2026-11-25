@@ -1,4 +1,4 @@
-// Cliente da API do painel (mesmo origin). Auth por cookie de sessao (pagina de login).
+// Panel API client (same origin). Auth by session cookie (login page).
 class ApiError extends Error {
   constructor(msg, status) { super(msg); this.status = status }
 }
@@ -14,7 +14,7 @@ const post = (path, body) =>
   fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then(handle)
 const q = (obj) => new URLSearchParams(obj).toString()
 
-// Retorna { __unauth: true } quando nao autenticado (a SPA mostra o login).
+// Returns { __unauth: true } when not authenticated (the SPA shows the login).
 export const getState = () => get('/api/state').catch((e) => { if (e.unauth) return { __unauth: true }; throw e })
 
 export const loginInfo = () => get('/api/login/info')
@@ -63,7 +63,7 @@ export const termWindow = (name, action, index) => post('/api/term/window', { na
 // --- relatorio por periodo ---
 export const report = (from, to) => get('/api/report?' + q({ from: from || '', to: to || '' }))
 export const usage = () => get('/api/usage')
-// limites do plano Claude (5h/semana) + gasto da API (server/limits.js)
+// Claude plan limits (5h/week) + API spend (server/limits.js)
 export const limits = () => get('/api/limits')
 export const limitsRefresh = () => post('/api/limits/refresh', {})
 
@@ -71,7 +71,7 @@ export const limitsRefresh = () => post('/api/limits/refresh', {})
 export const alerts = () => get('/api/alerts')
 export const alertsClear = () => post('/api/alerts/clear', {})
 
-// --- conta do Claude / painel ---
+// --- Claude / panel account ---
 export const claudeLogout = () => post('/api/claude/logout', {})
 export const claudeUpdate = () => post('/api/claude/update', {})
 export const loginStart = () => post('/api/claude/login/start', {})

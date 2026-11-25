@@ -1,6 +1,6 @@
 'use strict';
-// Lista de projetos = subpastas (nao ocultas) de PROJECTS_DIR. Separado p/ evitar ciclo
-// entre usage.js e projects.js.
+// Project list = (non-hidden) subfolders of PROJECTS_DIR. Separate file to avoid a cycle
+// between usage.js and projects.js.
 const fs = require('fs');
 const cfg = require('./config');
 

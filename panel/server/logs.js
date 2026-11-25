@@ -1,6 +1,6 @@
 'use strict';
 const { tr } = require('./i18n');
-// Logs do dev-box: tail dos arquivos em ~/.claude/logs (painel, backup, audit) — so leitura.
+// Dev box logs: tail of the files in ~/.claude/logs (panel, backup, audit) — read only.
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
@@ -17,12 +17,12 @@ function listLogs() {
     ok: true,
     logs: Object.entries(FILES).map(([key, v]) => {
       let size = 0, mtime = 0;
-      try { const st = fs.statSync(path.join(cfg.LOGS_DIR, v.file)); size = st.size; mtime = st.mtimeMs; } catch { /* ainda nao existe */ }
+      try { const st = fs.statSync(path.join(cfg.LOGS_DIR, v.file)); size = st.size; mtime = st.mtimeMs; } catch { /* does not exist yet */ }
       return { key, label: v.label, file: v.file, size, mtime };
     }),
   };
 }
-// le so o FIM do arquivo (ate 512KB) e devolve as ultimas N linhas
+// reads only the END of the file (up to 512KB) and returns the last N lines
 function tailLog(key, lines) {
   const f = FILES[key];
   if (!f) return { ok: false, msg: tr('srv.unknownLog') };

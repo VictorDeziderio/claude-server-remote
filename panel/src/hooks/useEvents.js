@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as api from '../api.js'
 
-// Tempo real via SSE (/api/events): estado consolidado, atividade do Claude por sessao e
-// notificacoes. Se o SSE cair, o EventSource reconecta sozinho; enquanto isso um polling
-// de 15s mantem o estado razoavelmente fresco.
-// Aba em segundo plano: fecha o EventSource (o servidor para de trabalhar sem clientes) e
-// reabre ao voltar pra aba — painel "CPU-light" (achado @qa 2026-10-09).
+// Real time via SSE (/api/events): consolidated state, Claude activity per session and
+// notifications. If SSE drops, EventSource reconnects by itself; meanwhile a 15s
+// polling keeps the state reasonably fresh.
+// Tab in the background: closes the EventSource (the server stops working with no clients) and
+// reopens it when coming back to the tab — "CPU-light" panel (found by @qa 2026-10-09).
 export default function useEvents({ enabled, onState, onUnauth, onNotify }) {
   const [live, setLive] = useState(false)
   const [activity, setActivity] = useState({})
@@ -35,8 +35,8 @@ export default function useEvents({ enabled, onState, onUnauth, onNotify }) {
       es.addEventListener('activity', (e) => {
         try {
           const d = JSON.parse(e.data)
-          // merge (nao substitui) com a entrada anterior: um update incremental que nao traga
-          // busySince/remoteUrl nao pode apagar o que ja estava (achado @qa 2026-09-28)
+          // merge (not replace) with the previous entry: an incremental update that does not bring
+          // busySince/remoteUrl must not erase what was there (found by @qa 2026-09-28)
           if (d && d.session) {
             const { session, name, ...fields } = d
             setActivity((a) => ({ ...a, [session]: { ...(a[session] || {}), ...fields } }))
@@ -54,8 +54,8 @@ export default function useEvents({ enabled, onState, onUnauth, onNotify }) {
     }
 
     if (document.visibilityState === 'visible') open()
-    // fallback: polling enquanto o SSE nao estiver conectado (ou a aba estiver em segundo
-    // plano) + ao voltar pra aba
+    // fallback: polling while SSE is not connected (or the tab is in the
+    // background) + when coming back to the tab
     const t = setInterval(() => { if (document.visibilityState === 'visible' && esRef.current?.readyState !== EventSource.OPEN) refresh() }, 15000)
     const onVis = () => {
       if (document.visibilityState === 'visible') { open(); refresh() }

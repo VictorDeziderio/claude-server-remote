@@ -13,7 +13,7 @@ import { fmtAgo } from '../lib/format.js'
 import * as api from '../api.js'
 import { t } from '../lib/i18n.js'
 
-// Rotas com URL propria (react-router)
+// Routes with their own URL (react-router)
 export const NAV = [
   { to: '/dashboard', get label() { return t('nav.dashboard') }, icon: LayoutDashboard, group: 'workspace' },
   { to: '/terminal', get label() { return t('nav.terminal') }, icon: SquareTerminal, group: 'workspace' },
@@ -27,8 +27,8 @@ export const NAV = [
   { to: '/account', get label() { return t('nav.account') }, icon: UserRound, group: 'system' },
 ]
 const NAV_GROUPS = [...new Set(NAV.map((n) => n.group))]
-// Celular: navegacao EMBAIXO (alcance do polegar) com as 3 telas mais usadas + "More" (folha
-// com o resto do NAV — abas novas adicionadas ao NAV aparecem la sozinhas).
+// Phone: navigation at the BOTTOM (thumb reach) with the 3 most used screens + "More" (a sheet
+// with the rest of NAV — new tabs added to NAV show up there by themselves).
 const MOBILE_PRIMARY = ['/dashboard', '/terminal', '/files']
 const isActivePath = (path, to) => path === to || path.startsWith(to + '/')
 function MobileNav({ onLogout }) {
@@ -94,8 +94,8 @@ function ThemeToggle() {
   )
 }
 
-// Sininho de alertas (saude da VM): lista os ultimos avisos que chegaram pelo SSE
-// ('notify' kind:'alert') + os que ja estavam registrados no servidor, com "Limpar".
+// Alerts bell (machine health): lists the last notices that came over SSE
+// ('notify' kind:'alert') + the ones already recorded on the server, with "Clear".
 function AlertsBell({ alerts, onClear }) {
   const [open, setOpen] = useState(false)
   const boxRef = useRef(null)
@@ -151,7 +151,7 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
   const [health, setHealth] = useState(null)
   const toggle = () => setCollapsed((c) => { try { localStorage.setItem(LS_NAV, JSON.stringify(!c)) } catch { /* */ } return !c })
 
-  // so consulta /api/health com a aba visivel (achado @qa 2026-10-09: painel "CPU-light")
+  // only queries /api/health with the tab visible (found by @qa 2026-10-09: "CPU-light" panel)
   const ready = !!data
   useEffect(() => {
     if (!ready) return undefined
@@ -214,7 +214,7 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
 
       {/* Conteudo */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* celular: no Terminal o cabecalho some (cada linha vale ouro; a aba fica na nav de baixo) */}
+        {/* phone: on the Terminal the header goes away (every line counts; the tab stays in the bottom nav) */}
         <div className={cn('flex items-center justify-between gap-2 border-b border-border bg-background/80 px-4 py-2 backdrop-blur sm:px-6 sm:py-3', isTerm && 'hidden sm:flex sm:py-2.5')}>
           <div className="flex min-w-0 items-center gap-3">
             <h1 className="truncate text-base font-semibold tracking-tight text-foreground">{titleOf(pathname)}</h1>

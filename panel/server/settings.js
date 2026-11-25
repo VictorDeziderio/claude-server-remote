@@ -1,15 +1,15 @@
 'use strict';
 const { tr } = require('./i18n');
-// Configuracoes do painel: defaults do panel.json (autoStartClaude/autoRemote), preferencias
-// (settings.*) e visualizacao das variaveis de ambiente (sensiveis mascaradas).
+// Panel settings: panel.json defaults (autoStartClaude/autoRemote), preferences
+// (settings.*) and a view of the environment variables (sensitive ones masked).
 const cfg = require('./config');
 const { truthy } = require('./util');
 const projects = require('./projects');
 const totp = require('./totp');
 
-// achado @security: mostrar os 2 primeiros/ultimos caracteres (ex. PANEL_PASSWORD, GH_TOKEN)
-// ainda vaza parte do segredo (e o tamanho). Placeholder FIXO — nenhum caractere real, nenhuma
-// pista de tamanho; `set` ja diz se esta configurado ou nao.
+// found by @security: showing the first/last 2 characters (e.g. PANEL_PASSWORD, GH_TOKEN)
+// still leaks part of the secret (and its length). FIXED placeholder — no real character, no
+// hint of the length; `set` already says whether it is configured or not.
 const mask = (v) => (v ? '••••••••' : '');
 
 function getSettings() {

@@ -16,8 +16,8 @@ const iconFor = (name) => {
   return FileText
 }
 
-// Gerenciador de arquivos. `path'+ `onNavigate` vem de fora (URL na pagina, estado local quando
-// embutido no terminal). Pasta -> lista; arquivo -> editor (CodeMirror, carregado sob demanda).
+// File manager. `path` + `onNavigate` come from outside (URL on the page, local state when
+// embedded in the terminal). Folder -> list; file -> editor (CodeMirror, loaded on demand).
 export default function Files({ path: cur = '', onNavigate, onFlash, embedded = false }) {
   const go = useCallback((p) => onNavigate(p.replace(/^\/+|\/+$/g, '')), [onNavigate])
   const [kind, setKind] = useState('') // '' | dir | file
@@ -28,8 +28,8 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState('')
   const [creating, setCreating] = useState('') // 'file' | 'dir' | ''
-  const [renaming, setRenaming] = useState('') // nome da entrada
-  const [deleting, setDeleting] = useState('') // nome da entrada
+  const [renaming, setRenaming] = useState('') // entry name
+  const [deleting, setDeleting] = useState('') // entry name
   const [confirmEl, ask] = useConfirm()
   const uploadRef = useRef(null)
 

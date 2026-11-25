@@ -1,12 +1,12 @@
 'use strict';
-// Mensagens do servidor no idioma de quem pediu, com as MESMAS chaves e arquivos da interface
-// (src/locales/<codigo>.json, chaves "srv.*"). O navegador manda o idioma no cookie cr_lang
-// (src/lib/i18n.js); sem cookie vale o Accept-Language e, por fim, o ingles.
-// Cada requisicao roda dentro de withLang(req, fn); qualquer modulo chama tr('srv.x', {vars}).
+// Server messages in the language of whoever asked, with the SAME keys and files as the interface
+// (src/locales/<code>.json, "srv.*" keys). The browser sends the language in the cr_lang cookie
+// (src/lib/i18n.js); without a cookie Accept-Language applies and, last, English.
+// Each request runs inside withLang(req, fn); any module calls tr('srv.x', {vars}).
 const fs = require('fs');
 const path = require('path');
 const { AsyncLocalStorage } = require('async_hooks');
-const core = require('../src/lib/i18n-core.js'); // mesmas regras do navegador (pickLang/format/lookup)
+const core = require('../src/lib/i18n-core.js'); // same rules as the browser (pickLang/format/lookup)
 
 const DIR = process.env.PANEL_LOCALES_DIR || path.join(__dirname, '..', 'src', 'locales');
 const DEFAULT = 'en';
@@ -16,9 +16,9 @@ function load() {
   try {
     for (const f of fs.readdirSync(DIR)) {
       if (!f.endsWith('.json')) continue;
-      try { LOCALES[f.slice(0, -5)] = JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf8')); } catch { /* arquivo quebrado: ignora esse idioma */ }
+      try { LOCALES[f.slice(0, -5)] = JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf8')); } catch { /* broken file: skip this language */ }
     }
-  } catch { /* sem pasta: so as chaves */ }
+  } catch { /* no folder: keys only */ }
 }
 load();
 
@@ -33,9 +33,9 @@ function pickLang(req) {
 }
 const withLang = (req, fn) => als.run(pickLang(req), fn);
 const current = () => als.getStore() || DEFAULT;
-// texto da chave no idioma da requisicao atual (reserva: ingles, depois a propria chave)
+// text of the key in the current request's language (fallback: English, then the key itself)
 const tr = (key, vars, lang) => String(core.lookup(LOCALES, lang || current(), DEFAULT, key, vars));
-// como tr, mas `fallback` quando nenhum idioma tem a chave
+// like tr, but `fallback` when no language has the key
 const trOr = (key, fallback, vars, lang) => (key in (LOCALES[lang || current()] || {}) || key in (LOCALES[DEFAULT] || {}) ? tr(key, vars, lang) : fallback);
 
 module.exports = { tr, trOr, withLang, pickLang, current, load, DEFAULT };

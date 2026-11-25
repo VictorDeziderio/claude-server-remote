@@ -1,18 +1,18 @@
 'use strict';
 const { tr } = require('./i18n');
 /*
- * Tempo real: watcher + SSE (/api/events).
+ * Real time: watcher + SSE (/api/events).
  *
- * A cada WATCH_INTERVAL_MS o watcher olha cada sessao de projeto (tmux capture-pane das
- * ultimas 300 linhas) e mantem:
- *   - activity: 'busy' (tela mudando) | 'idle' (parada) | 'prompt' (Claude esperando uma
- *     resposta sua: permissao/confirmacao) | 'off' (sessao/Claude parados)
- *   - remoteUrl (link claude.ai/code/... mais recente na tela)
- * Transicoes busy->idle (apos >=5s ocupado) e ->prompt geram NOTIFICACOES.
- * O estado consolidado (buildState) e recalculado a cada tick e enviado por SSE so quando
- * muda (hash), entao o cliente nao precisa de polling.
+ * Every WATCH_INTERVAL_MS the watcher looks at each project session (tmux capture-pane of the
+ * last 300 lines) and keeps:
+ *   - activity: 'busy' (screen changing) | 'idle' (still) | 'prompt' (Claude waiting for an
+ *     answer from you: permission/confirmation) | 'off' (session/Claude stopped)
+ *   - remoteUrl (most recent claude.ai/code/... link on screen)
+ * Transitions busy->idle (after >=5s busy) and ->prompt produce NOTIFICATIONS.
+ * The consolidated state (buildState) is recomputed on each tick and sent over SSE only when
+ * it changes (hash), so the client needs no polling.
  *
- * Eventos SSE: state {…}, activity {name,state,since}, notify {title,body,name,kind}, ping.
+ * SSE events: state {…}, activity {name,state,since}, notify {title,body,name,kind}, ping.
  */
 const fs = require('fs');
 const path = require('path');
@@ -21,9 +21,9 @@ const cfg = require('./config');
 const { sh, sessionName, paneOf, log } = require('./util');
 const { listProjects } = require('./projects-list');
 
-const clients = new Set();           // res de cada EventSource conectado
-// achado @security: sem limite, uma sessao de painel (sid) reconectando em loop (bug no cliente
-// ou de proposito) acumulava EventSource abertos pra sempre — cada um com seu heartbeat/broadcast.
+const clients = new Set();           // res of each connected EventSource
+// found by @security: with no limit, a panel session (sid) reconnecting in a loop (client bug
+// or on purpose) piled up open EventSources forever — each with its own heartbeat/broadcast.
 const MAX_SSE_PER_SID = 5;
 const sidCounts = new Map();         // sid -> EventSource abertos agora
 const act = new Map();               // sess -> { hash, changedAt, busySince, state, remoteUrl, lastLines }
@@ -33,8 +33,8 @@ let stateBuilder = null;             // injetado por projects.js (evita ciclo)
 let timer = null;
 let ticking = false;
 
-// padroes na tela que indicam "Claude esperando VOCE" (permissao/confirmacao/escolha)
-// (o dialogo do /remote-control — "Esc to continue" — NAO conta: o loop/painel fecham sozinhos)
+// patterns on screen that mean "Claude waiting for YOU" (permission/confirmation/choice)
+// (the /remote-control dialog — "Esc to continue" — does NOT count: the loop/panel close it by themselves)
 const PROMPT_RX = /(Do you want to (proceed|allow|make this edit|run|create|continue)|Allow (this|the) |Yes, (and )?(don't|allow|proceed)|^\s*(❯\s*)?1\.\s*Yes\b|\(y\/n\)|\[Y\/n\]|Would you like to|permission to|Waiting for (your )?(input|approval))/im;
 const REMOTE_RX = /https:\/\/claude\.ai\/code\/[^\s'"()\]]+/g;
 
@@ -66,7 +66,7 @@ function attach(req, res, sid) {
   clients.add(res);
   if (lastState) send(res, 'state', lastState);
   send(res, 'activity', activitySnapshot());
-  poke(); // o watcher pausa sem clientes: atualiza estado/atividade ja na reconexao
+  poke(); // the watcher pauses with no clients: refreshes state/activity right on reconnect
   const hb = setInterval(() => send(res, 'ping', { t: Date.now() }), 20000);
   req.on('close', () => {
     clearInterval(hb); clients.delete(res);
@@ -82,9 +82,9 @@ const activitySnapshot = () => {
 const activityOf = (sess) => (act.get(sess) || {}).state || 'off';
 const hashOf = (s) => crypto.createHash('sha1').update(s).digest('hex');
 
-// pausa por inatividade: grava o flag que o claude-loop.sh respeita e manda /exit (Ctrl-C ja
-// NAO e usado aqui — /exit fecha a conversa de forma limpa). Chamado quando idle/prompt dura
-// >= idlePauseHours (config por projeto) — ver o fim de tickSession.
+// pause for inactivity: writes the flag that claude-loop.sh respects and sends /exit (Ctrl-C is
+// NOT used here — /exit closes the conversation cleanly). Called when idle/prompt lasts
+// >= idlePauseHours (per-project config) — see the end of tickSession.
 async function autoPauseSession(name, sess) {
   try {
     fs.mkdirSync(cfg.RUN_DIR, { recursive: true });
@@ -106,7 +106,7 @@ async function tickSession(name, running, idlePauseHours) {
     if (prevState !== 'off') { a.changedAt = Date.now(); broadcast('activity', { name, session: sess, state: 'off', since: a.changedAt, busySince: 0, remoteUrl: a.remoteUrl || '' }); }
     return;
   }
-  // -J: junta as linhas quebradas pela largura (o link do remote sai inteiro)
+  // -J: joins lines wrapped by the width (the remote link comes out whole)
   const r = await sh('tmux', ['capture-pane', '-t', '=' + sess + ':', '-p', '-J', '-S', '-300']);
   if (!r.ok) return;
   const screen = r.stdout || '';
@@ -122,16 +122,16 @@ async function tickSession(name, running, idlePauseHours) {
     next = 'busy';
   } else {
     a.quietTicks++;
-    // parado ha >= 2 ticks (~4s): idle ou prompt (se a tela pede algo); antes disso mantem o estado
+    // still for >= 2 ticks (~4s): idle or prompt (if the screen asks for something); before that keeps the state
     if (a.quietTicks >= 2) next = PROMPT_RX.test(tail) ? 'prompt' : 'idle';
     else next = a.state === 'off' ? 'idle' : a.state;
   }
   if (next !== prevState) {
     const busyFor = a.busySince ? now - a.busySince : 0;
-    a.state = next; a.changedAt = now; a.autoPaused = false; // qualquer transicao reinicia o relogio de inatividade
-    // manda busySince/remoteUrl junto (achado @qa 2026-09-28): o reducer do cliente
-    // (useEvents.js) faz merge, mas o payload precisa trazer o valor certo — 0 quando
-    // sai de 'busy' (o reset de a.busySince abaixo so acontece DEPOIS deste broadcast)
+    a.state = next; a.changedAt = now; a.autoPaused = false; // any transition restarts the inactivity clock
+    // sends busySince/remoteUrl along (found by @qa 2026-09-28): the client reducer
+    // (useEvents.js) merges, but the payload must carry the right value — 0 when
+    // leaving 'busy' (the reset of a.busySince below only happens AFTER this broadcast)
     broadcast('activity', { name, session: sess, state: next, since: now, busySince: next === 'busy' ? a.busySince : 0, remoteUrl: a.remoteUrl || '' });
     if (next === 'prompt') {
       broadcast('notify', { kind: 'prompt', name, title: tr('srv.waitingTitle', { name }), body: tr('srv.waitingBody'), i18n: { title: ['srv.waitingTitle', { name }], body: ['srv.waitingBody'] } });
@@ -141,15 +141,15 @@ async function tickSession(name, running, idlePauseHours) {
     }
     if (next !== 'busy') a.busySince = 0;
   }
-  // pausa automatica: idle/prompt (nao-busy) ha >= idlePauseHours SEM interrupcao — so dispara 1x
-  // por periodo ocioso (a.autoPaused), que e' reiniciado por qualquer transicao de estado acima
+  // automatic pause: idle/prompt (not busy) for >= idlePauseHours WITHOUT interruption — fires only once
+  // per idle period (a.autoPaused), which is restarted by any state transition above
   if (idlePauseHours > 0 && !a.autoPaused && (a.state === 'idle' || a.state === 'prompt') && (now - a.changedAt) >= idlePauseHours * 3600 * 1000) {
     a.autoPaused = true;
     autoPauseSession(name, sess);
   }
 }
 
-// estado completo: projetos + atividade/remoteUrl do watcher (captura tmux de cada sessao)
+// full state: projects + activity/remoteUrl from the watcher (tmux capture of each session)
 async function buildFullState() {
   const state = stateBuilder ? await stateBuilder() : null;
   if (!state) return null;
@@ -160,7 +160,7 @@ async function buildFullState() {
     p.activitySince = a ? a.changedAt : 0;
     if (a && a.remoteUrl && p.up) p.remoteUrl = a.remoteUrl;
   }
-  // limpa sessoes de projetos que sumiram
+  // drops sessions of projects that are gone
   const names = new Set(state.projects.map((p) => p.session));
   for (const k of act.keys()) if (!names.has(k)) act.delete(k);
   return state;
@@ -168,10 +168,10 @@ async function buildFullState() {
 
 async function tick() {
   if (ticking) return;
-  // achado @perf 2026-10-09: painel fechado (nenhum EventSource conectado) nao precisa
-  // capturar tmux a cada tick — ninguem vai ver o broadcast. Mas o lastState congelado
-  // ficaria velho (GET /api/state e o 1o evento do SSE o servem): descarta, currentState()
-  // monta um completo sob demanda e attach() forca um tick ao reconectar.
+  // found by @perf 2026-10-09: with the panel closed (no EventSource connected) there is no need
+  // to capture tmux on each tick — nobody will see the broadcast. But the frozen lastState
+  // would get stale (GET /api/state and the first SSE event serve it): discards it, currentState()
+  // builds a full one on demand and attach() forces a tick on reconnect.
   if (clients.size === 0) { lastState = null; lastStateHash = ''; return; }
   ticking = true;
   try {
@@ -185,8 +185,8 @@ async function tick() {
   finally { ticking = false; }
 }
 
-// achado @perf: com RUN_DIR/lowmem presente (guarda de memoria do lado shell), o watcher cai
-// de WATCH_INTERVAL_MS (2s) p/ 10s — menos capture-pane/CPU enquanto a memoria esta apertada.
+// found by @perf: with RUN_DIR/lowmem present (shell-side memory guard), the watcher goes
+// from WATCH_INTERVAL_MS (2s) to 10s — less capture-pane/CPU while memory is tight.
 const lowMemFlag = () => { try { return fs.existsSync(path.join(cfg.RUN_DIR, 'lowmem')); } catch { return false; } };
 function scheduleTick() {
   const ms = lowMemFlag() ? 10000 : cfg.WATCH_INTERVAL_MS;
@@ -198,7 +198,7 @@ function start(builder) {
   if (timer) return;
   tick().finally(scheduleTick);
 }
-// forca um tick agora (depois de uma acao) p/ o SSE refletir na hora
+// forces a tick now (after an action) so SSE reflects it at once
 const poke = () => { setTimeout(tick, 150); };
 const remoteUrlOf = (sess) => (act.get(sess) || {}).remoteUrl || '';
 const currentState = async () => lastState || buildFullState();
@@ -209,9 +209,9 @@ function stop() {
   clients.clear();
 }
 
-// estado da tela AGORA, sem depender do vigia (que so captura com navegador conectado): duas
-// capturas com 2,5s de intervalo, com a mesma regra do tick: mudou = 'busy'; parada pedindo
-// algo (PROMPT_RX) = 'prompt'; parada = 'idle'; sem sessao = 'off'
+// screen state NOW, without depending on the watcher (which only captures with a browser connected): two
+// captures 2.5s apart, with the same rule as the tick: changed = 'busy'; still and asking for
+// something (PROMPT_RX) = 'prompt'; still = 'idle'; no session = 'off'
 async function probeActivity(sess) {
   const cap = async () => { const r = await sh('tmux', ['capture-pane', '-t', '=' + sess + ':', '-p', '-J', '-S', '-300']); return r.ok ? (r.stdout || '').split('\n').slice(-60).join('\n') : null; };
   const a = await cap();

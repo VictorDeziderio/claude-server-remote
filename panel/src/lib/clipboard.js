@@ -1,10 +1,10 @@
-// Copiar para a area de transferencia: Clipboard API (HTTPS/localhost) com fallback para
-// execCommand('copy') — que funciona em HTTP puro, desde que dentro de um gesto do usuario.
+// Copy to the clipboard: Clipboard API (HTTPS/localhost) with a fallback to
+// execCommand('copy') — which works on plain HTTP, as long as it is inside a user gesture.
 export async function copyText(text) {
   if (!text) return false
   try {
     if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true }
-  } catch { /* cai no fallback */ }
+  } catch { /* falls back */ }
   try {
     const ta = document.createElement('textarea')
     ta.value = text
@@ -24,12 +24,12 @@ export async function readClipboard() {
   try { return (await navigator.clipboard.readText()) || '' } catch { return '' }
 }
 
-// decodifica o payload do OSC 52 ("c;BASE64" / "p;BASE64" / ";BASE64") -> texto UTF-8 | null
+// decodes the OSC 52 payload ("c;BASE64" / "p;BASE64" / ";BASE64") -> UTF-8 text | null
 export function decodeOsc52(data) {
   const i = data.indexOf(';')
   if (i < 0) return null
   const b64 = data.slice(i + 1)
-  if (!b64 || b64 === '?') return null // "?" = pedido de LEITURA do clipboard: nunca atendido
+  if (!b64 || b64 === '?') return null // "?" = clipboard READ request: never served
   try {
     const bin = atob(b64)
     const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0))

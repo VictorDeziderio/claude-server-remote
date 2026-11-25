@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Testes de unidade da logica do front que roda sem navegador (teclas do terminal no celular,
-// OSC 52). Os modulos de src/ sao ESM puros: carregados por data: URL (independe do "type" do
-// package.json). Uso: node test/unit.mjs  (o npm test roda este + o smoke)
+// Unit tests of the front-end logic that runs without a browser (terminal keys on the phone,
+// OSC 52). The src/ modules are pure ESM: loaded through a data: URL (independent of the package.json
+// "type"). Usage: node test/unit.mjs  (npm test runs this + the smoke test)
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -101,7 +101,7 @@ eq('sistema + aparelho claro -> light', T.resolveTheme('system', false), 'light'
 eq('escolha fixa vence o aparelho', [T.resolveTheme('light', true), T.resolveTheme('dark', false)], ['light', 'dark'])
 eq('valor estranho no localStorage -> sistema', T.resolveTheme('roxo', true), 'dark')
 eq('ciclo sistema -> claro -> escuro -> sistema', [T.nextTheme('system'), T.nextTheme('light'), T.nextTheme('dark'), T.nextTheme(null)], ['light', 'dark', 'system', 'light'])
-// a CSP do painel (script-src 'self') bloqueia script inline: o tema inicial vem de arquivo
+// the panel CSP (script-src 'self') blocks inline scripts: the initial theme comes from a file
 const html = fs.readFileSync(path.join(PANEL, 'index.html'), 'utf8')
 eq('index.html sem <script> inline (CSP)', [...html.matchAll(/<script(?![^>]*\ssrc=)[^>]*>/g)].length, 0)
 eq('index.html carrega /theme-init.js antes do app', html.indexOf('/theme-init.js') > 0 && html.indexOf('/theme-init.js') < html.indexOf('/src/main.jsx'), true)
@@ -125,7 +125,7 @@ for (const [code, d] of Object.entries(locs)) {
   const badVars = enKeys.filter((k) => k in d && JSON.stringify((String(locs.en[k]).match(/\{\w+\}/g) || []).sort()) !== JSON.stringify((String(d[k]).match(/\{\w+\}/g) || []).sort()))
   eq(`${code}.json usa as mesmas {variaveis} do ingles`, badVars, [])
 }
-// toda chave usada no codigo (t('x'), tOr('x'), <TR k="x">) existe no en.json
+// every key used in the code (t('x'), tOr('x'), <TR k="x">) exists in en.json
 const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.jsx?$/.test(e.name) ? [path.join(d, e.name)] : []))
 const used = new Set()
 for (const f of walk(path.join(PANEL, 'src'))) {
@@ -134,8 +134,8 @@ for (const f of walk(path.join(PANEL, 'src'))) {
   for (const m of src.matchAll(/<TR k="([\w.-]+)"/g)) used.add(m[1])
   for (const m of src.matchAll(/'((?:smode|period|login\.(?:phase|screen|step))\.[\w-]+)'/g)) used.add(m[1])
 }
-// altura em % so funciona se o pai tiver altura: o <div> logo acima de um style={{ height: x + '%' }}
-// precisa de uma classe h-* (senao a barra fica com 0px — o grafico do Relatorio saiu vazio assim)
+// height in % only works if the parent has a height: the <div> right above a style={{ height: x + '%' }}
+// needs an h-* class (otherwise the bar ends up 0px — the Report chart came out empty like that)
 const pctNoParent = []
 for (const f of walk(path.join(PANEL, 'src'))) {
   const lines = fs.readFileSync(f, 'utf8').split('\n')
@@ -149,7 +149,7 @@ for (const f of walk(path.join(PANEL, 'src'))) {
 eq('altura em % tem pai com altura (h-*)', pctNoParent, [])
 eq('chaves usadas no codigo existem no en.json', [...used].filter((k) => !(k in (locs.en || {}))), [])
 
-// avisos do servidor traduzidos no navegador (lib/notice.js): chave + vars, ingles como reserva
+// server notices translated in the browser (lib/notice.js): key + vars, English as the fallback
 {
   const pt = JSON.parse(fs.readFileSync(path.join(PANEL, 'src/locales/pt-BR.json'), 'utf8'))
   const tOrPt = (k, fb, v) => (k in pt ? I.format(pt[k], v || {}) : fb)

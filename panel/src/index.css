@@ -10,13 +10,13 @@
 @tailwind utilities;
 
 /*
- * Tema "admin" no estilo shadcn/ui: base neutra zinc, cards com borda fina e sombra leve,
- * barra lateral, modo CLARO e ESCURO (classe .dark no <html>, escolhida em src/lib/theme.js:
- * sistema / claro / escuro). Geist Sans na interface, Geist Mono so onde o conteudo e' dado.
- * O acento ambar (marca) ficou em --warning/--brand: "trabalhando", alertas e o logo.
- * Terminal e editor de codigo ficam SEMPRE escuros (superficies de codigo).
+ * shadcn/ui-style "admin" theme: neutral zinc base, cards with a thin border and a light shadow,
+ * sidebar, LIGHT and DARK mode (.dark class on <html>, chosen in src/lib/theme.js:
+ * system / light / dark). Geist Sans in the interface, Geist Mono only where the content is data.
+ * The amber accent (brand) lives in --warning/--brand: "working", alerts and the logo.
+ * Terminal and code editor are ALWAYS dark (code surfaces).
  */
-/* Canais RGB "R G B": permitem bg-primary/10 etc. via rgb(var(--x) / <alpha>) no tailwind.config.js */
+/* "R G B" channels: allow bg-primary/10 etc. via rgb(var(--x) / <alpha>) in tailwind.config.js */
 :root {
   color-scheme: light;
   --background: 255 255 255;
@@ -92,11 +92,11 @@ html { font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif; }
 html, body { height: 100%; }
 body {
   margin: 0;
-  overflow: hidden; /* cada pagina rola no seu proprio container (o terminal precisa de altura fixa) */
+  overflow: hidden; /* each page scrolls in its own container (the terminal needs a fixed height) */
 }
-/* O app ocupa exatamente a area VISIVEL: no celular, com o teclado aberto, --app-h e a altura
-   acima do teclado e --app-top o quanto o iOS empurrou a pagina (src/lib/viewport.js). As
-   margens seguras (notch, barra do iPhone) ficam aqui; com o teclado aberto a de baixo some. */
+/* The app takes exactly the VISIBLE area: on the phone, with the keyboard open, --app-h is the height
+   above the keyboard and --app-top how much iOS pushed the page (src/lib/viewport.js). The
+   safe margins (notch, iPhone bar) live here; with the keyboard open the bottom one goes away. */
 #root {
   position: fixed; left: 0; right: 0;
   top: var(--app-top, 0px);
@@ -106,30 +106,30 @@ body {
 html[data-kb] #root { padding-bottom: 0; }
 html[data-kb] .hide-on-kb { display: none !important; }
 
-/* Celular/tablet (dedo): alvos de toque >= 40px e campos com 16px (abaixo disso o iOS da zoom
-   na pagina ao focar um campo — inclusive o textarea escondido do terminal). */
+/* Phone/tablet (finger): touch targets >= 40px and fields at 16px (below that iOS zooms
+   the page when a field gets focus — including the terminal's hidden textarea). */
 @media (pointer: coarse) {
   input, select, textarea, .xterm .xterm-helper-textarea { font-size: 16px !important; }
   [data-slot=button] { min-height: 2.5rem; min-width: 2.5rem; }
-  /* o terminal trata o toque (rolar historico, pinca p/ fonte): o navegador nao rola/da zoom */
+  /* the terminal handles touch (scroll history, pinch for font): the browser does not scroll/zoom */
   .xterm-box { touch-action: none; }
 }
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
-/* scrollbar discreta */
+/* discreet scrollbar */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-thumb { background: rgb(var(--border)); border-radius: 3px; }
 *::-webkit-scrollbar-track { background: transparent; }
 
-/* xterm.js: fonte dedicada (JetBrains Mono -- cobertura de box-drawing p/ TUIs como tmux),
-   ocupa o container inteiro, sem borda branca; scrollbar no tema */
+/* xterm.js: dedicated font (JetBrains Mono -- box-drawing coverage for TUIs like tmux),
+   fills the whole container, no white border; scrollbar in the theme */
 .xterm { height: 100%; padding: 6px 8px; font-family: "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace; }
 .xterm .xterm-viewport { background-color: transparent !important; }
 .xterm .xterm-viewport::-webkit-scrollbar-thumb { background: rgb(var(--border)); }
 .xterm .xterm-screen { outline: none; }
 
-/* CodeMirror (editor de arquivos) */
+/* CodeMirror (file editor) */
 .cm-editor { height: 100%; font-size: 13px; }
 .cm-editor .cm-scroller { font-family: "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace; line-height: 1.55; }
 .cm-editor.cm-focused { outline: none; }

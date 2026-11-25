@@ -6,7 +6,7 @@ import { fmtInt, fmtTok, fmtIso, shortModel } from '../lib/format.js'
 import * as api from '../api.js'
 import { t } from '../lib/i18n.js'
 
-// /history[/:name] — conversas do Claude por projeto (lidas dos .jsonl) + "continuar" (claude --resume)
+// /history[/:name] — Claude conversations per project (read from the .jsonl files) + "continue" (claude --resume)
 export default function HistoryPage({ data, onFlash, refresh }) {
   const { name } = useParams()
   const navigate = useNavigate()

@@ -1,10 +1,10 @@
 'use strict';
 const { trOr } = require('./i18n');
-// Alertas do ecossistema de scripts (claude-loop.sh, backup.sh, memory guard...): eles anexam
-// linhas JSON em RUN_DIR/alerts.jsonl ({t, level, kind, project?, msg}). O servidor le so os
-// bytes NOVOS (offset incremental), guarda os ultimos 100 em memoria e distribui por SSE.
-// Lido pelo sampler de saude (health.js, 60s) — NUNCA no tick do watcher (2s): o arquivo e
-// pequeno, mas nao ha motivo pra abrir/ler/parsear a cada 2s so por isso.
+// Alerts from the scripts (claude-loop.sh, backup.sh, memory guard...): they append
+// JSON lines to RUN_DIR/alerts.jsonl ({t, level, kind, project?, msg}). The server reads only the
+// NEW bytes (incremental offset), keeps the last 100 in memory and spreads them over SSE.
+// Read by the health sampler (health.js, 60s) — NEVER on the watcher tick (2s): the file is
+// small, but there is no reason to open/read/parse it every 2s just for that.
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
@@ -14,11 +14,11 @@ const FILE = path.join(cfg.RUN_DIR, 'alerts.jsonl');
 const MAX_KEEP = 100;
 const LEVELS = new Set(['info', 'warn', 'error']);
 
-let list = [];      // ultimos MAX_KEEP alertas (mais recente no fim)
-let offset = 0;      // bytes do arquivo ja processados
+let list = [];      // last MAX_KEEP alerts (newest at the end)
+let offset = 0;      // bytes of the file already processed
 let lastDiskAlertAt = 0;
 
-// aviso SSE de um alerta; o navegador traduz (alert.kind.<tipo> + key/vars)
+// SSE notice of an alert; the browser translates it (alert.kind.<type> + key/vars)
 const toNotice = (a) => ({
   kind: 'alert', t: a.t, level: a.level, alertKind: a.kind, project: a.project || '', msg: a.msg || '',
   title: trOr('alert.kind.' + a.kind, a.kind, {}, 'en') + (a.project ? ` — ${a.project}` : ''), body: a.msg || '',
@@ -31,14 +31,14 @@ const plainVars = (v) => Object.fromEntries(Object.entries(v && typeof v === 'ob
 function pushAndBroadcast(a) {
   list.push(a);
   if (list.length > MAX_KEEP) list.splice(0, list.length - MAX_KEEP);
-  // lazy (evita ciclo: events.js e' quem inicia o sampler que chama ate aqui)
+  // lazy (avoids a cycle: events.js is the one that starts the sampler that calls into here)
   try {
     require('./events').broadcast('notify', toNotice(a));
   } catch { /* */ }
 }
 
-// le as linhas NOVAS desde o ultimo offset. Se o arquivo encolheu (rotacao/truncamento pelos
-// scripts) o offset e invalido -> reabre do zero.
+// reads the NEW lines since the last offset. If the file shrank (rotation/truncation by the
+// scripts) the offset is invalid -> reopens from zero.
 function poll() {
   let st;
   try { st = fs.statSync(FILE); } catch { offset = 0; return; }
@@ -51,7 +51,7 @@ function poll() {
     finally { fs.closeSync(fd); }
   } catch (e) { log('error', 'alerts poll', { err: e.message }); return; }
   const lastNl = buf.lastIndexOf(0x0a);
-  if (lastNl === -1) return; // ainda sem uma linha completa nova
+  if (lastNl === -1) return; // no complete new line yet
   const text = buf.subarray(0, lastNl + 1).toString('utf8');
   offset += lastNl + 1;
   for (const line of text.split('\n')) {
@@ -64,14 +64,14 @@ function poll() {
       kind: String(raw.kind).slice(0, 40),
       project: raw.project ? String(raw.project).slice(0, 80) : '',
       msg: String(raw.msg || '').slice(0, 500),
-      // texto traduzivel (opcional): chave srv.* + variaveis simples; msg fica como reserva
+      // translatable text (optional): srv.* key + simple variables; msg is the fallback
       ...(typeof raw.key === 'string' && /^srv\.[\w.-]{1,60}$/.test(raw.key) ? { key: raw.key, vars: plainVars(raw.vars) } : {}),
     });
   }
 }
 
-// disco > 90%: no maximo 1x/hora, gravado no MESMO arquivo que poll() le (assim o fluxo de
-// "chegou -> entra na lista -> SSE" e' um so, igual aos alertas vindos dos scripts).
+// disk > 90%: at most 1x/hour, written to the SAME file that poll() reads (so the flow of
+// "arrived -> goes into the list -> SSE" is a single one, like the alerts from the scripts).
 function maybeDiskAlert(pct) {
   if (!(pct >= 90)) return;
   const now = Date.now();
@@ -83,7 +83,7 @@ function maybeDiskAlert(pct) {
   } catch (e) { log('error', 'disk alert', { err: e.message }); }
 }
 
-// API: kind = tipo do alerta (contrato antigo) + alertKind, a mesma marca do SSE
+// API: kind = alert type (old contract) + alertKind, the same mark as the SSE
 const list100 = () => list.map((a) => ({ ...a, alertKind: a.kind }));
 const clear = () => { list = []; };
 

@@ -1,15 +1,15 @@
 'use strict';
-// Estado da conta/instalacao do Claude Code: login, conta, versao, logout.
+// State of the Claude Code account/install: login, account, version, logout.
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
 const { sh } = require('./util');
 
-// Login + conta: le oauthAccount de ~/.claude.json (ou API key via env).
+// Login + account: reads oauthAccount from ~/.claude.json (or an API key via env).
 function loginInfo() {
   if (process.env.ANTHROPIC_API_KEY) return { logged: true, account: 'API key (env)', org: '', method: 'apikey' };
   let account = '', org = '', raw = '';
-  try { raw = fs.readFileSync(path.join(cfg.HOME, '.claude.json'), 'utf8'); } catch { /* sem arquivo */ }
+  try { raw = fs.readFileSync(path.join(cfg.HOME, '.claude.json'), 'utf8'); } catch { /* no file */ }
   if (raw) {
     try {
       const oa = JSON.parse(raw).oauthAccount;
@@ -22,7 +22,7 @@ function loginInfo() {
   return { logged, account, org, method: logged ? 'oauth' : '' };
 }
 
-// desloga o Claude: remove o token OAuth (.credentials.json) e o cache de conta (oauthAccount)
+// logs Claude out: removes the OAuth token (.credentials.json) and the account cache (oauthAccount)
 function claudeLogout() {
   let did = false;
   try { fs.rmSync(path.join(cfg.CLAUDE_DIR, '.credentials.json'), { force: true }); did = true; } catch { /* */ }
@@ -34,7 +34,7 @@ function claudeLogout() {
   return { ok: true, msg: did ? 'deslogado do Claude (credenciais removidas)' : 'nenhuma credencial encontrada' };
 }
 
-// versao e estavel em runtime -> resolve uma vez e cacheia (evita spawn por request)
+// the version is stable at runtime -> resolve once and cache it (avoids a spawn per request)
 let verCache = '';
 async function claudeVersion() {
   if (verCache) return verCache;

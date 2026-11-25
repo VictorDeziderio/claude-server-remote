@@ -64,7 +64,7 @@ function Kpi({ icon: Icon, label, value, hint, hero }) {
   )
 }
 
-// grafico de barras diario com eixo Y, ticks no X e tooltip
+// daily bar chart with a Y axis, X ticks and a tooltip
 function DailyChart({ daily, metric }) {
   const [hover, setHover] = useState(null)
   const val = (d) => (metric === 'cost' ? d.cost || 0 : (d.in || 0) + (d.out || 0))

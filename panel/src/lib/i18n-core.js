@@ -1,6 +1,6 @@
-// Regras puras do i18n (testadas em test/unit.mjs, sem Vite).
-// Idioma: o salvo pelo usuario; senao o do navegador (pt-BR -> pt-BR, pt-PT -> pt-BR se so
-// houver esse "pt"); senao o padrao.
+// Pure i18n rules (tested in test/unit.mjs, without Vite).
+// Language: the one saved by the user; otherwise the browser's (pt-BR -> pt-BR, pt-PT -> pt-BR if
+// that is the only "pt"); otherwise the default.
 export function pickLang(saved, browserLangs, available, def) {
   if (saved && available.includes(saved)) return saved
   for (const raw of browserLangs || []) {

@@ -1,6 +1,6 @@
 'use strict';
-// Serve a SPA buildada (dist/): assets com cache longo (nomes com hash), index.html sem
-// cache + fallback p/ qualquer rota do react-router (/dashboard, /files/..., /terminal/...).
+// Serves the built SPA (dist/): assets with a long cache (hashed names), index.html without
+// cache + fallback for any react-router route (/dashboard, /files/..., /terminal/...).
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');

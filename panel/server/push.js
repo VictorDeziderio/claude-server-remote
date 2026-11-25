@@ -107,7 +107,7 @@ function subscribe(sub, meta = {}) {
   const name = String(oldName || meta.name || 'Device').replace(/[\u0000-\u001f]/g, '').slice(0, 60) || 'Device';
   const now = Date.now();
   let d = s.devices.find((x) => x.endpoint === sub.endpoint);
-  const lang = require('./i18n').current(); // idioma de quem inscreveu (cookie cr_lang): o push sai nele
+  const lang = require('./i18n').current(); // language of whoever subscribed (cr_lang cookie): the push goes out in it
   if (d) { d.keys = { p256dh: keys.p256dh, auth: keys.auth }; d.name = name; d.fails = 0; d.lastError = ''; d.lang = lang; }
   else {
     d = { id: idOf(sub.endpoint), endpoint: sub.endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth }, name, lang, createdAt: now, lastOkAt: 0, lastError: '', fails: 0 };

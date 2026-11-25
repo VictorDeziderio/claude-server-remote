@@ -1,7 +1,7 @@
 'use strict';
 const { tr } = require('./i18n');
-// Historico de conversas do Claude por projeto (lendo ~/.claude/projects/<cwd codificado>/*.jsonl)
-// + "continuar" uma conversa (claude --resume <id>) via flag lida pelo claude-loop.sh.
+// Claude conversation history per project (reading ~/.claude/projects/<encoded cwd>/*.jsonl)
+// + "continue" a conversation (claude --resume <id>) via a flag read by claude-loop.sh.
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
@@ -11,7 +11,7 @@ const { sh, validName, sessionName, typeLine } = require('./util');
 const encOf = (p) => p.replace(/[^a-zA-Z0-9]/g, '-');
 const dirOf = (name) => path.join(cfg.CLAUDE_DIR, 'projects', encOf(path.join(cfg.PROJECTS_DIR, name)));
 
-// extrai texto de um message.content (string ou array de blocos)
+// extracts text from a message.content (string or array of blocks)
 function textOf(content) {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -25,9 +25,9 @@ function textOf(content) {
   }).filter(Boolean).join('\n');
 }
 
-// le um .jsonl e devolve resumo {id, title, first, last, messages, model, tokens}
-// achado @security: readFileSync (ate 64MB) travava o event loop por arquivo; assincrono
-// (fs/promises) deixa a leitura em disco fora do loop — so o parse das linhas continua sincrono.
+// reads a .jsonl and returns a summary {id, title, first, last, messages, model, tokens}
+// found by @security: readFileSync (up to 64MB) blocked the event loop per file; async
+// (fs/promises) keeps the disk read off the loop — only the line parsing stays synchronous.
 async function summarizeFile(file, wantMessages) {
   let data;
   try { if ((await fsp.stat(file)).size > 64 * 1024 * 1024) return null; data = await fsp.readFile(file, 'utf8'); } catch { return null; }
@@ -71,9 +71,9 @@ async function readConversation(name, id) {
   if (!s) return { ok: false, msg: tr('srv.convNotFound') };
   return { ok: true, conversation: s };
 }
-// Continuar: grava ~/.claude/run/<sess>.resume com o id e RECRIA a sessao; o claude-loop.sh, ao
-// abrir o Claude, usa `claude --resume <id>`. (Antes mandava Ctrl-C x2, que falhava com o Claude
-// ocupado ou com texto no prompt.) Sessao so com shell (Claude OFF): manda o comando direto.
+// Continue: writes ~/.claude/run/<sess>.resume with the id and RECREATES the session; claude-loop.sh, when
+// opening Claude, uses `claude --resume <id>`. (It used to send Ctrl-C x2, which failed with Claude
+// busy or with text in the prompt.) A shell-only session (Claude OFF): sends the command directly.
 async function resumeConversation(name, id, running) {
   if (!validName(name) || !/^[A-Za-z0-9_-]{6,80}$/.test(String(id || ''))) return { ok: false, msg: tr('srv.badParams') };
   const sess = sessionName(name);
@@ -81,7 +81,7 @@ async function resumeConversation(name, id, running) {
   if (running) {
     fs.mkdirSync(cfg.RUN_DIR, { recursive: true });
     fs.writeFileSync(path.join(cfg.RUN_DIR, sess + '.resume'), id + '\n');
-    await require('./projects').recreateSession(name); // lazy: evita ciclo de require
+    await require('./projects').recreateSession(name); // lazy: avoids a require cycle
     return { ok: true, msg: tr('srv.resumed', { name, id: id.slice(0, 8) }) };
   }
   await typeLine(sess, `claude --resume ${id}`);

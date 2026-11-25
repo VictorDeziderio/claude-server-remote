@@ -21,7 +21,7 @@ function Toggle({ on, onChange, label, hint, icon: Icon, busy }) {
   )
 }
 
-// /settings — defaults do panel.json, notificacoes, ambiente (mascarado), caminhos
+// /settings — panel.json defaults, notifications, environment (masked), paths
 // "Update the panel" (server/update.js): only when DEPLOY_WEBHOOK_URL is set. "When idle" waits for
 // every project to finish its task; interrupted ones continue by themselves after the restart.
 function UpdateCard({ onFlash }) {

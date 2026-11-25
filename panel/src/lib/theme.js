@@ -1,6 +1,6 @@
-// Tema do painel: 'system' (segue o aparelho), 'light' ou 'dark'. A escolha fica no
-// localStorage (cr.theme); index.html aplica a classe .dark ANTES de pintar (sem piscar) com a
-// mesma regra de resolveTheme. Funcoes puras testadas em test/unit.mjs.
+// Panel theme: 'system' (follows the device), 'light' or 'dark'. The choice is kept in
+// localStorage (cr.theme); index.html applies the .dark class BEFORE painting (no flash) with the
+// same rule as resolveTheme. Pure functions tested in test/unit.mjs.
 export const THEME_KEY = 'cr.theme'
 export const THEMES = ['system', 'light', 'dark']
 export const THEME_COLOR = { light: '#ffffff', dark: '#09090b' }
@@ -28,7 +28,7 @@ export function saveTheme(pref) {
   applyTheme(p)
   return p
 }
-// "sistema": acompanha a troca claro/escuro do aparelho sem recarregar
+// "system": follows the device's light/dark switch without reloading
 export function watchSystemTheme() {
   const m = mq()
   if (!m) return () => {}

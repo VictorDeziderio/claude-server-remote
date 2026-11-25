@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * Claude Remote — servidor do painel do dev-box.
- *  - SPA (React/Vite) buildada em ./dist, com fallback p/ as rotas do react-router
- *  - API JSON em /api/*  (projetos, config, arquivos, relatorio, conta, historico, logs, saude, backup)
- *  - Tempo real em /api/events (SSE: estado, atividade do Claude, notificacoes)
- *  - Terminal real em /ws/term (WebSocket <-> PTY <-> tmux attach)
- * Auth: pagina de login propria + 2FA opcional + cookie de sessao assinado (server/auth.js).
- * Roda como o usuario ubuntu (HOME=/root), sempre atras do gateway Caddy.
+ * Claude Remote — server of the dev box panel.
+ *  - SPA (React/Vite) built into ./dist, with a fallback for the react-router routes
+ *  - JSON API at /api/*  (projects, config, files, report, account, history, logs, health, backup)
+ *  - Real time at /api/events (SSE: state, Claude activity, notifications)
+ *  - Real terminal at /ws/term (WebSocket <-> PTY <-> tmux attach)
+ * Auth: own login page + optional 2FA + signed session cookie (server/auth.js).
+ * Runs as the ubuntu user (HOME=/root), always behind the Caddy gateway.
  */
 const http = require('http');
 const fs = require('fs');
@@ -46,12 +46,12 @@ const SECURITY_HEADERS = {
   'Referrer-Policy': 'same-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
-  // deploy real e sempre https atras do Traefik; sem efeito nenhum sobre http (o browser so
-  // obedece HSTS recebido via https) — seguro mandar sempre, inclusive nos testes locais.
+  // a real deploy is always https behind a proxy; no effect at all on http (the browser only
+  // obeys HSTS received over https) — safe to always send, local tests included.
   'Strict-Transport-Security': 'max-age=15552000; includeSubDomains',
 };
 
-// rotas GET (todas exigem auth). (q = URLSearchParams, req)
+// GET routes (all require auth). (q = URLSearchParams, req)
 const GET = {
   '/api/state': async () => events.currentState(),
   '/api/update': async () => update.status(),
@@ -77,11 +77,11 @@ const GET = {
   '/api/sessions': async (q, req) => auth.listSessions(req),
   '/api/totp/status': async () => ({ ok: true, ...totp.status() }),
   '/api/claude/login/status': async () => claudeLogin.status(),
-  '/api/usage': async () => ({ ok: true, usage: usage.usageSummary() }), // achado @perf: tirado do buildState (tick de 2s), servido sob demanda
-  '/api/limits': async () => limits.snapshot(), // plano Claude (5h/semana) + gasto da API; cache do poller, sem rede
-  '/api/alerts': async () => { alerts.poll(); return { ok: true, alerts: alerts.list100() }; }, // on-demand (abrir a pagina), nao e o tick de 2s
+  '/api/usage': async () => ({ ok: true, usage: usage.usageSummary() }), // found by @perf: moved out of buildState (2s tick), served on demand
+  '/api/limits': async () => limits.snapshot(), // Claude plan (5h/week) + API spend; poller cache, no network
+  '/api/alerts': async () => { alerts.poll(); return { ok: true, alerts: alerts.list100() }; }, // on demand (when the page opens), not the 2s tick
 };
-// rotas POST (JSON; todas exigem auth + mesma origem). (body, req)
+// POST routes (JSON; all require auth + same origin). (body, req)
 const POST = {
   '/api/create': (b) => projects.createProject(b.name, !!b.autoStartClaude, !!b.autoRemote),
   '/api/rename': (b) => projects.renameProject(b.name, b.newName),
@@ -129,7 +129,7 @@ const POST = {
 // Web Push / notifications tab (routes live in server/notify.js)
 Object.assign(GET, notify.routes.GET);
 Object.assign(POST, notify.routes.POST);
-// acoes que entram no audit log (as de leitura nao)
+// actions that go into the audit log (reads do not)
 const AUDITED = new Set(['/api/create', '/api/rename', '/api/delete', '/api/config', '/api/initline', '/api/restart', '/api/power', '/api/remote',
   '/api/fs/save', '/api/fs/create', '/api/fs/delete', '/api/fs/rename', '/api/term/exit', '/api/term/window', '/api/claude/logout',
   '/api/claude/update', '/api/claude/login/start', '/api/claude/login/code', '/api/claude/login/cancel', '/api/history/resume', '/api/backup/run', '/api/backup/config', '/api/settings/defaults', '/api/settings',
@@ -186,7 +186,7 @@ async function handle(req, res) {
       return sendJson(res, 405, { ok: false, msg: 'method not allowed' });
     }
 
-    // --- SPA estatica (a propria SPA mostra o login quando /api/state da 401) ---
+    // --- static SPA (the SPA itself shows the login when /api/state answers 401) ---
     if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(req, res, url);
     sendJson(res, 405, { ok: false, msg: 'method not allowed' });
   } catch (e) {
@@ -195,10 +195,10 @@ async function handle(req, res) {
     else res.end();
   }
 }
-// cada requisicao responde no idioma de quem pediu (server/i18n.js: cookie cr_lang / Accept-Language)
+// each request is answered in the language of whoever asked (server/i18n.js: cr_lang cookie / Accept-Language)
 const server = http.createServer((req, res) => i18n.withLang(req, () => handle(req, res)));
 
-// WebSocket do terminal: mesma auth (cookie) + mesma origem
+// terminal WebSocket: same auth (cookie) + same origin
 server.on('upgrade', (req, socket, head) => {
   const u = new URL(req.url, 'http://x');
   const reject = (code, text) => { socket.write(`HTTP/1.1 ${code} ${text}\r\nConnection: close\r\n\r\n`); socket.destroy(); };
@@ -211,12 +211,12 @@ server.on('upgrade', (req, socket, head) => {
 server.listen(cfg.PORT, cfg.BIND, () => {
   log('info', 'painel no ar', { bind: `${cfg.BIND}:${cfg.PORT}`, projects: cfg.PROJECTS_DIR, dist: cfg.DIST, pty: term.ptyAvailable, twofa: totp.isEnabled() });
   events.start(projects.buildState); // watcher + SSE
-  limits.start(); // poller de limites do plano / gasto da API (server/limits.js)
+  limits.start(); // plan limits / API spend poller (server/limits.js)
   notify.start(); // Web Push: hooks, alerts, login, boot
   require('./server/autoresume').start(); // "continue" by itself after a usage-limit reset
 });
 
-// shutdown limpo (tini/docker stop mandam SIGTERM): fecha PTYs/SSE (os tmux continuam vivos)
+// clean shutdown (tini/docker stop send SIGTERM): closes PTYs/SSE (the tmux sessions stay alive)
 for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => {
     log('info', 'encerrando', { sig });

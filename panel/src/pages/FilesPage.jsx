@@ -4,7 +4,7 @@ import Files from '../components/Files.jsx'
 
 const enc = (p) => p.split('/').map(encodeURIComponent).join('/')
 
-// /files/<caminho relativo a /root> — a URL e a fonte da verdade
+// /files/<path relative to /root> — the URL is the source of truth
 export default function FilesPage({ onFlash }) {
   const { '*': raw = '' } = useParams()
   const navigate = useNavigate()

@@ -1,13 +1,13 @@
 'use strict';
 const { execFile } = require('child_process');
 
-// achado @security: `tmux new-session` sobe um shell que herda o env de quem chamou (o painel) —
-// sem filtrar, PANEL_PASSWORD/GH_TOKEN iam pra dentro de TODA sessao tmux (e de qualquer Claude
-// rodando nela, visivel via `env`). So o caso de tmux: outros comandos (git, npm, bash de backup)
-// continuam herdando o env normal, alguns dependem dele de proposito (ex.: GH_TOKEN no backup).
+// found by @security: `tmux new-session` starts a shell that inherits the caller's env (the panel) —
+// without filtering, PANEL_PASSWORD/GH_TOKEN went into EVERY tmux session (and into any Claude
+// running in it, visible via `env`). Only the tmux case: other commands (git, npm, backup bash)
+// keep inheriting the normal env, some depend on it on purpose (e.g. GH_TOKEN in the backup).
 const TMUX_STRIP_ENV = ['PANEL_PASSWORD', 'GH_TOKEN', 'ANTHROPIC_ADMIN_KEY', 'DEPLOY_WEBHOOK_URL'];
 
-// roda um comando sem shell (args separados) e nunca rejeita: {ok, stdout, stderr}
+// runs a command without a shell (separate args) and never rejects: {ok, stdout, stderr}
 function sh(cmd, args, opts = {}) {
   return new Promise((resolve) => {
     const finalOpts = { timeout: 20000, maxBuffer: 4 * 1024 * 1024, ...opts };
@@ -21,12 +21,12 @@ function sh(cmd, args, opts = {}) {
   });
 }
 
-// le o corpo JSON de uma request (limite 1MB). Corpo invalido -> null (a rota responde 400).
-// req.destroy() dispara 'close'/'aborted', NUNCA 'end' — resolver so no 'end' deixava a promise
-// pendurada pra sempre (handler nunca responde, socket nunca fecha, conexao vaza) quando o corpo
-// passava do limite. Ao passar do limite so paramos de ACUMULAR (sem crescer memoria): o stream
-// continua drenando (sem destroy) ate o 'end' natural, pra rota ainda poder responder 400 de
-// verdade — destruir o socket aqui impediria QUALQUER resposta (o cliente so veria a conexao cair).
+// reads the JSON body of a request (1MB limit). Invalid body -> null (the route answers 400).
+// req.destroy() fires 'close'/'aborted', NEVER 'end' — resolving only on 'end' left the promise
+// hanging forever (handler never answers, socket never closes, the connection leaks) when the body
+// went over the limit. Over the limit we only stop ACCUMULATING (no memory growth): the stream
+// keeps draining (no destroy) until the natural 'end', so the route can still really answer 400
+// — destroying the socket here would prevent ANY answer (the client would only see the connection drop).
 function readJson(req, limit = 1e6) {
   return new Promise((resolve) => {
     let data = '';
@@ -44,7 +44,7 @@ function readJson(req, limit = 1e6) {
   });
 }
 
-// le o corpo bruto (upload) ate `limit` bytes -> Buffer | null (estourou)
+// reads the raw body (upload) up to `limit` bytes -> Buffer | null (over the limit)
 function readRaw(req, limit) {
   return new Promise((resolve) => {
     const chunks = [];
@@ -66,10 +66,10 @@ function sendJson(res, code, obj) {
 
 const truthy = (v) => v === true || v === 'true' || v === 'on' || v === '1';
 const validName = (n) => typeof n === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(n) && n !== '.' && n !== '..';
-// nome da sessao tmux do projeto (mesma sanitizacao do claude-session.sh: tr -c 'A-Za-z0-9_-' '_')
+// tmux session name of the project (same sanitizing as claude-session.sh: tr -c 'A-Za-z0-9_-' '_')
 const sessionName = (name) => 'claude-' + String(name).replace(/[^A-Za-z0-9_-]/g, '_');
-// alvo EXATO de pane do tmux ("=sessao:"). Sem o "=" o tmux casa por PREFIXO: com "claude-api"
-// fora do ar, um send-keys iria parar em "claude-api2".
+// EXACT tmux pane target ("=session:"). Without the "=" tmux matches by PREFIX: with "claude-api"
+// down, a send-keys would end up in "claude-api2".
 const paneOf = (sess) => '=' + sess + ':';
 const clampInt = (v, min, max, def) => {
   const n = parseInt(v, 10);
@@ -82,9 +82,9 @@ function log(level, msg, extra) {
   (level === 'error' ? console.error : console.log)(JSON.stringify(line));
 }
 
-// digita uma linha numa sessao tmux como uma pessoa: texto literal, pausa para a TUI do Claude
-// processar (sem ela o Enter chega antes e a linha fica no prompt), depois Enter. Mesmo metodo
-// do claude-loop.sh.
+// types a line into a tmux session like a person: literal text, a pause for Claude's TUI to
+// process it (without it the Enter arrives first and the line stays in the prompt), then Enter. Same method
+// as claude-loop.sh.
 async function typeLine(sess, text) {
   if (!(await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', text])).ok) return false;
   await new Promise((r) => setTimeout(r, 800));

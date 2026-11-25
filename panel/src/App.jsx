@@ -36,22 +36,22 @@ function DashboardSkeleton() {
 
 export default function App() {
   const [data, setData] = useState(null)
-  const [authed, setAuthed] = useState(null) // null = ainda nao sabemos
+  const [authed, setAuthed] = useState(null) // null = we do not know yet
   const [flash, setFlash] = useState(null)
   const [showNew, setShowNew] = useState(false)
   const [notifPerm, setNotifPerm] = useState(() => (typeof Notification !== 'undefined' ? Notification.permission : 'denied'))
   const [alerts, setAlerts] = useState([])
   const { pathname } = useLocation()
 
-  // notificacoes (Claude terminou / esta esperando voce / alerta de saude da VM): toast
-  // sempre + Notification do navegador se permitido
+  // notifications (Claude finished / is waiting for you / machine health alert): toast
+  // always + the browser Notification if allowed
   const onNotify = useCallback((n) => {
     const s = (data && data.settings) || {}
     if (s.notifications === false) return
     if (n.kind === 'done' && s.notifyDone === false) return
     if (n.kind === 'prompt' && s.notifyPrompt === false) return
     const isAlert = n.kind === 'alert'
-    const { title, body } = noticeText(n, tOr) // no idioma de quem esta vendo
+    const { title, body } = noticeText(n, tOr) // in the language of whoever is looking
     const line = body ? `${title} — ${body}` : title
     if (isAlert) setAlerts((a) => [{ ...n, msg: line }, ...a].slice(0, 50))
     setFlash({ ok: isAlert ? n.level !== 'error' && n.level !== 'critical' : n.kind !== 'prompt', msg: line })
@@ -66,9 +66,9 @@ export default function App() {
   const onState = useCallback((d) => { setAuthed(true); setData(d) }, [])
   const { live, activity, refresh } = useEvents({ enabled: authed === true, onState, onUnauth, onNotify })
 
-  // primeira carga: descobre se esta autenticado
+  // first load: finds out whether we are authenticated
   useEffect(() => { refresh() }, [refresh])
-  // alertas ja registrados no servidor (o SSE so traz os novos a partir de agora)
+  // alerts already recorded on the server (SSE only brings the new ones from now on)
   useEffect(() => {
     if (authed !== true) return
     api.alerts().then((r) => { if (r.ok) setAlerts(r.alerts.map((a) => ({ ...a, msg: noticeLine(a, tOr) }))) }).catch(() => {})
@@ -89,8 +89,8 @@ export default function App() {
   if (authed === false) return <Login onSuccess={() => { setAuthed(true); refresh() }} />
 
   const isTerm = pathname.startsWith('/terminal')
-  // aba aberta antes de um deploy: o servidor ja e outro build, mas este JS e o antigo
-  // (modal de login velho, sem copiar-ao-selecionar...) -> avisa e oferece recarregar
+  // tab opened before a deploy: the server is already another build, but this JS is the old one
+  // (old login modal, no copy-on-select...) -> warn and offer to reload
   /* global __PANEL_VERSION__, __PANEL_BUILD__ */
   const stale = !!data && ((data.panelVersion && data.panelVersion !== __PANEL_VERSION__)
     || (__PANEL_BUILD__ && data.buildTime && data.buildTime !== __PANEL_BUILD__))

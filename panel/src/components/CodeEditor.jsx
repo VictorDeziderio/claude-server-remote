@@ -7,9 +7,9 @@ import { oneDark } from '@codemirror/theme-one-dark'
 import { LanguageDescription } from '@codemirror/language'
 import { languages } from '@codemirror/language-data'
 
-// Editor de codigo (CodeMirror 6): highlight por extensao (carregado sob demanda), numeros de
-// linha, busca (Ctrl+F), multi-cursor, dobra, Tab indenta. Carregado via React.lazy pra nao
-// pesar o bundle inicial. Controlado: `value` externo, `onChange(texto)`.
+// Code editor (CodeMirror 6): highlighting by extension (loaded on demand), line
+// numbers, search (Ctrl+F), multi-cursor, folding, Tab indents. Loaded via React.lazy so it does not
+// weigh on the initial bundle. Controlled: external `value`, `onChange(text)`.
 export default function CodeEditor({ value, onChange, filename = '', readOnly = false, onSave }) {
   const boxRef = useRef(null)
   const viewRef = useRef(null)
@@ -39,7 +39,7 @@ export default function CodeEditor({ value, onChange, filename = '', readOnly = 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // valor externo mudou (abriu outro arquivo / recarregou) -> substitui o doc sem perder o view
+  // external value changed (opened another file / reloaded) -> replaces the doc without losing the view
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
@@ -53,7 +53,7 @@ export default function CodeEditor({ value, onChange, filename = '', readOnly = 
     view.dispatch({ effects: roComp.current.reconfigure(EditorState.readOnly.of(readOnly)) })
   }, [readOnly])
 
-  // linguagem por nome de arquivo (carregamento sob demanda)
+  // language by file name (loaded on demand)
   useEffect(() => {
     const view = viewRef.current
     if (!view) return

@@ -1,5 +1,5 @@
 'use strict';
-// Audit log: quem fez o que, quando e de onde. JSON por linha em ~/.claude/logs/audit.log.
+// Audit log: who did what, when and from where. One JSON per line in ~/.claude/logs/audit.log.
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
@@ -15,7 +15,7 @@ function audit(action, extra) {
   }
 }
 
-// resumo seguro do corpo de uma acao (sem conteudo de arquivo/senhas)
+// safe summary of an action's body (no file content/passwords)
 function summarize(body) {
   if (!body || typeof body !== 'object') return {};
   const out = {};

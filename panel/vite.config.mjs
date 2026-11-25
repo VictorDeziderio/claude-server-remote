@@ -6,14 +6,14 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-// identidade do build embutida no bundle: o app compara com a que o servidor anuncia (state.
-// panelVersion/buildTime) e, se diferirem (aba aberta antes de um deploy), pede p/ recarregar.
-// BUILD_TIME e gravado pelo Dockerfile ANTES do `npm run build` — o mesmo arquivo que o server le.
+// build identity embedded in the bundle: the app compares it with the one the server announces (state.
+// panelVersion/buildTime) and, if they differ (tab opened before a deploy), asks to reload.
+// BUILD_TIME is written by the Dockerfile BEFORE `npm run build` — the same file the server reads.
 const readBuild = () => { try { return fs.readFileSync(new URL('./BUILD_TIME', import.meta.url), 'utf8').trim() } catch { return '' } }
 const pkgVersion = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
 
-// SPA do painel "Claude Remote". Build -> dist/ (servido pelo server.js em producao).
-// Em dev (`npm run dev`), API e WebSocket sao encaminhados p/ um server.js local na 7001.
+// SPA of the "Claude Remote" panel. Build -> dist/ (served by server.js in production).
+// In dev (`npm run dev`), API and WebSocket are forwarded to a local server.js on 7001.
 export default defineConfig({
   plugins: [react()],
   resolve: {

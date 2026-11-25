@@ -1,24 +1,24 @@
 'use strict';
 const { tr } = require('./i18n');
 /*
- * Terminal do painel.
+ * Panel terminal.
  *
- * 1) TERMINAL REAL (WebSocket /ws/term): abre um PTY (node-pty) rodando `tmux attach` na
- *    sessao pedida e faz a ponte bidirecional com o xterm.js do navegador. E um terminal
- *    de verdade — cores, cursor, TUI do Claude, resize, mouse, tudo passa. Fechar a aba
- *    so desconecta o cliente; a sessao tmux (e o Claude dentro dela) continua viva.
+ * 1) REAL TERMINAL (WebSocket /ws/term): opens a PTY (node-pty) running `tmux attach` on the
+ *    requested session and bridges it both ways with the browser's xterm.js. It is a real
+ *    terminal — colors, cursor, Claude's TUI, resize, mouse, everything goes through. Closing the tab
+ *    only disconnects the client; the tmux session (and Claude inside it) stays alive.
  *
- *    Alvos:  "shell" -> sessao cr-shell (bash em /root, criada sob demanda)
- *            <projeto> -> sessao claude-<projeto> (recriada via claude-session.sh se caiu)
- *    Param `detach=1` -> `attach -d` (derruba outros clientes: "assumir a sessao").
+ *    Targets:  "shell" -> cr-shell session (bash in /root, created on demand)
+ *            <project> -> claude-<project> session (recreated via claude-session.sh if it died)
+ *    Param `detach=1` -> `attach -d` (drops other clients: "take over the session").
  *
- *    Protocolo (frames de texto): cliente -> servidor: "\x01" + JSON de um tipo conhecido =
- *    controle ({type:'resize',cols,rows} | {type:'ping'}); qualquer outra coisa = teclado (raw).
- *    ("\x01" sozinho e o Ctrl+A do teclado — antes era engolido como controle invalido.)
- *    servidor -> cliente: saida bruta do PTY; "\x01" + JSON = eventos ({type:'ready'|'exit'}).
+ *    Protocol (text frames): client -> server: "\x01" + JSON of a known type =
+ *    control ({type:'resize',cols,rows} | {type:'ping'}); anything else = keyboard (raw).
+ *    ("\x01" alone is the keyboard's Ctrl+A — it used to be swallowed as an invalid control.)
+ *    server -> client: raw PTY output; "\x01" + JSON = events ({type:'ready'|'exit'}).
  *
- * 2) API REST de apoio: capture/send (login do Claude), janelas do tmux (listar/selecionar/
- *    criar/fechar) e exit (Ctrl-C x2).
+ * 2) Supporting REST API: capture/send (Claude login), tmux windows (list/select/
+ *    create/close) and exit (Ctrl-C x2).
  */
 const { WebSocketServer } = require('ws');
 const cfg = require('./config');
@@ -35,17 +35,17 @@ const hasSession = async (sess) => (await sh('tmux', ['has-session', '-t', '=' +
 
 async function ensureShell() {
   if (!(await hasSession(cfg.SHELL_SESSION))) {
-    await sh('tmux', ['new-session', '-d', '-s', cfg.SHELL_SESSION, '-c', cfg.HOME]); // bash em /root
+    await sh('tmux', ['new-session', '-d', '-s', cfg.SHELL_SESSION, '-c', cfg.HOME]); // bash in /root
   }
   return cfg.SHELL_SESSION;
 }
-// resolve o alvo ("shell" | projeto) p/ nome de sessao tmux, subindo a sessao se preciso
-// (projeto DESLIGADO nao sobe: o claude-session.sh respeita enabled=false)
+// resolves the target ("shell" | project) to a tmux session name, starting the session if needed
+// (a project that is OFF does not start: claude-session.sh respects enabled=false)
 async function targetSession(name, { create = true } = {}) {
   if (!name || name === 'shell') return create ? ensureShell() : cfg.SHELL_SESSION;
   if (!validName(name)) return null;
   const sess = sessionName(name);
-  // projeto apagado: a aba de terminal que ficou aberta NAO pode ressuscita-lo
+  // deleted project: a terminal tab left open must NOT bring it back
   if (create && !(await hasSession(sess))) {
     if (!fs.existsSync(path.join(cfg.PROJECTS_DIR, name))) return null;
     await ensureSession(name);
@@ -54,18 +54,18 @@ async function targetSession(name, { create = true } = {}) {
 }
 const isDisabled = (name) => !!name && name !== 'shell' && validName(name) && !projConfig(name).enabled;
 
-// ---------- REST de apoio ----------
-// lines = quantas linhas do HISTORICO (alem da tela) trazer: 200 por padrao (login do Claude);
-// a tela "Selecionar texto" do celular pede mais (ate CAPTURE_MAX) p/ copiar com o dedo.
+// ---------- supporting REST ----------
+// lines = how many lines of HISTORY (beyond the screen) to bring: 200 by default (Claude login);
+// the phone's "Select text" screen asks for more (up to CAPTURE_MAX) to copy with a finger.
 const CAPTURE_MAX = 5000;
 async function termCapture(name, lines) {
   const sess = await targetSession(name, { create: false });
   if (!sess) return { ok: false, msg: tr('srv.badTarget') };
   if (!(await hasSession(sess))) return { ok: false, msg: tr('srv.sessionDown') };
   const n = clampInt(lines, 0, CAPTURE_MAX, 200);
-  // -J junta as linhas quebradas pela largura do terminal (URL longa sai inteira)
+  // -J joins lines wrapped by the terminal width (a long URL comes out whole)
   const r = await sh('tmux', ['capture-pane', '-t', paneOf(sess), '-p', '-J', '-S', '-' + n]);
-  // sem as linhas vazias do fim da tela (o tmux preenche ate a ultima linha do painel)
+  // without the empty lines at the end of the screen (tmux fills up to the pane's last line)
   const content = (r.stdout || '').replace(/\s+$/, '') + (r.stdout ? '\n' : '');
   return { ok: r.ok, content, lines: n, msg: r.ok ? '' : tr('srv.captureFailed') };
 }
@@ -84,7 +84,7 @@ async function termSend(name, text, key) {
   }
   return { ok: true };
 }
-// Sai do Claude da sessao (Ctrl-C duas vezes). Com autoStart ON o supervisor reabre em ~3s.
+// Exits the session's Claude (Ctrl-C twice). With autoStart ON the supervisor reopens it in ~3s.
 async function termExit(name) {
   if (!validName(name)) return { ok: false, msg: tr('srv.badProject') };
   const sess = sessionName(name);
@@ -94,7 +94,7 @@ async function termExit(name) {
   await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-c']);
   return { ok: true, msg: tr('srv.claudeKilled', { sess }) };
 }
-// janelas do tmux da sessao
+// tmux windows of the session
 async function listWindows(name) {
   const sess = await targetSession(name, { create: false });
   if (!sess) return { ok: false, msg: tr('srv.badTarget') };
@@ -126,15 +126,15 @@ async function windowAction(name, action, index) {
 
 // ---------- WebSocket + PTY ----------
 const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
-const live = new Set(); // ptys abertos (p/ encerrar no shutdown)
-// achado @security: sem limite, uma sessao de painel (sid) podia abrir WebSockets sem parar,
-// cada um subindo um PTY (tmux attach) — cap por sessao de login, nao por IP/global, pra nao
-// punir varios dispositivos legitimos atras do mesmo IP.
+const live = new Set(); // open ptys (to close them on shutdown)
+// found by @security: with no limit, a panel session (sid) could open WebSockets nonstop,
+// each one starting a PTY (tmux attach) — cap per login session, not per IP/global, so as not to
+// punish several legitimate devices behind the same IP.
 const MAX_PTY_PER_SID = 10;
 const sidCounts = new Map(); // sid -> PTYs abertos agora
 const CTRL = '\x01';
 const CTL_TYPES = new Set(['resize', 'ping']);
-// frame de controle = "\x01" + JSON de um tipo conhecido; senao e teclado (ex.: Ctrl+A = "\x01")
+// control frame = "\x01" + JSON of a known type; otherwise it is keyboard (e.g. Ctrl+A = "\x01")
 function parseCtl(s) {
   if (s.charCodeAt(0) !== 1 || s.charCodeAt(1) !== 123 /* { */) return null;
   try { const c = JSON.parse(s.slice(1)); return c && CTL_TYPES.has(c.type) ? c : null; } catch { return null; }
@@ -166,7 +166,7 @@ function attach(ws, params, ip, sid) {
     }
     if (!alive) return;
     try {
-      // env minimo (sem PANEL_PASSWORD & cia): o cliente tmux so precisa de PATH/HOME/TERM
+      // minimal env (no PANEL_PASSWORD & co.): the tmux client only needs PATH/HOME/TERM
       const env = { TERM: 'xterm-256color', COLORTERM: 'truecolor', HOME: cfg.HOME, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' };
       for (const k of ['PATH', 'USER', 'LOGNAME', 'TMUX_TMPDIR', 'TZ']) if (process.env[k]) env[k] = process.env[k];
       const args = ['-u', 'attach-session', '-t', '=' + sess];
@@ -179,8 +179,8 @@ function attach(ws, params, ip, sid) {
     live.add(proc);
     log('info', 'terminal aberto', { ip, sess, cols, rows, detach });
     sendCtl({ type: 'ready', session: sess });
-    // Coalesce: a TUI do Claude emite dezenas de fragmentos por redesenho; agrupamos em janelas
-    // de ~8ms (ou 32KB) -> muito menos frames no WebSocket, sem latencia perceptivel.
+    // Coalesce: Claude's TUI emits dozens of fragments per redraw; we group them in windows
+    // of ~8ms (or 32KB) -> far fewer WebSocket frames, with no noticeable latency.
     let buf = '', flushTimer = null;
     const flush = () => { flushTimer = null; if (buf && ws.readyState === ws.OPEN) ws.send(buf); buf = ''; };
     proc.onData((d) => {
@@ -203,7 +203,7 @@ function attach(ws, params, ip, sid) {
     if (c) {
       if (c.type === 'resize' && proc) {
         const w = clampInt(c.cols, 20, 500, cols), h = clampInt(c.rows, 5, 200, rows);
-        try { proc.resize(w, h); } catch { /* pty ja fechou */ }
+        try { proc.resize(w, h); } catch { /* pty already closed */ }
       } else if (c.type === 'ping') sendCtl({ type: 'pong' });
       return;
     }

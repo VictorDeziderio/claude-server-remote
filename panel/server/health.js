@@ -1,8 +1,8 @@
 'use strict';
 const { tr } = require('./i18n');
-// Saude do host: disco, memoria, load, uptime, versoes (Claude Code atual x ultima no npm),
-// e atualizacao do Claude Code (npm i -g, via sudo sem senha do usuario ubuntu). Tem tambem o
-// sampler de 60s (CPU/memoria/alertas) — ver o fim do arquivo.
+// Host health: disk, memory, load, uptime, versions (current Claude Code x latest on npm),
+// and Claude Code update (npm i -g, via the ubuntu user's passwordless sudo). There is also the
+// 60s sampler (CPU/memory/alerts) — see the end of the file.
 const fs = require('fs');
 const os = require('os');
 const cfg = require('./config');
@@ -11,8 +11,8 @@ const claude = require('./claude');
 const alerts = require('./alerts');
 
 let latestCache = { t: 0, v: '' };
-let latestInflight = null; // achado @perf 2026-10-09: varias abas/componentes podem cair aqui
-// com o cache vencido ao mesmo tempo (1x/hora) — sem isso, cada um dispara seu proprio `npm view`
+let latestInflight = null; // found by @perf 2026-10-09: several tabs/components may land here
+// with the cache expired at the same time (1x/hour) — without this, each one fires its own `npm view`
 async function latestClaude() {
   if (latestCache.v && Date.now() - latestCache.t < 3600 * 1000) return latestCache.v;
   if (latestInflight) return latestInflight;
@@ -36,7 +36,7 @@ async function diskOf(p) {
   return { total, used, avail, pct: total ? Math.round((used / total) * 100) : 0 };
 }
 function memInfo() {
-  // /proc/meminfo da "disponivel" de verdade (os.freemem ignora cache)
+  // /proc/meminfo gives the real "available" (os.freemem ignores the cache)
   try {
     const t = fs.readFileSync('/proc/meminfo', 'utf8');
     const get = (k) => parseInt((t.match(new RegExp('^' + k + ':\\s+(\\d+)', 'm')) || [])[1] || '0', 10) * 1024;
@@ -70,10 +70,10 @@ async function health() {
   };
 }
 
-// ---------- sampler de 60s: CPU/memoria (ring de 6h) + alertas + disco>90% ----------
-// CPU em % via delta de /proc/stat entre amostras (os.cpus() da snapshot, nao taxa). So o
-// sampler chama isso (nunca health(), que e' sob demanda): um delta precisa de DUAS leituras
-// espacadas — chamar ad-hoc desalinharia o estado usado pelo proprio sampler.
+// ---------- 60s sampler: CPU/memory (6h ring) + alerts + disk>90% ----------
+// CPU in % via the /proc/stat delta between samples (os.cpus() gives a snapshot, not a rate). Only the
+// sampler calls this (never health(), which is on demand): a delta needs TWO reads
+// spaced apart — calling it ad hoc would misalign the state used by the sampler itself.
 function readProcStat() {
   try {
     const line = fs.readFileSync('/proc/stat', 'utf8').split('\n')[0];
@@ -92,7 +92,7 @@ function sampleCpuPct() {
   prevStat = cur;
   if (dTotal > 0) lastCpuPct = Math.round(((dTotal - dIdle) / dTotal) * 1000) / 10; // 1 casa decimal
 }
-// cgroup v2 (memory.current/memory.max); ausente (cgroup v1, ou fora de container) -> null
+// cgroup v2 (memory.current/memory.max); missing (cgroup v1, or outside a container) -> null
 function cgroupMem() {
   try {
     const cur = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf8').trim(), 10);
@@ -102,15 +102,15 @@ function cgroupMem() {
     return { current: cur, max: Number.isFinite(max) ? max : null, pct: Number.isFinite(max) && max > 0 ? Math.round((cur / max) * 100) : null };
   } catch { return null; }
 }
-// top 5 por %CPU. So `comm` (nome do executavel) — NUNCA args/command completo (pode conter
-// segredos passados por linha de comando).
+// top 5 by %CPU. Only `comm` (executable name) — NEVER the full args/command (it may contain
+// secrets passed on the command line).
 async function topProcesses() {
   const r = await sh('ps', ['-eo', 'pid,pcpu,rss,comm', '--sort=-pcpu']);
   if (!r.ok) return [];
   return r.stdout.trim().split('\n').slice(1, 6).map((l) => {
     const m = l.trim().match(/^(\d+)\s+([\d.]+)\s+(\d+)\s+(.+)$/);
     if (!m) return null;
-    return { pid: parseInt(m[1], 10), pcpu: parseFloat(m[2]), rss: parseInt(m[3], 10) * 1024, comm: m[4].trim() }; // ps da rss em KB; contrato quer bytes
+    return { pid: parseInt(m[1], 10), pcpu: parseFloat(m[2]), rss: parseInt(m[3], 10) * 1024, comm: m[4].trim() }; // ps gives rss in KB; the contract wants bytes
   }).filter(Boolean);
 }
 const RING_MAX = 360; // 6h a 60s
@@ -120,25 +120,25 @@ async function sample() {
   const mem = memInfo();
   ring.push({ t: Date.now(), cpu: lastCpuPct, mem: mem.pct });
   if (ring.length > RING_MAX) ring.shift();
-  alerts.poll(); // o arquivo de alertas so e lido aqui (60s), nunca no tick do watcher (2s)
+  alerts.poll(); // the alerts file is only read here (60s), never on the watcher tick (2s)
   const disk = await diskOf(cfg.HOME);
   if (disk) alerts.maybeDiskAlert(disk.pct);
 }
 setInterval(() => { sample().catch((e) => log('error', 'health sampler', { err: e.message })); }, 60000).unref();
-sample().catch(() => { /* 1a amostra: so popula o ring, sem alarme se falhar */ });
+sample().catch(() => { /* first sample: only fills the ring, no alarm if it fails */ });
 
-let updating = null; // promise em andamento
+let updating = null; // promise in progress
 async function updateClaude() {
   if (updating) return { ok: false, msg: tr('srv.updateRunning') };
   updating = (async () => {
     log('info', 'atualizando Claude Code');
-    // npm global e do root -> sudo -n (NOPASSWD no Dockerfile). Timeout generoso (baixa o pacote).
+    // global npm belongs to root -> sudo -n (NOPASSWD in the Dockerfile). Generous timeout (it downloads the package).
     const r = await sh('sudo', ['-n', 'npm', 'install', '-g', '@anthropic-ai/claude-code@latest'], { timeout: 5 * 60 * 1000 });
     claude.resetVersionCache();
     latestCache = { t: 0, v: '' };
     const v = await claude.claudeVersion();
-    // desde a 2.1.28x o `claude` e um binario nativo (dependencia opcional): se o download dele
-    // falhou, o npm "passa" mas o claude nao roda -> reprova em vez de dizer "atualizado"
+    // since 2.1.28x `claude` is a native binary (optional dependency): if its download
+    // failed, npm "passes" but claude does not run -> fail instead of saying "updated"
     if (r.ok && !/\d+\.\d+\.\d+/.test(v)) {
       return { ok: false, msg: tr('srv.npmNoBinary'), output: (r.stdout + r.stderr).slice(-2000) };
     }

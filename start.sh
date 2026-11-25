@@ -14,7 +14,7 @@ LIB="${DEVBOX_LIB:-/usr/local/lib/devbox/lib.sh}"
 . "$LIB"   # only for the backoff functions (run_bg) -- the paths below stay its own
 
 U=ubuntu
-H=/root                                     # home do ubuntu = volume persistente
+H=/root                                     # ubuntu's home = persistent volume
 export PROJECT_FOLDER="${PROJECT_FOLDER:-projects}"
 export PROJECTS_DIR="${PROJECTS_DIR:-$H/projects}"
 export PANEL_CONFIG="${PANEL_CONFIG:-$H/.claude/panel.json}"
@@ -88,7 +88,7 @@ exec "$REAL_CLAUDE" "\$@"
 WRAP
   chmod +x /usr/local/bin/claude
 fi
-# alguns hooks esperam /usr/local/bin/node (o NodeSource instala em /usr/bin)
+# some hooks expect /usr/local/bin/node (NodeSource installs it in /usr/bin)
 [ -e /usr/local/bin/node ] || ln -sf /usr/bin/node /usr/local/bin/node
 
 # GitHub CLI: auto-login via GH_TOKEN + git using gh as the credential helper (backup pushes)
@@ -161,7 +161,7 @@ if [ "${BACKUP_ENABLED:-true}" = "true" ]; then
   say "backup: on (every ${BACKUP_INTERVAL:-3600}s) | log: $LOGS/backup.log"
   # lowest CPU and disk priority: the backup never competes with Claude/the panel
   ( while sleep "${BACKUP_INTERVAL:-3600}"; do as_user nice -n 15 ionice -c3 bash /usr/local/bin/backup.sh >/dev/null 2>&1 || true; done ) &
-  # snapshot da CONFIG (~/.claude + ~/.claude.json) 1x/dia -> /root/.claude-backups (rotaciona 7)
+  # CONFIG snapshot (~/.claude + ~/.claude.json) 1x/day -> /root/.claude-backups (keeps 7)
   ( sleep 120; while true; do
       as_user nice -n 15 ionice -c3 bash /usr/local/bin/backup.sh --config >/dev/null 2>&1 || true
       sleep "${CONFIG_BACKUP_INTERVAL:-86400}"

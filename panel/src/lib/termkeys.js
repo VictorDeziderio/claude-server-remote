@@ -1,12 +1,12 @@
-// Teclas do terminal no celular — logica PURA (sem DOM/React), testada em node (test/unit.mjs).
+// Terminal keys on the phone — PURE logic (no DOM/React), tested in node (test/unit.mjs).
 //
-// - EXTRA_KEYS: a barra de teclas extras (Esc, Tab, Ctrl, Alt, setas, ^C, Enter, / | ~ -, colar).
-// - CLAUDE_ACTIONS: atalhos de um toque para o Claude Code (Esc, Shift+Tab = modo, 1/2/3 =
-//   responder a pergunta, /remote-control).
-// - Ctrl/Alt "grudentos" (sticky): tocar Ctrl e depois uma letra do teclado do celular manda
-//   Ctrl+letra. 1 toque = so a proxima tecla; 2 toques = travado; 3o toque = desliga.
-// - applyModifiers(): aplica Ctrl/Alt ao que o teclado do celular digitou (texto cru do xterm).
-// - touchScroll(): converte o arrasto do dedo em "linhas" de rolagem (roda do mouse do tmux).
+// - EXTRA_KEYS: the extra keys bar (Esc, Tab, Ctrl, Alt, arrows, ^C, Enter, / | ~ -, paste).
+// - CLAUDE_ACTIONS: one-tap shortcuts for Claude Code (Esc, Shift+Tab = mode, 1/2/3 =
+//   answer the question, /remote-control).
+// - "Sticky" Ctrl/Alt: tapping Ctrl and then a letter on the phone keyboard sends
+//   Ctrl+letter. 1 tap = only the next key; 2 taps = locked; 3rd tap = off.
+// - applyModifiers(): applies Ctrl/Alt to what the phone keyboard typed (raw xterm text).
+// - touchScroll(): turns the finger drag into scroll "lines" (tmux mouse wheel).
 
 export const ESC = '\x1b'
 export const SEQ = {
@@ -29,8 +29,8 @@ export const SEQ = {
   ctrlR: '\x12',
 }
 
-// kind: 'seq' manda a sequencia | 'mod' liga/desliga um modificador | 'action' (colar...)
-// repeat: segurar o botao repete (setas)
+// kind: 'seq' sends the sequence | 'mod' turns a modifier on/off | 'action' (paste...)
+// repeat: holding the button repeats (arrows)
 export const EXTRA_KEYS = [
   { id: 'esc', label: 'Esc', seq: SEQ.esc, title: 'Escape' },
   { id: 'tab', label: 'Tab', seq: SEQ.tab, title: 'Tab' },
@@ -56,7 +56,7 @@ export const EXTRA_KEYS = [
   { id: 'paste', label: 'Paste', action: 'paste', title: 'Paste from clipboard' },
 ]
 
-// Atalhos do Claude Code (so nas sessoes de projeto)
+// Claude Code shortcuts (only in project sessions)
 export const CLAUDE_ACTIONS = [
   { id: 'esc', label: 'Esc', seq: SEQ.esc, title: 'Esc: stop Claude / cancel' },
   { id: 'mode', label: '⇧Tab mode', seq: SEQ.shiftTab, title: 'Shift+Tab: cycle mode (normal / auto-accept / plan)' },
@@ -67,15 +67,15 @@ export const CLAUDE_ACTIONS = [
   { id: 'rc', label: '/remote-control', seq: '/remote-control' + SEQ.enter, title: 'Type /remote-control + Enter' },
 ]
 
-// ---------- modificadores grudentos ----------
-// estado: 'off' -> 'once' (so a proxima tecla) -> 'lock' (ate desligar) -> 'off'
+// ---------- sticky modifiers ----------
+// state: 'off' -> 'once' (only the next key) -> 'lock' (until turned off) -> 'off'
 export function cycleMod(state) {
   return state === 'off' || !state ? 'once' : state === 'once' ? 'lock' : 'off'
 }
-// depois de usar: 'once' volta a 'off'; 'lock' continua
+// after use: 'once' goes back to 'off'; 'lock' stays
 export const afterUse = (state) => (state === 'lock' ? 'lock' : 'off')
 
-// Ctrl + 1 caractere -> byte de controle (ou null se nao existe Ctrl dessa tecla)
+// Ctrl + 1 character -> control byte (or null if that key has no Ctrl)
 export function ctrlChar(ch) {
   if (!ch || ch.length !== 1) return null
   const c = ch.charCodeAt(0)
@@ -85,7 +85,7 @@ export function ctrlChar(ch) {
   return map[ch] ?? null
 }
 
-// CSI de cursor/edicao (setas, Home/End, PgUp/PgDn) com modificador xterm:
+// cursor/editing CSI (arrows, Home/End, PgUp/PgDn) with an xterm modifier:
 // ESC [ A -> ESC [ 1 ; m A   e   ESC [ 5 ~ -> ESC [ 5 ; m ~   (m = 1 + shift(1) + alt(2) + ctrl(4))
 function modifyCsi(seq, m) {
   let r = /^\x1b\[([ABCDHF])$/.exec(seq) || /^\x1bO([ABCDHF])$/.exec(seq)
@@ -95,17 +95,17 @@ function modifyCsi(seq, m) {
   return null
 }
 
-// Aplica Ctrl/Alt ao texto digitado. mods = { ctrl: bool, alt: bool }.
-// So o PRIMEIRO "toque de tecla" e modificado (o resto de um texto colado/IME passa intacto).
+// Applies Ctrl/Alt to the typed text. mods = { ctrl: bool, alt: bool }.
+// Only the FIRST "key press" is modified (the rest of a pasted/IME text passes untouched).
 export function applyModifiers(data, mods = {}) {
   if (!data || (!mods.ctrl && !mods.alt)) return data
   if (data.charCodeAt(0) === 27 && data.length > 1) {
     const m = 1 + (mods.alt ? 2 : 0) + (mods.ctrl ? 4 : 0)
     const csi = modifyCsi(data, m)
     if (csi) return csi
-    return data // outra sequencia de escape: nao mexe
+    return data // another escape sequence: leave it alone
   }
-  // 1o caractere (cuidado com surrogate pairs/emoji: nao tem Ctrl)
+  // first character (careful with surrogate pairs/emoji: they have no Ctrl)
   const first = String.fromCodePoint(data.codePointAt(0))
   const rest = data.slice(first.length)
   let out = first
@@ -124,13 +124,13 @@ export const clampFont = (n, d = 13) => {
   const v = Math.round(Number(n))
   return Number.isFinite(v) ? Math.min(FONT_MAX, Math.max(FONT_MIN, v)) : d
 }
-// fonte inicial: a salva pelo usuario, senao uma menor no celular (cabe ~45 colunas em 390px)
+// initial font: the one saved by the user, otherwise a smaller one on the phone (fits ~45 columns in 390px)
 export const defaultFont = (narrow) => (narrow ? 12 : 13)
 
 // ---------- rolagem por toque ----------
-// dy = deslocamento do dedo (px, + = dedo desceu = rolar p/ CIMA no historico), cell = altura
-// da linha (px), carry = sobra acumulada do arrasto anterior. Retorna { lines, carry }:
-// lines > 0 = rolar p/ cima (historico), < 0 = p/ baixo.
+// dy = finger offset (px, + = finger went down = scroll UP in the history), cell = line
+// height (px), carry = leftover accumulated from the previous drag. Returns { lines, carry }:
+// lines > 0 = scroll up (history), < 0 = down.
 export function touchScroll(dy, cell, carry = 0) {
   const h = cell > 0 ? cell : 16
   const total = carry + dy
@@ -138,13 +138,13 @@ export function touchScroll(dy, cell, carry = 0) {
   return { lines, carry: total - lines * h }
 }
 
-// O xterm manda pelo onData tambem respostas AUTOMATICAS ao programa (relatorio de mouse, foco,
-// posicao do cursor, atributos do terminal). Elas nao sao "a proxima tecla" do usuario: o Ctrl
-// grudento nao pode ser aplicado nem gasto nelas.
+// xterm also sends AUTOMATIC answers to the program through onData (mouse report, focus,
+// cursor position, terminal attributes). They are not the user's "next key": the sticky
+// Ctrl must not be applied to nor spent on them.
 export function isUserInput(data) {
   if (!data) return false
   return !/^\x1b\[(<[\d;]+[Mm]|M[\s\S]{3}|[IO]|\d+;\d+R|[?>][\d;]*c)$/.test(data)
 }
 
-// teclado virtual aberto? (altura visivel bem menor que a altura "cheia" da janela)
+// virtual keyboard open? (visible height much smaller than the window's "full" height)
 export const keyboardOpen = (visibleH, fullH) => fullH > 0 && visibleH > 0 && fullH - visibleH > 120

@@ -1,12 +1,12 @@
 import * as React from "react"
 import { cn } from "cn"
 
-// NOTA: a versao original (gerada pra Tailwind v4) usava sintaxe de valor arbitrario
-// `px-(--card-spacing)` / `py-(--card-spacing)` / `gap-(--card-spacing)` -- essas classes
-// nao existem no Tailwind v3 (a versao deste projeto) e nao geram NENHUMA regra CSS, deixando
-// Card/CardHeader/CardContent/CardFooter sem padding/gap nenhum (conteudo colado na borda).
-// Reescrito com utilitarios fixos do v3 (p-4/gap-4), removida a variante "size" (nao usada
-// em lugar nenhum do app).
+// NOTE: the original version (generated for Tailwind v4) used arbitrary value syntax
+// `px-(--card-spacing)` / `py-(--card-spacing)` / `gap-(--card-spacing)` -- those classes
+// do not exist in Tailwind v3 (this project's version) and generate NO CSS rule, leaving
+// Card/CardHeader/CardContent/CardFooter with no padding/gap at all (content stuck to the edge).
+// Rewritten with fixed v3 utilities (p-4/gap-4), removed the "size" variant (not used
+// anywhere in the app).
 
 function Card({
   className,

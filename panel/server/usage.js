@@ -1,16 +1,16 @@
 'use strict';
-// Consumo de tokens + custo estimado: percorre ~/.claude/projects/**/*.jsonl e agrega por dia,
-// por (dia, projeto) e por modelo. O Claude guarda o historico em
-// ~/.claude/projects/<cwd codificado> (nao-alfanumerico -> "-").
+// Token use + estimated cost: walks ~/.claude/projects/**/*.jsonl and aggregates per day,
+// per (day, project) and per model. Claude keeps the history in
+// ~/.claude/projects/<encoded cwd> (non-alphanumeric -> "-").
 //
-// Cache incremental por arquivo (achado @perf 2026-10-09): reler os .jsonl inteiros a cada
-// poucos segundos travava o painel (~80% de 1 core, ~30s de CPU por passada em ~2GB/540
-// arquivos) — o watcher de atividade (events.js, a cada 2s) chama buildState() -> aqui dentro
-// a cada tick. .jsonl e append-only enquanto a sessao esta viva: arquivo que nao mudou de
-// mtime+size nao e reaberto; arquivo que cresceu so le os bytes NOVOS (a partir do offset da
-// ultima leitura) e soma por cima do que ja estava acumulado. Resultado e identico ao de ler
-// tudo do zero (comparado com a versao anterior deste algoritmo via script de equivalencia
-// contra um snapshot congelado de ~/.claude/projects) — so o custo que cai.
+// Incremental per-file cache (found by @perf 2026-10-09): rereading the whole .jsonl files every
+// few seconds froze the panel (~80% of 1 core, ~30s of CPU per pass over ~2GB/540
+// files) — the activity watcher (events.js, every 2s) calls buildState() -> in here
+// on each tick. .jsonl is append-only while the session is alive: a file whose
+// mtime+size did not change is not reopened; a file that grew only reads the NEW bytes (from the offset of the
+// last read) and adds them on top of what was already accumulated. The result is identical to reading
+// everything from scratch (compared with the previous version of this algorithm via an equivalence script
+// against a frozen snapshot of ~/.claude/projects) — only the cost goes down.
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
@@ -18,9 +18,9 @@ const { listProjects } = require('./projects-list');
 
 const encOf = (p) => p.replace(/[^a-zA-Z0-9]/g, '-');
 
-// Tabela de precos (US$ por 1M tokens) — API Anthropic, referencia 2026-06. Cache write 5min = 1.25x
-// entrada; cache read = 0.1x (Fable 5.1 = $0.25). Match por substring do id do modelo; o que
-// nao casar usa "default" e e marcado como estimativa grosseira. Nao substitui a fatura real.
+// Price table (US$ per 1M tokens) — Anthropic API, reference 2026-06. Cache write 5min = 1.25x
+// input; cache read = 0.1x (Fable 5.1 = $0.25). Matched by substring of the model id; whatever
+// does not match uses "default" and is marked as a rough estimate. Does not replace the real invoice.
 const PRICES = [
   ['fable-5-1', { in: 10, out: 50, cw: 12.5, cr: 0.25 }],
   ['mythos-5-1', { in: 10, out: 50, cw: 12.5, cr: 0.25 }],
@@ -55,7 +55,7 @@ const costOf = (b, model) => {
 
 const bucket = () => ({ in: 0, out: 0, cacheW: 0, cacheR: 0, messages: 0, cost: 0 });
 const add = (t, b) => { t.in += b.in; t.out += b.out; t.cacheW += b.cacheW; t.cacheR += b.cacheR; t.messages += b.messages; t.cost += b.cost; };
-// soma um "dia" (bucket + byProject + byModel) de `source` dentro de `target`, dia a dia
+// adds a "day" (bucket + byProject + byModel) of `source` into `target`, day by day
 function mergeDayInto(target, source) {
   for (const [day, srcD] of Object.entries(source)) {
     const D = target[day] || (target[day] = { ...bucket(), byProject: {}, byModel: {} });
@@ -65,7 +65,7 @@ function mergeDayInto(target, source) {
   }
 }
 
-// parseia um trecho de texto (linhas .jsonl completas) e acumula em `perDay` + `stats.messages`
+// parses a chunk of text (complete .jsonl lines) and accumulates into `perDay` + `stats.messages`
 function parseLinesInto(text, pname, perDay, stats) {
   for (const line of text.split('\n')) {
     if (!line) continue;
@@ -88,19 +88,19 @@ function parseLinesInto(text, pname, perDay, stats) {
   }
 }
 
-// path absoluto -> { mtimeMs, size, offset (bytes ja lidos), pname, perDay (acumulado deste arquivo), messages }
+// absolute path -> { mtimeMs, size, offset (bytes already read), pname, perDay (accumulated for this file), messages }
 const fileState = new Map();
 
-// atualiza (ou cria) o estado incremental de UM arquivo e devolve a entrada (com `perDay` SO
-// deste arquivo) — null se o arquivo sumiu, deu erro de leitura, ou passa de 64MB (mesmo limite
-// de antes: fica de fora da agregacao, mesmo que ja tivesse entrado antes de crescer).
+// updates (or creates) the incremental state of ONE file and returns the entry (with `perDay` ONLY
+// for this file) — null if the file is gone, failed to read, or is over 64MB (same limit
+// as before: it stays out of the aggregation, even if it was already in before growing).
 function fileContribution(fpath, pname) {
   let st;
   try { st = fs.statSync(fpath); } catch { fileState.delete(fpath); return null; }
   if (st.size > 64 * 1024 * 1024) { fileState.delete(fpath); return null; }
   const prev = fileState.get(fpath);
-  if (prev && prev.mtimeMs === st.mtimeMs && prev.size === st.size) return prev; // nada mudou
-  const fromScratch = !prev || st.size < prev.size; // novo, ou truncado/girado (nao deveria acontecer com .jsonl, mas nao confia)
+  if (prev && prev.mtimeMs === st.mtimeMs && prev.size === st.size) return prev; // nothing changed
+  const fromScratch = !prev || st.size < prev.size; // new, or truncated/rotated (should not happen with .jsonl, but do not trust it)
   const start = fromScratch ? 0 : prev.offset;
   let buf;
   try {
@@ -108,15 +108,15 @@ function fileContribution(fpath, pname) {
     try { buf = Buffer.alloc(st.size - start); fs.readSync(fd, buf, 0, buf.length, start); }
     finally { fs.closeSync(fd); }
   } catch { fileState.delete(fpath); return null; }
-  // acha o ultimo '\n' em BYTES (0x0a e sempre 1 byte, nunca parte de um char multibyte UTF-8).
-  // usar text.lastIndexOf('\n') numa string decodificada seria um bug: String.length conta
-  // unidades UTF-16, nao bytes — qualquer acento/emoji no conteudo desalinha o offset (achado
-  // @perf 2026-10-09: foi exatamente isso que causava contagem duplicada entre leituras —
-  // o proximo read reabria um trecho que ja tinha sido contado).
+  // finds the last '\n' in BYTES (0x0a is always 1 byte, never part of a multibyte UTF-8 char).
+  // using text.lastIndexOf('\n') on a decoded string would be a bug: String.length counts
+  // UTF-16 units, not bytes — any accent/emoji in the content misaligns the offset (found by
+  // @perf 2026-10-09: that is exactly what caused double counting between reads —
+  // the next read reopened a chunk that had already been counted).
   const lastNlByte = buf.lastIndexOf(0x0a);
   const completeBuf = lastNlByte === -1 ? Buffer.alloc(0) : buf.subarray(0, lastNlByte + 1);
-  const complete = completeBuf.toString('utf8'); // so linhas completas (um append pode estar na metade)
-  const perDay = fromScratch ? {} : prev.perDay; // estende o mesmo acumulado (nada le o objeto antigo depois disso)
+  const complete = completeBuf.toString('utf8'); // only complete lines (an append may be halfway)
+  const perDay = fromScratch ? {} : prev.perDay; // extends the same accumulator (nothing reads the old object after this)
   const stats = { messages: 0 };
   parseLinesInto(complete, pname, perDay, stats);
   const entry = {
@@ -153,15 +153,15 @@ function rawByDay() {
     mergeDayInto(perDay, entry.perDay);
     messages += entry.messages;
   }
-  // limpa o cache de arquivos que sairam do disco (nao cresce pra sempre)
+  // drops the cache of files that left the disk (does not grow forever)
   for (const k of fileState.keys()) if (!seen.has(k)) fileState.delete(k);
   return { perDay, sessions: files.length, messages };
 }
 
-// subiu de 10s pra 60s (achado @perf 2026-10-09): com o cache incremental acima a passada
-// completa ja e barata (so stat() de cada arquivo + merge em memoria), mas nao ha necessidade
-// de refazer isso a cada tick do watcher (2s) — o dashboard nao precisa de uso/custo com
-// granularidade menor que ~1min.
+// raised from 10s to 60s (found by @perf 2026-10-09): with the incremental cache above the full
+// pass is already cheap (only a stat() of each file + an in-memory merge), but there is no need
+// to redo it on every watcher tick (2s) — the dashboard does not need usage/cost with
+// a granularity finer than ~1min.
 let rawCache = { t: 0, v: null };
 function rawCached() {
   const now = Date.now();
@@ -170,7 +170,7 @@ function rawCached() {
   return rawCache.v;
 }
 
-// agrega o periodo [from, to] (inclusivo, 'YYYY-MM-DD'; vazio = sem limite)
+// aggregates the period [from, to] (inclusive, 'YYYY-MM-DD'; empty = no limit)
 function aggregateRange(from, to) {
   const raw = rawCached();
   const out = {
@@ -194,7 +194,7 @@ function aggregateRange(from, to) {
   return out;
 }
 
-// usage do dashboard: total (tudo) + hoje + ultimos 30 dias
+// dashboard usage: total (everything) + today + last 30 days
 function usageSummary() {
   const all = aggregateRange('', '');
   const today = new Date().toISOString().slice(0, 10);

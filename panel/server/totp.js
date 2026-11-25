@@ -1,7 +1,7 @@
 'use strict';
 const { tr } = require('./i18n');
-// 2FA por TOTP (RFC 6238) sem dependencias: base32, HMAC-SHA1, passo de 30s, janela +-1.
-// Segredo persistido em ~/.claude/.panel-totp.json (modo 600). Fluxo: setup -> enable(code) -> login exige code.
+// TOTP 2FA (RFC 6238) with no dependencies: base32, HMAC-SHA1, 30s step, +-1 window.
+// Secret persisted in ~/.claude/.panel-totp.json (mode 600). Flow: setup -> enable(code) -> login requires code.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -52,7 +52,7 @@ function verifyCode(secret, code, window = 1) {
 let state = { enabled: false, secret: '', pending: '', enabledAt: 0, lastUsed: '' };
 function load() {
   try { const j = JSON.parse(fs.readFileSync(cfg.TOTP_FILE, 'utf8')); if (j && typeof j === 'object') state = { ...state, ...j, pending: '' }; }
-  catch { /* sem 2FA */ }
+  catch { /* no 2FA */ }
 }
 function save() {
   try {
@@ -67,10 +67,10 @@ load();
 const isEnabled = () => state.enabled && !!state.secret;
 const issuer = 'Claude Remote';
 
-// gera um segredo pendente (so vira ativo depois de enable() com um codigo valido).
-// achado @security: com o 2FA JA ativo, gerar um novo QR sem provar o codigo atual deixava
-// uma sessao de painel ja autenticada (ex.: cookie vazado) trocar o segredo por um que o
-// invasor controla — exige o codigo do segredo ATUAL antes de abrir um novo setup.
+// generates a pending secret (it only becomes active after enable() with a valid code).
+// found by @security: with 2FA ALREADY on, generating a new QR without proving the current code let
+// an already authenticated panel session (e.g. a leaked cookie) swap the secret for one the
+// attacker controls — requires the code of the CURRENT secret before opening a new setup.
 function setup(host, code) {
   if (isEnabled() && !verifyCode(state.secret, code)) {
     return { ok: false, msg: tr('srv.2faActive') };
@@ -94,7 +94,7 @@ function disable(code) {
   save();
   return { ok: true, msg: tr('srv.2faOff') };
 }
-// usado no login. Bloqueia reuso do MESMO codigo dentro da janela (replay).
+// used at login. Blocks reuse of the SAME code within the window (replay).
 function check(code) {
   if (!isEnabled()) return true;
   const c = String(code || '').replace(/\s+/g, '');
@@ -105,7 +105,7 @@ function check(code) {
 }
 const status = () => ({ enabled: isEnabled(), enabledAt: state.enabledAt || 0 });
 
-// helpers de teste: codigo do passo atual (ou deslocado) p/ um segredo base32
+// test helpers: code of the current (or shifted) step for a base32 secret
 const codeFor = (secret, offset = 0) => hotp(b32decode(secret), Math.floor(Date.now() / 30000) + offset);
 
 module.exports = { isEnabled, setup, enable, disable, check, status, _verify: verifyCode, _code: codeFor, _b32encode: b32encode };

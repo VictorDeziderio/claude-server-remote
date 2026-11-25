@@ -1,7 +1,7 @@
 'use strict';
 const { tr } = require('./i18n');
-// Projetos: config (panel.json), sessoes tmux por projeto, acoes (criar/renomear/excluir/
-// reiniciar/remote/primeira linha) e o estado consolidado do dashboard.
+// Projects: config (panel.json), tmux sessions per project, actions (create/rename/delete/
+// restart/remote/first line) and the consolidated dashboard state.
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
@@ -9,13 +9,13 @@ const { sh, validName, sessionName, paneOf, truthy, log, typeLine } = require('.
 const { listProjects } = require('./projects-list');
 const { loginInfo, claudeVersion } = require('./claude');
 const events = require('./events');
-const history = require('./history'); // seguro no topo: history.js so pede ./projects LAZY (dentro de uma funcao)
+const history = require('./history'); // safe at the top: history.js only requires ./projects LAZILY (inside a function)
 
 const remoteCmdFor = (name) => '/remote-control ' + (cfg.REMOTE_CONTROL_NAME || name);
 
 // ---------- config (panel.json) ----------
-// enabled: projeto LIGADO (sessao sobe no boot e o watchdog a mantem) | autoStartClaude: a sessao
-// roda o Claude | autoRemote: religa o /remote-control a cada inicio do Claude (claude-loop.sh)
+// enabled: project ON (session starts at boot and the watchdog keeps it) | autoStartClaude: the session
+// runs Claude | autoRemote: turns /remote-control back on at each Claude start (claude-loop.sh)
 const FLAGS = ['enabled', 'autoStartClaude', 'autoRemote'];
 const DEFAULTS = { enabled: true, autoStartClaude: true, autoRemote: true, idlePauseHours: 0 };
 const SESSION_MODES = new Set(['new', 'continue', 'pinned']);
@@ -32,27 +32,27 @@ function saveConfig(c) {
     fs.mkdirSync(path.dirname(cfg.CONFIG_FILE), { recursive: true });
     const tmp = cfg.CONFIG_FILE + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(c, null, 2) + '\n');
-    fs.renameSync(tmp, cfg.CONFIG_FILE); // escrita atomica (o claude-session.sh le esse arquivo)
+    fs.renameSync(tmp, cfg.CONFIG_FILE); // atomic write (claude-session.sh reads this file)
     return true;
   } catch (e) { log('error', 'erro salvando panel.json', { err: e.message }); return false; }
 }
-// mesma derivacao de projConfig, mas a partir de um `c` (loadConfig()) ja carregado — usado no
-// buildState (hot path do watcher) p/ nao reler panel.json do disco uma vez por projeto a cada tick
+// same derivation as projConfig, but from a `c` (loadConfig()) already loaded — used in
+// buildState (watcher hot path) so panel.json is not reread from disk once per project on each tick
 function configFrom(c, name) {
   const d = c.defaults || {};
   const p = (c.projects && c.projects[name]) || {};
-  // mesma regra do devbox-lib.sh (proj_config): so `false` explicito desliga
+  // same rule as devbox-lib.sh (proj_config): only an explicit `false` turns it off
   const pick = (k) => (k in p ? p[k] !== false : (k in d ? d[k] !== false : true));
   const numOr = (v, fallback) => (typeof v === 'number' && v >= 0 ? v : fallback);
   return {
     enabled: pick('enabled'),
     autoStartClaude: pick('autoStartClaude'),
     autoRemote: pick('autoRemote'),
-    initLine: typeof p.initLine === 'string' ? p.initLine : '', // "primeira linha" enviada ao Claude quando ele fica pronto
-    // sessionMode: 'new' (comeca do zero) | 'continue' (claude --continue) | 'pinned' (--resume <id> fixo)
+    initLine: typeof p.initLine === 'string' ? p.initLine : '', // "first line" sent to Claude when it is ready
+    // sessionMode: 'new' (starts from zero) | 'continue' (claude --continue) | 'pinned' (fixed --resume <id>)
     sessionMode: SESSION_MODES.has(p.sessionMode) ? p.sessionMode : 'new',
     pinnedSession: typeof p.pinnedSession === 'string' ? p.pinnedSession : '',
-    // 0 = off; override por projeto, senao o default do panel.json, senao 0
+    // 0 = off; per-project override, otherwise the panel.json default, otherwise 0
     idlePauseHours: numOr(p.idlePauseHours, numOr(d.idlePauseHours, 0)),
   };
 }
@@ -64,22 +64,22 @@ function setProjConfig(name, patch) {
   return saveConfig(c);
 }
 
-// ---------- sessao tmux ----------
+// ---------- tmux session ----------
 const sessionUp = async (sess) => (await sh('tmux', ['has-session', '-t', '=' + sess])).ok;
-// sobe a sessao do projeto SE ele estiver ligado (o script respeita enabled=false)
+// starts the project session IF it is on (the script respects enabled=false)
 const ensureSession = (name) => sh('bash', [cfg.SESSION_SCRIPT, name]);
 async function killSession(name) {
   const sess = sessionName(name);
   await sh('tmux', ['kill-session', '-t', '=' + sess]);
   try { fs.rmSync(path.join(cfg.RUN_DIR, sess + '.running'), { force: true }); } catch { /* */ }
 }
-// recria a sessao do zero (fecha remote + Claude) com a config atual.
-// Trava com um sentinel em RUN_DIR (achado @qa 2026-09-28) so durante o kill: sem ele, o
-// watchdog do start.sh (claude-session.sh --all, a cada 10s) podia enxergar a sessao ja
-// morta e recria-la ANTES do ensureSession daqui rodar (corrida). O lock e' liberado ANTES
-// do ensureSession (nao envolve a chamada inteira): ensureSession chama o MESMO
-// claude-session.sh que respeita o lock, entao segura-lo durante o proprio ensureSession
-// bloquearia o painel de recriar a sua propria sessao (deadlock — pego pelo smoke test).
+// recreates the session from scratch (closes remote + Claude) with the current config.
+// Locks with a sentinel in RUN_DIR (found by @qa 2026-09-28) only during the kill: without it, the
+// start.sh watchdog (claude-session.sh --all, every 10s) could see the session already
+// dead and recreate it BEFORE the ensureSession here ran (race). The lock is released BEFORE
+// ensureSession (it does not wrap the whole call): ensureSession calls the SAME
+// claude-session.sh that respects the lock, so holding it during ensureSession itself
+// would block the panel from recreating its own session (deadlock — caught by the smoke test).
 async function recreateSession(name) {
   const sess = sessionName(name);
   const lock = path.join(cfg.RUN_DIR, sess + '.lock');
@@ -92,11 +92,11 @@ async function recreateSession(name) {
   await ensureSession(name);
 }
 const projectExists = (name) => validName(name) && fs.existsSync(path.join(cfg.PROJECTS_DIR, name));
-// Claude de fato rodando nessa sessao? flag file mantido pelo claude-loop.sh
+// Claude really running in this session? flag file kept by claude-loop.sh
 function claudeRunningFlag(sess) {
   try { return fs.existsSync(path.join(cfg.RUN_DIR, sess + '.running')); } catch { return false; }
 }
-// pausado (manual ou por inatividade)? o claude-loop.sh nao reabre o Claude enquanto o flag existe
+// paused (by hand or for inactivity)? claude-loop.sh does not reopen Claude while the flag exists
 const pausedFlagPath = (sess) => path.join(cfg.RUN_DIR, sess + '.paused');
 function pausedFlag(sess) {
   try { return fs.existsSync(pausedFlagPath(sess)); } catch { return false; }
@@ -114,8 +114,8 @@ async function createProject(name, autoStartClaude, autoRemote) {
   events.poke();
   return { ok: true, msg: tr('srv.created', { name, claude: autoStartClaude ? 'ON' : 'OFF', remote: autoRemote ? 'ON' : 'OFF' }) };
 }
-// Reiniciar = LIGA (se estava desligado) + mata a sessao inteira + recria do zero. O supervisor
-// reabre o Claude, re-emite o remote-control e envia a primeira linha.
+// Restart = turns ON (if it was off) + kills the whole session + recreates it from scratch. The supervisor
+// reopens Claude, sends remote-control again and sends the first line.
 async function restartProject(name) {
   if (!projectExists(name)) return { ok: false, msg: tr('srv.noProject') };
   if (!projConfig(name).enabled && !setProjConfig(name, { enabled: true })) return { ok: false, msg: tr('srv.saveConfigFailed') };
@@ -125,8 +125,8 @@ async function restartProject(name) {
   if (!c.autoStartClaude) return { ok: true, msg: tr('srv.restartedShell', { name }) };
   return { ok: true, msg: tr('srv.restarted', { name }) + (c.autoRemote ? tr('srv.restartedRemote') : '') + (c.initLine ? tr('srv.restartedInit') : '') };
 }
-// Ligar/desligar o PROJETO. Desligado = sem sessao tmux, e continua assim no boot do container
-// e no watchdog (antes o watchdog recriava tudo em ~10s e o "desligar" nao durava).
+// Turn the PROJECT on/off. Off = no tmux session, and it stays so at container boot
+// and in the watchdog (the watchdog used to recreate everything in ~10s and "off" did not last).
 async function setPower(name, on) {
   if (!projectExists(name)) return { ok: false, msg: tr('srv.noProject') };
   const val = truthy(on);
@@ -136,7 +136,7 @@ async function setPower(name, on) {
   events.poke();
   return { ok: true, msg: val ? tr('srv.powerOn', { name }) : tr('srv.powerOff', { name }) };
 }
-// Claude guarda o historico em ~/.claude/projects/<cwd codificado> (nao-alfanumerico -> "-").
+// Claude keeps the history in ~/.claude/projects/<encoded cwd> (non-alphanumeric -> "-").
 function migrateClaudeHistory(oldDir, newDir) {
   try {
     const base = path.join(cfg.CLAUDE_DIR, 'projects');
@@ -172,8 +172,8 @@ async function deleteProject(name) {
   if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
   const dir = path.join(cfg.PROJECTS_DIR, name);
   if (!fs.existsSync(dir)) return { ok: false, msg: tr('srv.noFolder') };
-  // lock durante kill + rm: sem ele o watchdog (a cada 10s) via a pasta ainda la e a sessao
-  // morta e subia tudo de novo no meio da exclusao (bug do projeto "codigo", 2026-11-24)
+  // lock during kill + rm: without it the watchdog (every 10s) saw the folder still there and the session
+  // dead and brought everything back in the middle of the deletion (bug of the "codigo" project, 2026-11-24)
   const lock = path.join(cfg.RUN_DIR, sessionName(name) + '.lock');
   try { fs.mkdirSync(cfg.RUN_DIR, { recursive: true }); fs.writeFileSync(lock, String(process.pid)); } catch { /* */ }
   try {
@@ -193,20 +193,20 @@ async function sendRemote(name) {
   const sess = sessionName(name);
   if (!(await sessionUp(sess))) return { ok: false, msg: tr('srv.tmuxDown') };
   if (!loginInfo().logged) return { ok: false, msg: tr('srv.notLogged') };
-  // sem o Claude rodando o texto cairia no bash (ou num vim) da sessao
+  // without Claude running, the text would land in the session's bash (or in a vim)
   if (!claudeRunningFlag(sess)) return { ok: false, msg: tr('srv.claudeNotRunning') };
   const cmd = remoteCmdFor(name);
   await typeLine(sess, cmd);
-  // Claude Code 2.1.28x+: pede confirmacao ("❯ 1. Enable Remote Control") -> Enter aceita
-  // (Esc seria "Never mind"). Olha por ate ~8s.
+  // Claude Code 2.1.28x+: asks for confirmation ("❯ 1. Enable Remote Control") -> Enter accepts
+  // (Esc would be "Never mind"). Watches for up to ~8s.
   for (let i = 0; i < 8; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     const c = await sh('tmux', ['capture-pane', '-t', paneOf(sess), '-p', '-S', '-40']);
     if (c.ok && /❯\s*1\.\s*Enable Remote Control/.test(c.stdout)) { await sh('tmux', ['send-keys', '-t', paneOf(sess), 'Enter']); break; }
     if (c.ok && /claude\.ai\/code\//.test(c.stdout)) break;
   }
-  // versoes anteriores abriam um dialogo ("> Continue · Esc to continue") que trava o prompt:
-  // em ~10s, se ele estiver na tela, manda Esc p/ voltar ao prompt (o link continua valido)
+  // older versions opened a dialog ("> Continue · Esc to continue") that blocks the prompt:
+  // within ~10s, if it is on screen, sends Esc to go back to the prompt (the link stays valid)
   setTimeout(async () => {
     for (let i = 0; i < 5; i++) {
       const r = await sh('tmux', ['capture-pane', '-t', paneOf(sess), '-p', '-S', '-60']);
@@ -227,7 +227,7 @@ async function setConfig(name, key, value) {
   if (!setProjConfig(name, { [key]: val })) return { ok: false, msg: tr('srv.saveConfigFailed') };
   events.poke();
   if (key === 'autoStartClaude') {
-    // aplica NA HORA: ON sobe o Claude, OFF encerra o Claude e deixa so o shell na pasta
+    // applies AT ONCE: ON starts Claude, OFF closes Claude and leaves only the shell in the folder
     const c = projConfig(name);
     if (!c.enabled) return { ok: true, msg: tr('srv.claudeWhenOn', { name, v: val ? 'ON' : 'OFF' }) };
     await recreateSession(name);
@@ -254,7 +254,7 @@ async function setInitLine(name, text) {
   events.poke();
   return { ok: true, msg: t ? `"${name}": primeira linha salva (vale no proximo inicio do Claude)` : `"${name}": primeira linha removida` };
 }
-// modo de sessao: 'new' | 'continue' | 'pinned' (precisa de um id que exista no historico do projeto)
+// session mode: 'new' | 'continue' | 'pinned' (needs an id that exists in the project history)
 async function setSessionMode(name, mode, id) {
   if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
   if (!projectExists(name)) return { ok: false, msg: tr('srv.noProject') };
@@ -272,8 +272,8 @@ async function setSessionMode(name, mode, id) {
   events.poke();
   return { ok: true, msg: tr('srv.sessionMode', { name, mode }) + (mode === 'pinned' ? ` (${pinnedSession.slice(0, 8)}…)` : '') };
 }
-// pausa manual: grava o flag sempre; so manda /exit se o Claude estiver parado no prompt
-// (nao interrompe trabalho em andamento) — o claude-loop.sh nao reabre enquanto o flag existir
+// manual pause: always writes the flag; only sends /exit if Claude is idle at the prompt
+// (does not interrupt work in progress) — claude-loop.sh does not reopen while the flag exists
 async function pauseProject(name) {
   if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
   if (!projectExists(name)) return { ok: false, msg: tr('srv.noProject') };

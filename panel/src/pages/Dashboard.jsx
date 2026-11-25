@@ -43,7 +43,7 @@ function Meter({ icon: Icon, label, value, hint }) {
   )
 }
 
-// linha fina (sparkline) 0-100% para o historico de CPU/memoria — sem lib de grafico
+// thin line (sparkline) 0-100% for the CPU/memory history — no chart library
 function MiniLine({ points, color }) {
   if (!points || points.length < 2) return <div className="flex h-10 items-center text-[11px] text-muted-foreground">{t('dash.noHistory')}</div>
   const w = 100, h = 32
@@ -55,8 +55,8 @@ function MiniLine({ points, color }) {
   )
 }
 
-// Saude do host + versao do Claude Code (com "atualizar"); CPU/memoria + top processos.
-// So consulta /api/health com a aba visivel (achado @qa 2026-10-09: painel "CPU-light").
+// Host health + Claude Code version (with "update"); CPU/memory + top processes.
+// Only queries /api/health with the tab visible (found by @qa 2026-10-09: "CPU-light" panel).
 export function HealthCard({ onFlash, compact }) {
   const [h, setH] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -180,7 +180,7 @@ export function HealthCard({ onFlash, compact }) {
 export default function Dashboard({ data, activity, refresh, onFlash, showNew, setShowNew }) {
   const [busy, setBusy] = useState('')
   const [form, setForm] = useState({ name: '', autoStartClaude: true, autoRemote: true })
-  const [drawer, setDrawer] = useState(null) // nome do projeto em configuracao
+  const [drawer, setDrawer] = useState(null) // name of the project being configured
 
   const run = async (key, fn) => {
     setBusy(key)
@@ -248,7 +248,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
         </div>
       </section>
 
-      {/* Saude do host: no celular vem DEPOIS dos projetos (o que se abre o painel p/ ver) */}
+      {/* Host health: on the phone it comes AFTER the projects (what you open the panel to see) */}
       <section className="order-3 rounded-lg border bg-card p-3 sm:order-2 sm:p-5">
         <HealthCard onFlash={onFlash} />
       </section>
@@ -294,7 +294,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                       {p.paused && <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-600 dark:text-amber-300" title={t('dash.pausedTitle')}>{t('dash.paused')}</span>}
                       {p.autoResumeAt > 0 && <span className="rounded-full border border-sky-500/30 bg-sky-500/15 px-2 py-0.5 text-[11px] text-sky-600 dark:text-sky-300" title={t('dash.autoResumeTitle')}>{t('dash.autoResume', { time: new Date(p.autoResumeAt).toLocaleString(getLang(), { dateStyle: 'short', timeStyle: 'short' }) })}</span>}
                     </div>
-                    {/* celular: configurar fica no canto do cartao (no desktop, no fim dos botoes) */}
+                    {/* phone: configure sits in the card corner (on desktop, at the end of the buttons) */}
                     <Btn variant="ghost" className="-mr-2 -mt-1 sm:hidden" onClick={() => setDrawer(p.name)} title={t('dash.configure')}>
                       <Settings2 className="h-4 w-4" />
                     </Btn>
@@ -327,7 +327,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                     <Chip Icon={p.autoRemote ? Wifi : WifiOff} on={p.autoRemote} busy={busy === `cfg:${p.name}:autoRemote`} labelOn="Remote: ON" labelOff="Remote: OFF" onClick={() => run(`cfg:${p.name}:autoRemote`, () => api.setConfig(p.name, 'autoRemote', !p.autoRemote))} />
                   </div>
                 </div>
-                {/* acoes: no celular, grade de botoes grandes (1 toque, cabe o polegar) */}
+                {/* actions: on the phone, a grid of big buttons (1 tap, thumb-sized) */}
                 <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
                   <Link to={'/terminal/' + encodeURIComponent(p.name)} className={`${act === 'prompt' && on ? 'ring-2 ring-destructive/60 ' : ''}inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 sm:h-auto sm:py-1.5 sm:text-[13px]`}>
                     <SquareTerminal className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> Terminal
@@ -375,7 +375,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
 
       {drawerProj && <ProjectDrawer p={drawerProj} data={data} busy={busy} run={run} onClose={() => setDrawer(null)} onFlash={onFlash} />}
 
-      {/* Modal: novo projeto */}
+      {/* Modal: new project */}
       {showNew && (
         <Modal title={t('projects.new')} icon={Plus} onClose={() => setShowNew(false)}>
           <label className="mb-1 block text-xs text-muted-foreground">{t('dash.projectName')}</label>
@@ -469,7 +469,7 @@ function DiskSection({ name, onFlash }) {
   )
 }
 
-// Drawer "Configurar projeto": primeira linha, remote, renomear, historico, backup, excluir
+// "Configure project" drawer: first line, remote, rename, history, backup, delete
 function ProjectDrawer({ p, data, busy, run, onClose, onFlash }) {
   const [initLine, setInitLine] = useState(p.initLine || '')
   const [newName, setNewName] = useState(p.name)

@@ -6,7 +6,7 @@ import * as api from '../api.js'
 import { t } from '../lib/i18n.js'
 import { TR } from '../lib/i18n-rich.jsx'
 
-// /backup — status do backup git por projeto, "backup agora", e backup da config (~/.claude)
+// /backup — git backup status per project, "backup now", and config backup (~/.claude)
 export default function BackupPage({ onFlash }) {
   const [st, setSt] = useState(null)
   const [busy, setBusy] = useState('')

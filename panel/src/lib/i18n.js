@@ -1,8 +1,8 @@
-// Textos da interface: o codigo usa CHAVES (t('dashboard.title')) e o texto vem de um arquivo
-// por idioma em src/locales/<codigo>.json. Idioma novo = um arquivo novo (ex.: es.json) com
-// "_name": "Español" — aparece sozinho no seletor de idioma. en.json e' o padrao e a reserva:
-// chave que falta num idioma cai no ingles; que falta no ingles mostra a propria chave.
-// Variaveis: t('projects.count', { n: 3 }) com "{n} projects" no arquivo.
+// Interface texts: the code uses KEYS (t('dashboard.title')) and the text comes from one file
+// per language in src/locales/<code>.json. A new language = a new file (e.g. es.json) with
+// "_name": "Español" — it shows up by itself in the language picker. en.json is the default and the fallback:
+// a key missing in a language falls back to English; one missing in English shows the key itself.
+// Variables: t('projects.count', { n: 3 }) with "{n} projects" in the file.
 const files = import.meta.glob('../locales/*.json', { eager: true, import: 'default' })
 export const LOCALES = Object.fromEntries(
   Object.entries(files).map(([p, dict]) => [p.split('/').pop().replace(/\.json$/, ''), dict]),
@@ -19,13 +19,13 @@ if (typeof document !== 'undefined') document.documentElement.lang = lang
 
 export const getLang = () => lang
 export const languages = () => Object.entries(LOCALES).map(([code, d]) => ({ code, name: d._name || code }))
-// troca o idioma e recarrega (simples: nenhum componente precisa "ouvir" a troca)
+// changes the language and reloads (simple: no component needs to "listen" to the change)
 export function setLang(code) {
   try { localStorage.setItem(LANG_KEY, code) } catch { /* modo privado */ }
   location.reload()
 }
 export const t = (key, vars) => lookup(LOCALES, lang, DEFAULT_LANG, key, vars)
-// texto que vem do servidor (ex.: nome de um log): usa a chave se existir, senao o texto dele
+// text coming from the server (e.g. a log name): uses the key if it exists, otherwise its own text
 export const tOr = (key, fallback, vars) => (key in (LOCALES[lang] || {}) || key in (LOCALES[DEFAULT_LANG] || {}) ? t(key, vars) : fallback)
-// o servidor responde no mesmo idioma (server/i18n.js le este cookie em toda requisicao)
-try { document.cookie = `cr_lang=${encodeURIComponent(lang)}; path=/; max-age=31536000; SameSite=Lax` } catch { /* sem DOM (testes) */ }
+// the server answers in the same language (server/i18n.js reads this cookie on every request)
+try { document.cookie = `cr_lang=${encodeURIComponent(lang)}; path=/; max-age=31536000; SameSite=Lax` } catch { /* no DOM (tests) */ }

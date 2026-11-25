@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
 import { t } from './i18n.js'
-// Texto com marcacao simples vinda do arquivo de idioma: **negrito** e `codigo`.
-// Ex.: "Log in **Logs → Backup**" -> Log in <b>Logs → Backup</b>
+// Text with simple markup coming from the language file: **bold** and `code`.
+// E.g. "Log in **Logs → Backup**" -> Log in <b>Logs → Backup</b>
 export function TR({ k, vars }) {
   const parts = String(t(k, vars)).split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
   return parts.map((p, i) => {

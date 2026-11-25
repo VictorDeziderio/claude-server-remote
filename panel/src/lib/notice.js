@@ -1,11 +1,11 @@
-// Texto de um aviso do servidor (SSE 'notify' ou /api/alerts) no idioma de QUEM ESTA VENDO.
-// O servidor manda a chave + variaveis (i18n: {title: [chave, vars], body: [chave, vars]}, ou
-// key/vars nos alertas) e o texto em ingles como reserva; a traducao acontece aqui.
-// Puro (sem imports): recebe o tOr do i18n.js — assim roda tambem nos testes do node.
+// Text of a server notice (SSE 'notify' or /api/alerts) in the language of WHOEVER IS LOOKING.
+// The server sends the key + variables (i18n: {title: [key, vars], body: [key, vars]}, or
+// key/vars in alerts) and the English text as the fallback; the translation happens here.
+// Pure (no imports): gets tOr from i18n.js — so it also runs in the node tests.
 const pick = (tOr, pair, fallback) => (Array.isArray(pair) && pair[0] ? tOr(pair[0], fallback, pair[1] || {}) : fallback)
 
 export function noticeText(n = {}, tOr) {
-  if (n.alertKind) { // alerta (SSE ou /api/alerts)
+  if (n.alertKind) { // alert (SSE or /api/alerts)
     const kind = n.alertKind
     const title = tOr('alert.kind.' + kind, kind) + (n.project ? ` — ${n.project}` : '')
     const raw = n.msg ?? n.body ?? ''

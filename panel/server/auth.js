@@ -1,16 +1,16 @@
 'use strict';
 const { tr } = require('./i18n');
 /*
- * Auth do painel: pagina de login propria + cookie de sessao ASSINADO + store de sessoes.
+ * Panel auth: own login page + SIGNED session cookie + session store.
  *
- * Token = base64url(payload).base64url(hmac). Payload = {u, sid, exp}. A chave do HMAC
- * mistura um segredo aleatorio persistido no volume (~/.claude/.panel-secret) com a
- * PANEL_PASSWORD -> trocar a senha invalida todas as sessoes; reiniciar o painel nao.
- * O `sid` precisa existir no store (sessions.js) -> da pra revogar sessao a sessao.
+ * Token = base64url(payload).base64url(hmac). Payload = {u, sid, exp}. The HMAC key
+ * mixes a random secret persisted on the volume (~/.claude/.panel-secret) with the
+ * PANEL_PASSWORD -> changing the password invalidates every session; restarting the panel does not.
+ * The `sid` must exist in the store (sessions.js) -> sessions can be revoked one by one.
  *
- * Protecoes: comparacao em tempo constante, rate-limit por IP no login (forca bruta),
- * 2FA TOTP opcional (totp.js), checagem de Origin/Sec-Fetch-Site em requests mutantes
- * e no upgrade do WebSocket (CSRF).
+ * Protections: constant-time comparison, per-IP rate limit on login (brute force),
+ * optional TOTP 2FA (totp.js), Origin/Sec-Fetch-Site check on mutating requests
+ * and on the WebSocket upgrade (CSRF).
  */
 const fs = require('fs');
 const path = require('path');
@@ -23,13 +23,13 @@ const { audit } = require('./audit');
 
 const COOKIE = 'cr_auth';
 
-// FAIL-CLOSED: o painel expoe um shell no servidor (usuario com sudo). Ele NAO sobe:
-//  - sem senha;
-//  - com uma senha sabidamente publica: o default que ja esteve versionado no Dockerfile e no
-//    .env.example (comparado por sha256 — o valor nao fica no codigo) e o "changeme" historico.
-// Aviso em log ninguem le; recusar subir e o que garante que um deploy sem config nao fica aberto.
+// FAIL-CLOSED: the panel exposes a shell on the server (a user with sudo). It does NOT start:
+//  - without a password;
+//  - with a password known to be public: the default that was once versioned in the Dockerfile and in
+//    .env.example (compared by sha256 — the value is not in the code) and the historic "changeme".
+// A warning in a log nobody reads; refusing to start is what guarantees that a deploy without config is not left open.
 const KNOWN_PUBLIC = new Set([
-  '98a2fc5119f2b61af6d90d9d7bb59813820e6cd43411eeb0a91484a769a0ccb9', // default antigo do Dockerfile/.env.example
+  '98a2fc5119f2b61af6d90d9d7bb59813820e6cd43411eeb0a91484a769a0ccb9', // old Dockerfile/.env.example default
   '057ba03d6c44104863dc7361fe4578965d1887360f90a0895882e58a6248fc86', // "changeme"
 ]);
 const passHash = crypto.createHash('sha256').update(String(cfg.PANEL_PASSWORD)).digest('hex');
@@ -57,9 +57,9 @@ function loadOrCreateSecret() {
 }
 const KEY = crypto.createHmac('sha256', loadOrCreateSecret()).update('claude-remote-session-v3:' + cfg.PANEL_PASSWORD).digest();
 
-// achado @security: gravar o "login" digitado verbatim no audit.log podia vazar senha (erro
-// comum: digitar a senha no campo de usuario) ou dado pessoal. So um hash curto, pra ainda dar
-// pra notar "mesmo valor repetido" sem guardar o texto em claro.
+// found by @security: writing the typed "login" verbatim to audit.log could leak a password (a common
+// mistake: typing the password in the user field) or personal data. Only a short hash, to still
+// notice "same value repeated" without keeping the plain text.
 const loginHashOf = (s) => crypto.createHash('sha256').update(String(s || '')).digest('hex').slice(0, 12);
 const b64u = (buf) => Buffer.from(buf).toString('base64url');
 const sign = (data) => crypto.createHmac('sha256', KEY).update(data).digest('base64url');
@@ -106,14 +106,14 @@ const isHttps = (req) => String(req.headers['x-forwarded-proto'] || '').split(',
 const clientIp = (req) => (String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || (req.socket && req.socket.remoteAddress) || '?';
 const hostOf = (req) => String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
 
-// achado @security: o deploy real e SEMPRE https atras do Traefik, mas o Traefik desse ambiente
-// nao repassa x-forwarded-proto de um jeito que isHttps(req) enxergue — o cookie de sessao saia
-// sem o atributo Secure. Em vez de depender do header, manda Secure sempre; so os testes (http
-// em localhost) desligam, e so com a flag de teste explicita (nunca em producao).
+// found by @security: the real deploy is ALWAYS https behind a reverse proxy, but the proxy of that environment
+// did not pass x-forwarded-proto in a way isHttps(req) could see — the session cookie went out
+// without the Secure attribute. Instead of depending on the header, always send Secure; only the tests (http
+// on localhost) turn it off, and only with the explicit test flag (never in production).
 const TEST_INSECURE_COOKIE = process.env.PANEL_TEST_INSECURE_COOKIE === '1';
 const secureAttr = (req) => (TEST_INSECURE_COOKIE && !isHttps(req)) ? '' : '; Secure';
 
-// ---- rate-limit do login (por IP): 8 falhas em 10 min -> bloqueia 10 min ----
+// ---- login rate limit (per IP): 8 failures in 10 min -> blocks for 10 min ----
 const attempts = new Map(); // ip -> { n, first, until }
 const WINDOW = 10 * 60 * 1000, MAX_FAIL = 8;
 function limited(ip) {
@@ -176,21 +176,21 @@ function revokeOthers(req) {
   return { ok: true, msg: n ? tr('srv.othersEnded', { n }) : tr('srv.noOthers') };
 }
 
-// CSRF: request mutante/WS precisa vir do mesmo site. Navegadores modernos mandam
-// Sec-Fetch-Site; senao comparamos Origin com o Host.
+// CSRF: a mutating request/WS must come from the same site. Modern browsers send
+// Sec-Fetch-Site; otherwise we compare Origin with Host.
 //
-// SEGURANCA (achado @security 2026-09-28): sem NENHUM dos dois sinais, a versao antiga
-// aceitava a requisicao (raciocinio: "e' curl, e curl nao manda o cookie HttpOnly"). Isso
-// protege contra CSRF classico (navegador sempre manda um dos dois), mas NAO protege
-// contra um cookie de sessao ja vazado (log de proxy, extensao maliciosa) sendo reenviado
-// via curl/script fora do navegador -- nesse caso a ausencia de ambos os headers deveria
-// ser tratada como "origem nao comprovada", nao como "aceitar por omissao".
+// SECURITY (found by @security 2026-09-28): with NEITHER signal, the old version
+// accepted the request (reasoning: "it is curl, and curl does not send the HttpOnly cookie"). That
+// protects against classic CSRF (a browser always sends one of the two), but does NOT protect
+// against an already leaked session cookie (proxy log, malicious extension) being resent
+// via curl/script outside the browser -- in that case the absence of both headers should
+// be treated as "origin not proven", not as "accept by default".
 function sameOrigin(req) {
   const sfs = req.headers['sec-fetch-site'];
   if (sfs) return sfs === 'same-origin' || sfs === 'none';
   const origin = req.headers.origin;
   if (origin) { try { return new URL(origin).host === hostOf(req); } catch { return false; } }
-  return false; // sem nenhum sinal: nao assume mesma origem
+  return false; // no signal at all: do not assume same origin
 }
 
 module.exports = { isAuthed, doLogin, doLogout, sameOrigin, clientIp, hostOf, sessionId, listSessions, revokeSession, revokeOthers, COOKIE };
