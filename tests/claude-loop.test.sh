@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Testes do supervisor (claude-loop.sh) + claude-session.sh com um `claude` FALSO, num tmux e
-# HOME temporarios — nada real e tocado. Uso: bash tests/claude-loop.test.sh (precisa de tmux).
+# Tests of the supervisor (claude-loop.sh) + claude-session.sh with a FAKE `claude`, in a temporary
+# tmux and HOME — nothing real is touched. Usage: bash tests/claude-loop.test.sh (needs tmux).
 set -uo pipefail
-# de dentro de um tmux, $TMUX vence TMUX_TMPDIR e o `tmux kill-server` abaixo mataria o servidor REAL
+# from inside a tmux, $TMUX wins over TMUX_TMPDIR and the `tmux kill-server` below would kill the REAL server
 unset TMUX TMUX_PANE
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 T="$(mktemp -d)"
 export HOME="$T" TMUX_TMPDIR="$T" CLAUDE_AUTOCMD_DELAY=1
-# PROJECTS_DIR/PANEL_CONFIG tambem isolados: devbox-lib.sh so usa $HOME como default se essas
-# vierem VAZIAS do ambiente -- rodando este teste de dentro do dev-box real (onde start.sh ja
-# exportou as de verdade), elas vazam pro teste e ele acaba lendo/criando sessao no projeto
-# REAL em vez do temporario (achado 2026-10-09, rodando os testes de dentro do proprio dev-box).
+# PROJECTS_DIR/PANEL_CONFIG isolated too: devbox-lib.sh only uses $HOME as the default if these
+# come EMPTY from the environment -- running this test from inside the real dev box (where start.sh already
+# exported the real ones), they leak into the test and it ends up reading/creating a session in the REAL
+# project instead of the temporary one (found 2026-10-09, running the tests from inside the dev box itself).
 export PROJECTS_DIR="$T/projects" PANEL_CONFIG="$T/.claude/panel.json"
 export DEVBOX_LIB="$HERE/devbox-lib.sh" CLAUDE_LOOP="$HERE/claude-loop.sh"
 export PATH="$T/bin:$PATH"
@@ -27,8 +27,8 @@ start() { tmux kill-server >/dev/null 2>&1; bash "$HERE/claude-session.sh" p1 </
 cleanup() { tmux kill-server >/dev/null 2>&1; rm -rf "$T"; }
 trap cleanup EXIT
 
-# `claude` falso: prompt pronto; /remote-control abre o dialogo de CONFIRMACAO do Claude Code
-# 2.1.28x ("❯ 1. Enable Remote Control / 2. Never mind"). Enter confirma, Esc cancela.
+# fake `claude`: prompt ready; /remote-control opens the CONFIRMATION dialog of Claude Code
+# 2.1.28x ("❯ 1. Enable Remote Control / 2. Never mind"). Enter confirms, Esc cancels.
 cat > "$T/bin/claude" <<'EOF'
 #!/usr/bin/env bash
 echo "? for shortcuts"
@@ -80,10 +80,10 @@ echo "Enter to confirm · Esc to cancel"
 trusted=0
 while IFS= read -rsn1 k; do
   if [ "$trusted" = "0" ]; then
-    # Down (setas chegam como sequencia ESC [ B) move o cursor p/ "Yes"; qualquer outra tecla
-    # antes disso e' ignorada pra simular o menu (o "fake" so entende essa sequencia exata)
+    # Down (arrows arrive as the sequence ESC [ B) moves the cursor to "Yes"; any other key
+    # before that is ignored to simulate the menu (the fake only understands this exact sequence)
     if [ "$k" = $'\x1b' ]; then IFS= read -rsn2 rest; [ "$rest" = "[B" ] && trusted=1; fi
-  elif [ -z "$k" ]; then   # Enter com o cursor ja em "Yes" -> confirma
+  elif [ -z "$k" ]; then   # Enter with the cursor already on "Yes" -> confirms
     echo "? for shortcuts"
     trusted=2
   fi

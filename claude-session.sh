@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Garante a sessao tmux de um projeto (claude-<nome>) conforme o panel.json — modelo multi-tmux.
+# Makes sure a project's tmux session (claude-<name>) exists as panel.json says — multi-tmux model.
 #
-#   enabled=false          -> projeto DESLIGADO: NAO cria sessao (boot/watchdog respeitam)
-#   autoStartClaude=true   -> a sessao roda o supervisor claude-loop.sh (Claude em loop)
-#                  =false  -> a sessao e so um shell na pasta do projeto
-#   autoRemote / initLine  -> lidos pelo claude-loop.sh a CADA inicio do Claude (mudou no
-#                             painel -> vale no proximo (re)inicio, sem recriar a sessao)
+#   enabled=false          -> project OFF: does NOT create a session (boot/watchdog respect it)
+#   autoStartClaude=true   -> the session runs the claude-loop.sh supervisor (Claude in a loop)
+#                  =false  -> the session is just a shell in the project folder
+#   autoRemote / initLine  -> read by claude-loop.sh on EACH Claude start (changed in the
+#                             panel -> applies on the next (re)start, without recreating the session)
 #
-# Idempotente: nao mexe em sessao que ja existe. Roda como o usuario ubuntu (HOME=/root).
+# Idempotent: does not touch a session that already exists. Runs as the ubuntu user (HOME=/root).
 #
-# Uso:  claude-session.sh <projeto>
-#       claude-session.sh --all        # todos os projetos LIGADOS (boot + watchdog); se nao
-#                                      # houver nenhum projeto, cria o default ($PROJECT_FOLDER)
+# Usage:  claude-session.sh <project>
+#       claude-session.sh --all        # every project that is ON (boot + watchdog); if there
+#                                      # is no project at all, creates the default ($PROJECT_FOLDER)
 set -uo pipefail
 
 LIB="${DEVBOX_LIB:-/usr/local/lib/devbox/lib.sh}"
@@ -19,29 +19,29 @@ LIB="${DEVBOX_LIB:-/usr/local/lib/devbox/lib.sh}"
 . "$LIB"
 LOOP="${CLAUDE_LOOP:-/usr/local/bin/claude-loop.sh}"
 
-ensure_one() {  # $1 = projeto
+ensure_one() {  # $1 = project
   local name="$1" sess proj
   valid_name "$name" || { echo "[session] invalid name: $name" >&2; return 1; }
   sess="$(sess_name "$name")"
   proj="$PROJECTS_DIR/$name"
 
-  tmux has-session -t "=$sess" 2>/dev/null && return 0   # ja existe -> nada a fazer
-  # o painel acabou de matar essa sessao e esta prestes a recria-la (recreateSession) --
-  # nao interfere nesse instante (evita corrida com o watchdog, achado @qa 2026-09-28).
-  # O lock so existe durante o kill; o proprio ensureSession do painel roda DEPOIS dele
-  # ser liberado, entao nao ha deadlock aqui.
+  tmux has-session -t "=$sess" 2>/dev/null && return 0   # already exists -> nothing to do
+  # the panel has just killed this session and is about to recreate it (recreateSession) --
+  # do not interfere at that moment (avoids a race with the watchdog, found by @qa 2026-09-28).
+  # The lock only exists during the kill; the panel's own ensureSession runs AFTER it
+  # is released, so there is no deadlock here.
   [ -f "$RUN_DIR/$sess.lock" ] && return 0
 
   load_proj_config "$name"
   [ "$CFG_ENABLED" = "true" ] || return 0              # desligado -> continua desligado
-  # NUNCA recria a pasta: projeto apagado tem que continuar apagado. Antes havia um mkdir -p
-  # aqui, e uma aba de terminal ainda aberta (ou o watchdog no meio da exclusao) ressuscitava
-  # o projeto apagado (bug do projeto "codigo", 2026-11-24). Quem cria pasta: o painel
-  # (createProject) e o ensure_all (projeto default).
+  # NEVER recreates the folder: a deleted project must stay deleted. There used to be a mkdir -p
+  # here, and a terminal tab still open (or the watchdog in the middle of a deletion) brought
+  # the deleted project back (bug of the "codigo" project, 2026-11-24). Who creates folders: the panel
+  # (createProject) and ensure_all (default project).
   [ -d "$proj" ] || { echo "[session] project '$name' does not exist (missing folder) — nothing to start" >&2; return 1; }
 
   if [ "$CFG_AUTOSTART" = "true" ]; then
-    # supervisor como COMANDO DIRETO da sessao (sem send-keys -> sem race com o shell carregando)
+    # supervisor as the session's DIRECT COMMAND (no send-keys -> no race with the shell loading)
     tmux new-session -d -s "$sess" -c "$proj" \
       "exec bash $(printf '%q' "$LOOP") $(printf '%q' "$sess") $(printf '%q' "$name")"
   else
@@ -58,10 +58,10 @@ ensure_all() {
     n="$(basename "${d%/}")"
     case "$n" in .*) continue ;; esac                  # ignora pastas ocultas
     any=1
-    # a falha de UMA sessao nunca aborta as outras (nem o boot)
+    # the failure of ONE session never aborts the others (nor the boot)
     ensure_one "$n" || echo "[session] warning: project '$n' failed to start" >&2
   done
-  if [ "$any" = "0" ]; then                            # container sem projeto -> cria o default
+  if [ "$any" = "0" ]; then                            # container without projects -> creates the default
     n="${PROJECT_FOLDER:-projects}"
     mkdir -p "$PROJECTS_DIR/$n"
     ensure_one "$n" || echo "[session] warning: default project '$n' failed to start" >&2

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Biblioteca comum do dev-box (sourced por claude-session.sh / claude-loop.sh / backup.sh).
-# Fonte UNICA de: caminhos, nome da sessao tmux, leitura do panel.json e deteccao de login.
-# Instalada em /usr/local/lib/devbox/lib.sh (Dockerfile).
-# shellcheck disable=SC2034  # variaveis (RUN_DIR, CFG_*) sao usadas pelos scripts que fazem source
+# Shared library of the dev box (sourced by claude-session.sh / claude-loop.sh / backup.sh).
+# SINGLE source of: paths, tmux session name, reading panel.json and login detection.
+# Installed at /usr/local/lib/devbox/lib.sh (Dockerfile).
+# shellcheck disable=SC2034  # variables (RUN_DIR, CFG_*) are used by the scripts that source this
 
-# PATH completo mesmo quando chamado como comando direto do tmux (PATH herdado minimo).
-# Acrescenta no FIM: nao passa por cima do PATH de quem chamou.
+# Full PATH even when called as a direct tmux command (minimal inherited PATH).
+# Appends at the END: does not override the caller's PATH.
 export PATH="${PATH:+$PATH:}/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
 
 DEVBOX_HOME="${HOME:-/root}"
@@ -15,24 +15,24 @@ RUN_DIR="$DEVBOX_HOME/.claude/run"
 LOG_DIR="$DEVBOX_HOME/.claude/logs"
 NODE_BIN="$(command -v node 2>/dev/null || echo /usr/bin/node)"
 
-# nome da sessao tmux do projeto: claude-<nome sanitizado> (tmux nao aceita '.'/':').
-# A mesma regra existe no painel (server/util.js -> sessionName) — tem de bater.
+# tmux session name of the project: claude-<sanitized name> (tmux does not accept '.'/':').
+# The same rule exists in the panel (server/util.js -> sessionName) — they must match.
 sess_name() { printf 'claude-%s' "$(printf '%s' "$1" | tr -c 'A-Za-z0-9_-' '_')"; }
 
-# nome de projeto valido (mesma regra do painel: validName)
+# valid project name (same rule as the panel: validName)
 valid_name() { [[ "$1" =~ ^[A-Za-z0-9._-]{1,64}$ ]] && [ "$1" != "." ] && [ "$1" != ".." ]; }
 
-# Config efetiva de um projeto no panel.json (projeto > defaults > padrao embutido), em
-# formato "chave=valor" por linha (initLine sai em base64 p/ nao quebrar o parse).
-#   enabled          true  -> projeto LIGADO (sessao tmux existe; boot/watchdog sobem)
-#   autoStartClaude  true  -> a sessao roda o Claude (senao, so um shell)
-#   autoRemote       true  -> religa o /remote-control a cada inicio do Claude
-proj_config() {  # $1 = projeto
-  # FAIL-CLOSED (achado @qa 2026-09-28): panel.json AUSENTE e' normal (projeto novo, 1a
-  # subida) -> usa os defaults (enabled=true etc). Ja panel.json PRESENTE mas com JSON
-  # CORROMPIDO e' uma falha real -> reportar enabled=false, e NAO os defaults, senao um
-  # projeto explicitamente desligado (enabled=false) "renasce" sozinho sempre que o
-  # arquivo falhar em parsear (ex.: leitura no meio de uma escrita nao-atomica externa).
+# Effective config of a project in panel.json (project > defaults > built-in default), as
+# "key=value" lines (initLine comes out in base64 so it does not break the parsing).
+#   enabled          true  -> project ON (the tmux session exists; boot/watchdog start it)
+#   autoStartClaude  true  -> the session runs Claude (otherwise, only a shell)
+#   autoRemote       true  -> turns /remote-control back on at each Claude start
+proj_config() {  # $1 = project
+  # FAIL-CLOSED (found by @qa 2026-09-28): a MISSING panel.json is normal (new project, first
+  # start) -> uses the defaults (enabled=true etc). But a PRESENT panel.json with
+  # CORRUPTED JSON is a real failure -> report enabled=false, NOT the defaults, otherwise a
+  # project explicitly turned off (enabled=false) "comes back to life" by itself whenever the
+  # file fails to parse (e.g. read in the middle of a non-atomic external write).
   "$NODE_BIN" -e '
     const fs = require("fs");
     const [, file, proj] = process.argv; // com -e, argv[1] ja e o 1o argumento
@@ -59,8 +59,8 @@ proj_config() {  # $1 = projeto
     || printf 'enabled=false\nautoStartClaude=false\nautoRemote=false\ninitLine=\nsessionMode=new\npinnedSession=\n'
 }
 
-# carrega a config do projeto em variaveis CFG_* (CFG_ENABLED, CFG_AUTOSTART, CFG_REMOTE, CFG_INITLINE)
-load_proj_config() {  # $1 = projeto
+# loads the project config into CFG_* variables (CFG_ENABLED, CFG_AUTOSTART, CFG_REMOTE, CFG_INITLINE)
+load_proj_config() {  # $1 = project
   local line k v
   CFG_ENABLED=true CFG_AUTOSTART=true CFG_REMOTE=true CFG_INITLINE="" CFG_SESSMODE=new CFG_PINNED=""
   while IFS= read -r line; do
@@ -76,24 +76,24 @@ load_proj_config() {  # $1 = projeto
   done < <(proj_config "$1")
 }
 
-# pasta onde o Claude Code guarda as conversas de um diretorio (~/.claude/projects/<cwd codificado>):
-# todo caractere fora de [A-Za-z0-9] vira "-" (ex.: /root/projects/pilot -> -root-projects-pilot)
+# folder where Claude Code keeps the conversations of a directory (~/.claude/projects/<encoded cwd>):
+# every character outside [A-Za-z0-9] becomes "-" (e.g. /root/projects/pilot -> -root-projects-pilot)
 conv_dir() { printf '%s/.claude/projects/%s' "$DEVBOX_HOME" "$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '-')"; }
 
-# verdadeiro se o Claude ja estiver logado (/login feito)
+# true if Claude is already logged in (/login done)
 is_logged_in() {
   [ -n "${ANTHROPIC_API_KEY:-}" ] && return 0
   [ -s "$DEVBOX_HOME/.claude/.credentials.json" ] && return 0
   grep -qE '"oauthAccount"|"accessToken"|"apiKey"|"primaryApiKey"' "$DEVBOX_HOME/.claude.json" 2>/dev/null
 }
 
-# comando do remote-control do projeto (REMOTE_CONTROL_NAME forca um nome fixo p/ todos)
+# remote-control command of the project (REMOTE_CONTROL_NAME forces one fixed name for all)
 remote_cmd() { printf '/remote-control %s' "${REMOTE_CONTROL_NAME:-$1}"; }
 
-# Alerta p/ o painel (RUN_DIR/alerts.jsonl -> toast/notificacao). Uma linha JSON por evento.
-# $5 (opcional) = chave srv.* do texto e $6.. = variaveis "nome=valor": o painel mostra o texto no
-# idioma de quem esta vendo ($4, em ingles, fica como reserva).
-alert() {  # $1=level(info|warn|error) $2=kind $3=projeto(ou "") $4=mensagem [$5=chave [$6..=k=v]]
+# Alert for the panel (RUN_DIR/alerts.jsonl -> toast/notification). One JSON line per event.
+# $5 (optional) = srv.* key of the text and $6.. = "name=value" variables: the panel shows the text in the
+# language of whoever is looking ($4, in English, is the fallback).
+alert() {  # $1=level(info|warn|error) $2=kind $3=project(or "") $4=message [$5=key [$6..=k=v]]
   mkdir -p "$RUN_DIR"
   "$NODE_BIN" -e 'const [, l, k, p, m, key, ...kv] = process.argv;
     const vars = Object.fromEntries(kv.map((x) => [x.slice(0, x.indexOf("=")), x.slice(x.indexOf("=") + 1)]).filter(([n]) => n));
@@ -101,10 +101,10 @@ alert() {  # $1=level(info|warn|error) $2=kind $3=projeto(ou "") $4=mensagem [$5
     "$1" "$2" "${3:-}" "$4" "${@:5}" >> "$RUN_DIR/alerts.jsonl" 2>/dev/null || true
 }
 
-# Sem logrotate na imagem: corta o log acima de ~5MB mantendo o final. Trunca NO LUGAR (nao
-# `mv`): panel.log/sessions.log estao abertos com >> por processos vivos, e um mv os deixaria
-# escrevendo num arquivo apagado que continua ocupando disco.
-trim_log() {  # $1 = arquivo
+# No logrotate in the image: cuts the log above ~5MB keeping the end. Truncates IN PLACE (no
+# `mv`): panel.log/sessions.log are open with >> by live processes, and an mv would leave them
+# writing to a deleted file that keeps taking disk space.
+trim_log() {  # $1 = file
   local f="$1" tmp
   [ "$(stat -c%s "$f" 2>/dev/null || echo 0)" -gt 5242880 ] || return 0
   tmp="$(mktemp)" || return 0
@@ -113,31 +113,31 @@ trim_log() {  # $1 = arquivo
 }
 
 # ---------------------------------------------------------------------------
-# backoff p/ loops de respawn (claude-loop.sh, start.sh#run_bg)
+# backoff for respawn loops (claude-loop.sh, start.sh#run_bg)
 # ---------------------------------------------------------------------------
-# Sem isso, um processo que crasha rapido (bug, OOM) reabre a cada poucos segundos PRA SEMPRE
-# -- cada reabertura tem custo de CPU/memoria (novo node/claude subindo), e sem teto isso
-# sozinho ja sobrecarrega a VM. Uso:
+# Without it, a process that crashes fast (bug, OOM) reopens every few seconds FOREVER
+# -- each reopen costs CPU/memory (a new node/claude starting), and with no ceiling that
+# alone overloads the machine. Usage:
 #   fails=0
 #   while true; do
 #     t0=$(date +%s)
-#     comando
+#     command
 #     fails=$(backoff_next "$fails" "$(( $(date +%s) - t0 ))")
 #     sleep "$(backoff_sleep "$fails")"
 #   done
-# O contador ZERA se o processo rodou tempo o bastante (MIN_HEALTHY_RUN_S) -- nao confunde
-# uso normal (sessoes curtas de proposito) com crash-loop real.
+# The counter RESETS if the process ran long enough (MIN_HEALTHY_RUN_S) -- it does not confuse
+# normal use (short sessions on purpose) with a real crash loop.
 MIN_HEALTHY_RUN_S="${MIN_HEALTHY_RUN_S:-20}"
 MAX_BACKOFF_S="${MAX_BACKOFF_S:-60}"
-MAX_FAST_FAILS="${MAX_FAST_FAILS:-6}"  # a partir daqui, quem chama decide: parar de tentar, avisar, etc.
+MAX_FAST_FAILS="${MAX_FAST_FAILS:-6}"  # from here on, the caller decides: stop trying, warn, etc.
 
-# $1 = contador atual de fails, $2 = segundos que o processo rodou -> novo contador
+# $1 = current fail counter, $2 = seconds the process ran -> new counter
 backoff_next() {
   local fails="${1:-0}" ran="${2:-0}"
   if [ "$ran" -ge "$MIN_HEALTHY_RUN_S" ]; then echo 0; else echo "$((fails + 1))"; fi
 }
 
-# $1 = contador de fails -> segundos de espera antes do proximo restart (3,6,12,24,48,60,60...)
+# $1 = fail counter -> seconds to wait before the next restart (3,6,12,24,48,60,60...)
 backoff_sleep() {
   local fails="${1:-0}" exp s
   exp="$fails"; [ "$exp" -gt 5 ] && exp=5
@@ -146,15 +146,15 @@ backoff_sleep() {
   echo "$s"
 }
 
-# Rede (vale para qualquer host Docker):
-#  - TRUSTED_PROXIES vazio (padrao): o Caddy NAO confia em X-Forwarded-For vindo de fora e grava
-#    o IP real da conexao -> ninguem burla o rate-limit do login trocando o header.
-#    Atras de um proxy reverso (Traefik, Nginx, Cloudflare Tunnel...), informe a faixa dele,
-#    ex.: TRUSTED_PROXIES="private_ranges" ou "10.0.0.0/8 172.16.0.0/12".
-#  - PANEL_DOMAIN definido: o Caddy tira certificado HTTPS sozinho (Let's Encrypt) para esse
-#    dominio -> publique as portas 80 e 443. Vazio: HTTP em GATEWAY_PORT (use atras de um proxy
-#    com TLS, ou numa VPN/Tailscale).
-write_caddyfile() {  # $1 = caminho do Caddyfile; usa GATEWAY_PORT, PANEL_PORT, TRUSTED_PROXIES, PANEL_DOMAIN
+# Network (applies to any Docker host):
+#  - TRUSTED_PROXIES empty (default): Caddy does NOT trust X-Forwarded-For coming from outside and logs
+#    the real IP of the connection -> nobody bypasses the login rate limit by changing the header.
+#    Behind a reverse proxy (Traefik, Nginx, Cloudflare Tunnel...), give its range,
+#    e.g. TRUSTED_PROXIES="private_ranges" or "10.0.0.0/8 172.16.0.0/12".
+#  - PANEL_DOMAIN set: Caddy gets an HTTPS certificate by itself (Let's Encrypt) for that
+#    domain -> publish ports 80 and 443. Empty: HTTP on GATEWAY_PORT (use it behind a proxy
+#    with TLS, or on a VPN/Tailscale).
+write_caddyfile() {  # $1 = path of the Caddyfile; uses GATEWAY_PORT, PANEL_PORT, TRUSTED_PROXIES, PANEL_DOMAIN
   local CADDY_TRUST CADDY_HTTPS CADDY_SITE
 if [ -n "${TRUSTED_PROXIES:-}" ]; then
   CADDY_TRUST="	servers {

@@ -4,7 +4,7 @@ PICKS="$HOME/.fake-claude-picks"
 cls() { printf '\033[H\033[2J'; }
 key() { local k k2; IFS= read -rsn1 k; if [ "$k" = $'\e' ]; then IFS= read -rsn2 -t 0.2 k2; k="ESC$k2"; fi; KEY="$k"; }
 wait_enter() { while :; do key; [ -z "$KEY" ] && return; done; }
-# menu <id> <titulo> <opcoes...>; cursor inicial em $CUR; "No, exit" fecha o claude (como o real)
+# menu <id> <title> <options...>; initial cursor at $CUR; "No, exit" closes claude (like the real one)
 menu() {
   local id="$1" title="$2"; shift 2; local opts=("$@") cur="${CUR:-0}" i
   while :; do

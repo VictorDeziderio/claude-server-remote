@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Backup automatico dos projetos: percorre cada repo git dentro de
-# $PROJECTS_DIR e faz add + commit (se houver mudanca) + push (best-effort). Repos sem
-# remote 'origin' sao ignorados (com aviso no log). A autenticacao do push usa
-# o gh/GH_TOKEN configurado no start.sh (gh auth setup-git).
+# Automatic project backup: goes through each git repo inside
+# $PROJECTS_DIR and does add + commit (if something changed) + push (best effort). Repos without
+# an 'origin' remote are skipped (with a note in the log). Push authentication uses
+# the gh/GH_TOKEN set up in start.sh (gh auth setup-git).
 #
-# Uso:
-#   backup.sh            -> uma passada em TODOS os projetos de $PROJECTS_DIR
-#   backup.sh /caminho   -> backup so desse repo
-#   backup.sh --config   -> tarball da CONFIG (~/.claude sem historico/logs + ~/.claude.json)
-#                           em $H/.claude-backups/config-<data>.tgz (mantem os 7 mais recentes).
-#                           Baixe pelo painel (Backup) — se o volume sumir, o login/config vao junto.
+# Usage:
+#   backup.sh            -> one pass over ALL projects in $PROJECTS_DIR
+#   backup.sh /path      -> backup of that repo only
+#   backup.sh --config   -> tarball of the CONFIG (~/.claude without history/logs + ~/.claude.json)
+#                           in $H/.claude-backups/config-<date>.tgz (keeps the 7 newest).
+#                           Download it in the panel (Backup) — if the volume goes away, login/config go with it.
 #   backup.sh --volume   -> incremental copy of the whole home (/root, the volume) into
 #                           $VOLUME_BACKUP_DIR/<date>/ — a folder on ANOTHER disk or mount.
 #                           rsync --link-dest: files that did not change are hard links to the
@@ -19,13 +19,13 @@
 #                           caches (.cache .npm .gradle .bun), agent work copies (.claude/worktrees)
 #                           and the config tarballs; add more with VOLUME_BACKUP_EXCLUDE (comma list).
 #
-# Roda como o usuario "ubuntu" (HOME=/root, volume). Identidade git e definida
-# no start.sh (ou cai num default local aqui).
-set -uo pipefail   # sem -e: um repo que falha nao aborta os demais
+# Runs as the "ubuntu" user (HOME=/root, volume). The git identity is set
+# in start.sh (or falls back to a local default here).
+set -uo pipefail   # no -e: one repo that fails does not abort the others
 
 H="${HOME:-/root}"
-# a MESMA pasta de projetos do painel/sessoes (antes usava /root/$PROJECT_FOLDER, que so
-# coincidia com o default; com PROJECT_FOLDER=outro o backup varria a pasta errada)
+# the SAME projects folder as the panel/sessions (it used to use /root/$PROJECT_FOLDER, which only
+# matched the default; with PROJECT_FOLDER=other the backup scanned the wrong folder)
 PROJECTS_DIR="${PROJECTS_DIR:-$H/projects}"
 LOG_DIR="$H/.claude/logs"
 LOG="$LOG_DIR/backup.log"
@@ -35,27 +35,27 @@ mkdir -p "$LOG_DIR"
 
 log() {
   echo "[$(date '+%F %T')] $*" | tee -a "$LOG"
-  # sem logrotate neste dev-box: backup.log roda pra sempre e cresceria sem teto ate
-  # faltar disco. Trunca sozinho acima de ~5MB, mantendo so o final (achado @qa).
+  # no logrotate in this dev box: backup.log grows forever and would grow with no ceiling until
+  # the disk ran out. Truncates itself above ~5MB, keeping only the end (found by @qa).
   if [ "$(stat -c%s "$LOG" 2>/dev/null || echo 0)" -gt 5242880 ]; then
     tail -n 2000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
   fi
 }
 
-# Duas chamadas ao mesmo tempo (loop automatico + "backup agora" do painel, ou o loop de
-# projetos e o de config disparando juntos) rodariam git add/commit/push no MESMO repo em
-# paralelo -> corrida no indice do git. Lock nao-bloqueante: se ja tem um backup rodando,
-# so pula esta passada (ela volta no proximo intervalo/clique) em vez de empilhar.
+# Two calls at the same time (automatic loop + "backup now" in the panel, or the projects
+# loop and the config loop firing together) would run git add/commit/push on the SAME repo in
+# parallel -> race on the git index. Non-blocking lock: if a backup is already running,
+# just skip this pass (it comes back on the next interval/click) instead of piling up.
 exec 9>"$LOG_DIR/backup.lock"
 if ! flock -n 9; then
   log "skip: another backup.sh is already running"
   exit 0
 fi
 
-# alert() e RUN_DIR vem da lib comum; sem ela (teste fora da imagem) os alertas so nao saem
+# alert() and RUN_DIR come from the shared lib; without it (test outside the image) alerts just do not go out
 # shellcheck source=devbox-lib.sh
 . "${DEVBOX_LIB:-/usr/local/lib/devbox/lib.sh}" 2>/dev/null || alert() { :; }
-# memoria da VM no limite (guarda do start.sh): tar/git agora so piorariam -- pula esta passada
+# machine memory at the limit (start.sh guard): tar/git now would only make it worse -- skip this pass
 if [ -e "${RUN_DIR:-$H/.claude/run}/lowmem" ]; then
   log "skip: memory is high (lowmem) — backup postponed"
   exit 0
@@ -64,8 +64,8 @@ fi
 backup_config() {
   mkdir -p "$CFG_BACKUP_DIR"
   local out stamp
-  # +PID: dois disparos no mesmo segundo (job automatico + clique manual) nao colidem
-  # no nome do arquivo e um nao sobrescreve o outro em silencio (achado @qa 2026-09-28)
+  # +PID: two runs in the same second (automatic job + manual click) do not collide
+  # on the file name and one does not silently overwrite the other (found by @qa 2026-09-28)
   stamp="$(date '+%Y%m%d-%H%M%S')-$$"
   out="$CFG_BACKUP_DIR/config-$stamp.tgz"
   if tar czf "$out" -C "$H" --ignore-failed-read \
@@ -74,7 +74,7 @@ backup_config() {
        .claude .claude.json 2>/dev/null; then
     chmod 600 "$out"
     log "ok    config: $(basename "$out") ($(du -h "$out" | cut -f1))"
-    # rotacao: mantem os N mais recentes
+    # rotation: keeps the N newest
     ls -1t "$CFG_BACKUP_DIR"/config-*.tgz 2>/dev/null | tail -n +"$((CFG_KEEP + 1))" | xargs -r rm -f
   else
     log "WARN  config: could not create the tarball"
@@ -114,44 +114,44 @@ backup_volume() {
 
 backup_repo() {
   local dir="$1" name
-  [ -d "$dir/.git" ] || return 0                       # nao e repo git -> ignora
+  [ -d "$dir/.git" ] || return 0                       # not a git repo -> skip
   name=$(basename "$dir")
 
-  # precisa de remote 'origin' p/ ter pra onde fazer push
+  # needs an 'origin' remote to have somewhere to push
   if ! git -C "$dir" remote get-url origin >/dev/null 2>&1; then
     log "skip  $name: no 'origin' remote (set it up: git remote add origin <url>)"
     return 0
   fi
 
-  # identidade local de fallback (caso a global nao exista)
+  # fallback local identity (in case the global one does not exist)
   git -C "$dir" config user.email >/dev/null 2>&1 || git -C "$dir" config user.email "devbox@localhost"
   git -C "$dir" config user.name  >/dev/null 2>&1 || git -C "$dir" config user.name  "claude-devbox"
 
-  # nada mudou -> nada a fazer
+  # nothing changed -> nothing to do
   if [ -z "$(git -C "$dir" status --porcelain)" ]; then
     return 0
   fi
 
-  # SEGURANÇA: `add -A` sem exceção empurraria o worklog para o GitHub sem revisão
-  # humana. O worklog é escrito pelo Stop hook a partir da TRANSCRIÇÃO, que pode
-  # conter segredos digitados ou gerados na sessão.
+  # SECURITY: `add -A` with no exception would push the worklog to GitHub without human
+  # review. The worklog is written by the Stop hook from the TRANSCRIPT, which may
+  # contain secrets typed or generated in the session.
   #
-  # O hook agora redige segredo antes de escrever, mas defesa em profundidade:
-  # snapshot AUTOMÁTICO (sem ninguém olhando) não leva worklog. Quem quiser
-  # versionar um worklog específico o faz num commit à mão, que passa por revisão.
+  # The hook now redacts secrets before writing, but defense in depth:
+  # an AUTOMATIC snapshot (with nobody looking) does not take the worklog. Whoever wants to
+  # version a specific worklog does it in a manual commit, which goes through review.
   git -C "$dir" add -A -- ':!docs/worklog'
-  # A exclusão acima só filtra o que é estagiado AGORA — ela não desfaz o que já
-  # estava no índice. Sem este reset, um worklog estagiado antes (por outra
-  # ferramenta, ou por um `git add` de uma sessão) entrava no snapshot mesmo
-  # assim; foi o que aconteceu no snapshot de 2026-08-09 14:41.
+  # The exclusion above only filters what is staged NOW — it does not undo what was already
+  # in the index. Without this reset, a worklog staged before (by another
+  # tool, or by a `git add` in a session) went into the snapshot anyway;
+  # that is what happened in the 2026-08-09 14:41 snapshot.
   git -C "$dir" reset -q -- docs/worklog 2>/dev/null || true
-  # Nada sobrou para commitar depois do reset? então não cria commit vazio.
+  # Nothing left to commit after the reset? Then do not create an empty commit.
   if [ -z "$(git -C "$dir" diff --cached --name-only)" ]; then
     return 0
   fi
   git -C "$dir" commit -m "chore(backup): auto-snapshot $(date '+%F %T')" >/dev/null 2>&1
-  # timeout: push numa rede travada (sem erro, sem avancar) ficaria pendurado pra sempre e
-  # o loop automatico (start.sh) nunca mais chamaria backup.sh de novo (achado @qa).
+  # timeout: a push on a stuck network (no error, no progress) would hang forever and
+  # the automatic loop (start.sh) would never call backup.sh again (found by @qa).
   if timeout 120 git -C "$dir" push >/dev/null 2>&1; then
     log "ok    $name: snapshot pushed"
   else

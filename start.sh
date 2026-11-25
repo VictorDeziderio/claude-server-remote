@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Entrypoint do dev-box claude. Prepara tudo como root e roda o resto como o usuario "ubuntu":
-#   1. volume /root: pastas, settings do Claude, ownership, panel.json (semente)
-#   2. wrapper "claude" (root -> ubuntu), gh via GH_TOKEN, identidade git
-#   3. sessoes tmux dos projetos LIGADOS (claude-session.sh --all) + watchdog
-#   4. backup automatico (projetos git + config)
-#   5. painel (node, interno :7001) + gateway Caddy (porta publica GATEWAY_PORT, PID principal)
+# Entrypoint of the claude dev box. Prepares everything as root and runs the rest as the "ubuntu" user:
+#   1. /root volume: folders, Claude settings, ownership, panel.json (seed)
+#   2. "claude" wrapper (root -> ubuntu), gh via GH_TOKEN, git identity
+#   3. tmux sessions of the projects that are ON (claude-session.sh --all) + watchdog
+#   4. automatic backup (git projects + config)
+#   5. panel (node, internal :7001) + Caddy gateway (public port GATEWAY_PORT, main PID)
 #
-# Variaveis: ver .env.example (todas tem default no Dockerfile).
+# Variables: see .env.example (all have a default in the Dockerfile).
 set -euo pipefail
 
 LIB="${DEVBOX_LIB:-/usr/local/lib/devbox/lib.sh}"
 # shellcheck source=devbox-lib.sh
-. "$LIB"   # so pelas funcoes de backoff (run_bg) -- os caminhos abaixo continuam proprios
+. "$LIB"   # only for the backoff functions (run_bg) -- the paths below stay its own
 
 U=ubuntu
 H=/root                                     # home do ubuntu = volume persistente
@@ -31,11 +31,11 @@ as_user() { gosu "$U" env HOME="$H" USER="$U" LOGNAME="$U" "$@"; }
 # ---------------------------------------------------------------------------
 # 1) volume
 # ---------------------------------------------------------------------------
-# SEM a pasta de logs o redirect ">> $LOGS/x.log" dos processos em background falha e eles
-# nao sobem (volume novo) -> cria tudo explicitamente.
+# WITHOUT the logs folder the ">> $LOGS/x.log" redirect of the background processes fails and they
+# do not start (new volume) -> creates everything explicitly.
 mkdir -p "$H/.claude/run" "$LOGS" "$PROJECTS_DIR"
-# flags "Claude rodando" de execucoes anteriores sao orfas no boot (senao o painel mostraria
-# "rodando" antes de o Claude subir)
+# "Claude running" flags from previous runs are orphans at boot (otherwise the panel would show
+# "running" before Claude starts)
 rm -f "$H/.claude/run/"*.running 2>/dev/null || true
 
 [ -f "$H/.claude/settings.json" ] || cat > "$H/.claude/settings.json" <<'JSON'
@@ -46,22 +46,22 @@ rm -f "$H/.claude/run/"*.running 2>/dev/null || true
 }
 JSON
 
-# panel.json: a copia VIVA fica no volume; semeada da imagem so na 1a vez
+# panel.json: the LIVE copy is on the volume; seeded from the image only the first time
 [ -f "$PANEL_CONFIG" ] || cp /usr/local/share/claude/panel.json "$PANEL_CONFIG" 2>/dev/null || true
 
-# ownership: so o que NAO e do ubuntu. Varrer o volume INTEIRO no boot passava de 2 min (milhoes de
-# arquivos: node_modules de worktrees) e o healthcheck da plataforma matava o container novo em loop
-# (2026-10-10). Bloqueia o boot so o raso (o que o boot e as sessoes usam: ~/.claude, configs, pastas
-# dos projetos); o resto corre em segundo plano com prioridade minima.
+# ownership: only what is NOT owned by ubuntu. Scanning the WHOLE volume at boot took over 2 min (millions of
+# files: node_modules of worktrees) and the platform healthcheck killed the new container in a loop
+# (2026-10-10). Only the shallow part blocks the boot (what the boot and the sessions use: ~/.claude, configs, project
+# folders); the rest runs in the background at the lowest priority.
 fix_owner() { find "$@" -xdev \( ! -user "$U" -o ! -group "$U" \) ! -path "$SECRETS_FILE" -exec chown -h "$U:$U" {} + 2>/dev/null || true; }
 fix_owner "$H" -maxdepth 2
 fix_owner "$H/.claude" -maxdepth 3
 ( renice -n 19 -p "$BASHPID" >/dev/null 2>&1; ionice -c3 -p "$BASHPID" 2>/dev/null; fix_owner "$H" ) &
 
-# Segredos do volume: algumas plataformas (ex.: painéis tipo PaaS) passam TODO o Environment como --build-arg e o comando aparece
-# inteiro no log de build -- quem tira PANEL_PASSWORD/GH_TOKEN do Environment e os poe aqui
-# (KEY=valor, root 600) nao vaza mais nada no log. Vence o Environment. So chaves conhecidas;
-# o arquivo nunca e executado (sem `source`).
+# Secrets on the volume: some platforms (e.g. PaaS-style panels) pass the WHOLE Environment as --build-arg and the command shows
+# up in full in the build log -- moving PANEL_PASSWORD/GH_TOKEN out of the Environment and into this file
+# (KEY=value, root 600) leaks nothing in the log anymore. Wins over the Environment. Only known keys;
+# the file is never executed (no `source`).
 if [ -f "$SECRETS_FILE" ]; then
   chown root:root "$SECRETS_FILE"; chmod 600 "$SECRETS_FILE"
   while IFS= read -r line || [ -n "$line" ]; do
@@ -72,17 +72,17 @@ if [ -f "$SECRETS_FILE" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 2) ferramentas
+# 2) tools
 # ---------------------------------------------------------------------------
-# Wrapper "claude": o Claude Code RECUSA rodar como root com bypassPermissions. Em
-# /usr/local/bin (precede /usr/bin no PATH): chamado como root (docker exec / console da plataforma),
-# re-executa como ubuntu; senao chama o binario real.
+# "claude" wrapper: Claude Code REFUSES to run as root with bypassPermissions. In
+# /usr/local/bin (comes before /usr/bin in PATH): called as root (docker exec / platform console),
+# it re-runs as ubuntu; otherwise it calls the real binary.
 REAL_CLAUDE=/usr/bin/claude
 [ -x "$REAL_CLAUDE" ] || REAL_CLAUDE="$(command -v -a claude 2>/dev/null | grep -vx /usr/local/bin/claude | head -1 || true)"
 if [ -n "$REAL_CLAUDE" ] && [ -x "$REAL_CLAUDE" ]; then
   cat > /usr/local/bin/claude <<WRAP
 #!/usr/bin/env bash
-# auto-gerado pelo start.sh — roda o Claude como o usuario nao-root "$U" quando invocado como root
+# generated by start.sh — runs Claude as the non-root user "$U" when called as root
 [ "\$(id -u)" = "0" ] && exec gosu "$U" env HOME="$H" USER="$U" "$REAL_CLAUDE" "\$@"
 exec "$REAL_CLAUDE" "\$@"
 WRAP
@@ -91,11 +91,11 @@ fi
 # alguns hooks esperam /usr/local/bin/node (o NodeSource instala em /usr/bin)
 [ -e /usr/local/bin/node ] || ln -sf /usr/bin/node /usr/local/bin/node
 
-# GitHub CLI: auto-login via GH_TOKEN + git usando o gh como credential helper (push do backup)
+# GitHub CLI: auto-login via GH_TOKEN + git using gh as the credential helper (backup pushes)
 if [ -n "${GH_TOKEN:-}" ]; then
-  # env -u: com GH_TOKEN no ambiente o gh RECUSA gravar o login ("o GH_TOKEN ja esta em uso") e,
-  # como ele sai do ambiente logo abaixo, o backup e as sessoes ficariam sem GitHub. Gravado em
-  # ~/.config/gh (volume), vale para todo processo do ubuntu sem o token no ambiente.
+  # env -u: with GH_TOKEN in the environment gh REFUSES to save the login ("GH_TOKEN is already in use") and,
+  # since it leaves the environment right below, backups and sessions would have no GitHub. Saved in
+  # ~/.config/gh (volume), it works for every ubuntu process without the token in the environment.
   if printf '%s' "$GH_TOKEN" | as_user env -u GH_TOKEN gh auth login --with-token >/dev/null 2>&1 \
      && as_user env -u GH_TOKEN gh auth setup-git >/dev/null 2>&1; then
     say "gh: logged in with GH_TOKEN"
@@ -103,29 +103,29 @@ if [ -n "${GH_TOKEN:-}" ]; then
     say "gh: login with GH_TOKEN failed (valid token / repo scope?)"
   fi
 fi
-# identidade git global (so define se ainda nao existir) — usada nos commits do backup
+# global git identity (only set if it does not exist yet) — used in the backup commits
 as_user git config --global user.email >/dev/null 2>&1 \
   || as_user git config --global user.email "${GIT_AUTHOR_EMAIL:-devbox@localhost}"
 as_user git config --global user.name >/dev/null 2>&1 \
   || as_user git config --global user.name "${GIT_AUTHOR_NAME:-claude-devbox}"
 
-# Segredos fora do ambiente herdado: daqui pra baixo tudo que sobe (servidor tmux, sessoes do
-# Claude em bypassPermissions, backups) herdaria PANEL_PASSWORD/GH_TOKEN -- um `env` dentro de
-# qualquer sessao vazaria a senha do painel. Continuam como variaveis do shell (o painel recebe
-# explicitamente em run_bg); o gh ja guardou o proprio login acima.
+# Secrets out of the inherited environment: from here on everything that starts (tmux server, Claude
+# sessions in bypassPermissions, backups) would inherit PANEL_PASSWORD/GH_TOKEN -- an `env` inside
+# any session would leak the panel password. They stay as shell variables (the panel gets them
+# explicitly in run_bg); gh already saved its own login above.
 export -n PANEL_PASSWORD GH_TOKEN ANTHROPIC_ADMIN_KEY DEPLOY_WEBHOOK_URL 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
-# 3) sessoes tmux (uma por projeto LIGADO) + watchdog
+# 3) tmux sessions (one per project that is ON) + watchdog
 # ---------------------------------------------------------------------------
-# Projeto desligado no painel (panel.json -> enabled=false) NAO sobe no boot nem e recriado
-# pelo watchdog. Os ligados sobem, e se a sessao cair sem o container reiniciar, voltam em ~10s.
+# A project turned off in the panel (panel.json -> enabled=false) does NOT start at boot and is not recreated
+# by the watchdog. The ones that are on start, and if the session dies without a container restart, they come back in ~10s.
 ensure_sessions() { as_user bash /usr/local/bin/claude-session.sh --all || say "warning: could not make sure the sessions are up"; }
 ensure_sessions
 
-# Guarda de memoria: acima de MEM_HIGH_PCT% do limite do container cria RUN_DIR/lowmem (backup
-# pula, painel desacelera) e avisa no painel; abaixo de MEM_OK_PCT% libera. Le o cgroup (o limite
-# REAL do container) e cai no /proc/meminfo se nao houver limite.
+# Memory guard: above MEM_HIGH_PCT% of the container limit it creates RUN_DIR/lowmem (backup
+# skips, panel slows down) and warns in the panel; below MEM_OK_PCT% it clears. Reads the cgroup (the
+# REAL container limit) and falls back to /proc/meminfo if there is no limit.
 MEM_HIGH_PCT="${MEM_HIGH_PCT:-85}" MEM_OK_PCT="${MEM_OK_PCT:-75}"
 mem_pct() {
   local cur max
@@ -159,7 +159,7 @@ mem_guard() {
 # ---------------------------------------------------------------------------
 if [ "${BACKUP_ENABLED:-true}" = "true" ]; then
   say "backup: on (every ${BACKUP_INTERVAL:-3600}s) | log: $LOGS/backup.log"
-  # prioridade minima de CPU e disco: backup nunca disputa com o Claude/painel
+  # lowest CPU and disk priority: the backup never competes with Claude/the panel
   ( while sleep "${BACKUP_INTERVAL:-3600}"; do as_user nice -n 15 ionice -c3 bash /usr/local/bin/backup.sh >/dev/null 2>&1 || true; done ) &
   # snapshot da CONFIG (~/.claude + ~/.claude.json) 1x/dia -> /root/.claude-backups (rotaciona 7)
   ( sleep 120; while true; do
@@ -179,21 +179,21 @@ if [ "${BACKUP_ENABLED:-true}" = "true" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 5) painel + gateway
+# 5) panel + gateway
 # ---------------------------------------------------------------------------
 PANEL_LOGIN="${PANEL_LOGIN:-admin}"
 PANEL_PASSWORD="${PANEL_PASSWORD:-}"
-# Sem senha (ou com o default publico antigo) o PAINEL RECUSA SUBIR — fail-closed em
-# panel/server/auth.js. Aqui so um aviso claro no boot; o valor NUNCA vai para o log.
+# Without a password (or with the old public default) the PANEL REFUSES TO START — fail-closed in
+# panel/server/auth.js. Here only a clear warning at boot; the value NEVER goes to the log.
 if [ -z "$PANEL_PASSWORD" ]; then
   say "[SECURITY] PANEL_PASSWORD is empty -> the panel will NOT start. Set it in the container environment (docker run -e / compose)."
 elif [ "$(printf '%s' "$PANEL_PASSWORD" | sha256sum | cut -c1-64)" = "98a2fc5119f2b61af6d90d9d7bb59813820e6cd43411eeb0a91484a769a0ccb9" ]; then
   say "[SECURITY] PANEL_PASSWORD is an old PUBLIC default -> the panel will NOT start. Change it in the container environment."
 fi
 
-# respawn com backoff: roda um comando em loop (reabre se cair), como ubuntu, logando em
-# arquivo. Sem backoff, um processo em crash-loop (bug/OOM) reabre a cada 3s pra sempre e
-# sozinho sobrecarrega a VM — ver devbox-lib.sh#backoff_next.
+# respawn with backoff: runs a command in a loop (reopens it if it dies), as ubuntu, logging to a
+# file. Without backoff, a crash-looping process (bug/OOM) reopens every 3s forever and
+# alone overloads the machine — see devbox-lib.sh#backoff_next.
 run_bg() {  # $1=label  $2=logfile  resto=comando
   local label="$1" log="$2" fails=0 t0 ran delay; shift 2
   ( while true; do
@@ -223,7 +223,7 @@ if [ "${PANEL_ENABLED:-true}" = "true" ]; then
       nice -n 5 node --max-old-space-size="${PANEL_MAX_MEM_MB:-512}" /usr/local/bin/panel/server.js
 fi
 
-# Gateway (Caddy) — PID principal. So faz proxy: o painel tem login proprio (cookie de sessao).
+# Gateway (Caddy) — main PID. Only proxies: the panel has its own login (session cookie).
 CADDYFILE="$H/.claude/Caddyfile"
 write_caddyfile "$CADDYFILE"   # (devbox-lib.sh: TRUSTED_PROXIES / PANEL_DOMAIN)
 chown "$U:$U" "$CADDYFILE" 2>/dev/null || true
