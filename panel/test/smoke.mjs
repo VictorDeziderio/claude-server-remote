@@ -10,6 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
+import http from 'node:http'
 
 const PANEL = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
@@ -40,6 +41,49 @@ fs.writeFileSync(path.join(BIN, 'claude'), FAKE_CLAUDE, { mode: 0o755 })
 const BACKUP_SCRIPT = path.join(ROOT, 'backup.sh')
 fs.writeFileSync(BACKUP_SCRIPT, '#!/usr/bin/env bash\nmkdir -p "$HOME/.claude/logs"; echo "[2026-01-01 00:00:00] ok    demo: snapshot enviado" | tee -a "$HOME/.claude/logs/backup.log"; if [ "$1" = "--config" ]; then mkdir -p "$HOME/.claude-backups"; tar czf "$HOME/.claude-backups/config-smoke.tgz" -C "$HOME" .claude; echo "[2026-01-01 00:00:00] ok    config: config-smoke.tgz"; fi\n')
 
+// Anthropic FALSO (limites do plano + Admin API): o painel aponta pra ca via USAGE_API_BASE_URL.
+// Nunca chama a Anthropic de verdade nos testes. `fake.mode` muda a resposta do /api/oauth/usage.
+const FAKE_TOKEN = 'fake-oauth-token-SECRET-123', FAKE_ADMIN = 'sk-ant-admin01-FAKE-SECRET-456'
+const fake = { mode: 'ok', usageReqs: [], costReqs: [] }
+const isoIn = (ms) => new Date(Date.now() + ms).toISOString().replace('Z', '123+00:00') // formato real: microssegundos + offset
+const todayIso = new Date().toISOString().slice(0, 10)
+const fakeSrv = http.createServer((req, res) => {
+  const u = new URL(req.url, 'http://x')
+  const send = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)) }
+  if (u.pathname === '/api/oauth/usage') {
+    fake.usageReqs.push({ url: req.url, auth: req.headers.authorization || '', beta: req.headers['anthropic-beta'] || '' })
+    if (fake.mode === '401') return send(401, { type: 'error', error: { type: 'authentication_error' } })
+    if (fake.mode === '500') return send(500, { type: 'error' })
+    return send(200, {
+      five_hour: { utilization: 85, resets_at: isoIn(2 * 3600e3), limit_dollars: null },
+      seven_day: { utilization: 40, resets_at: isoIn(3 * 86400e3) },
+      seven_day_opus: null, seven_day_sonnet: null, some_future_field: { x: 1 },
+      limits: [
+        { kind: 'session', group: 'session', percent: 85, severity: 'warning', resets_at: isoIn(2 * 3600e3), scope: null },
+        { kind: 'weekly_model', group: 'weekly', percent: 96, severity: 'critical', resets_at: isoIn(3 * 86400e3), scope: { model: { display_name: 'Fable' } } },
+      ],
+      extra_usage: { is_enabled: true, monthly_limit: 5000, used_credits: 1234, utilization: 24.68, currency: 'USD', decimal_places: null },
+    })
+  }
+  if (u.pathname === '/v1/organizations/cost_report') {
+    fake.costReqs.push({ key: req.headers['x-api-key'] || '', ver: req.headers['anthropic-version'] || '', q: Object.fromEntries(u.searchParams) })
+    if (req.headers['x-api-key'] !== FAKE_ADMIN) return send(401, { type: 'error' })
+    if (!u.searchParams.get('page')) {
+      return send(200, { data: [
+        { starting_at: '2000-01-01T00:00:00Z', ending_at: '2000-01-02T00:00:00Z', results: [{ amount: '1000', currency: 'USD' }] },
+        { starting_at: todayIso + 'T00:00:00Z', ending_at: todayIso + 'T23:59:59Z', results: [{ amount: '200', currency: 'USD' }, { amount: '50.0', currency: 'USD' }] },
+      ], has_more: true, next_page: 'page_2' })
+    }
+    return send(200, { data: [{ starting_at: '2000-01-03T00:00:00Z', results: [{ amount: '50', currency: 'USD' }] }], has_more: false, next_page: null })
+  }
+  send(404, {})
+})
+await new Promise((r) => fakeSrv.listen(0, '127.0.0.1', r))
+const FAKE_BASE = `http://127.0.0.1:${fakeSrv.address().port}`
+const CREDS = path.join(ROOT, 'fake-credentials.json') // fora de ~/.claude: o teste de login espera "deslogado"
+const writeCreds = (token, expiresAt = Date.now() + 3600e3) => fs.writeFileSync(CREDS, JSON.stringify({ claudeAiOauth: { accessToken: token, refreshToken: 'fake-refresh-SECRET', expiresAt, subscriptionType: 'max' } }))
+writeCreds(FAKE_TOKEN)
+
 // no Windows, bash/tar do Git for Windows (p/ os scripts falsos de backup)
 let PATH = BIN + path.delimiter + (process.env.PATH || '')
 if (process.platform === 'win32') {
@@ -53,7 +97,11 @@ const env = {
   PROJECTS_DIR: path.join(ROOT, 'projects'), PANEL_CONFIG: path.join(ROOT, '.claude', 'panel.json'),
   SESSION_SCRIPT, BACKUP_SCRIPT, TMUX_TMPDIR: ROOT,
   DEVBOX_LIB: path.join(DEVBOX, 'devbox-lib.sh'), CLAUDE_LOOP: FAKE_LOOP,
+  // limites do plano / gasto da API contra o Anthropic FALSO (poll automatico raro; o teste usa o refresh)
+  USAGE_API_BASE_URL: FAKE_BASE, USAGE_CREDENTIALS_FILE: CREDS, ANTHROPIC_ADMIN_KEY: FAKE_ADMIN, ANTHROPIC_API_BUDGET_USD: '20',
+  USAGE_POLL_INTERVAL: '600', USAGE_MIN_REFRESH_SECONDS: '0', USAGE_THRESHOLDS: '80,95',
 }
+delete env.CLAUDE_CODE_OAUTH_TOKEN
 // Run from inside tmux, the inherited $TMUX points at the REAL server and wins over TMUX_TMPDIR:
 // the final `tmux kill-server` would kill every live session on the box. Isolate the socket.
 delete env.TMUX
@@ -240,6 +288,75 @@ try {
   ok('health: top[].rss em bytes (nao KB)', r.data.top.length === 0 || (typeof r.data.top[0].rss === 'number' && r.data.top[0].rss >= 1024 && typeof r.data.top[0].pcpu === 'number'), JSON.stringify(r.data.top[0]))
   r = await j('GET', '/api/usage'); ok('usage sob demanda (fora do buildState)', r.data.ok && 'total' in r.data.usage && 'today' in r.data.usage, JSON.stringify(r.data).slice(0, 200))
   r = await j('GET', '/api/state'); ok('state nao traz mais usage (tirado do tick de 2s)', !('usage' in r.data))
+  // limites do plano Claude + gasto da API (server/limits.js) contra o Anthropic FALSO
+  {
+    const L = async () => (await j('POST', '/api/limits/refresh', {})).data
+    r = await fetch(BASE + '/api/limits'); ok('limits sem auth -> 401', r.status === 401)
+    let d = await L()
+    const w = Object.fromEntries((d.claude?.windows || []).map((x) => [x.id, x]))
+    ok('limits: status ok + plano', d.ok && d.claude.status === 'ok' && d.claude.plan === 'max', JSON.stringify(d.claude).slice(0, 300))
+    ok('limits: janela de 5h com % e reset', w.five_hour?.percent === 85 && /T\d\d:\d\d:00\.000Z$/.test(w.five_hour.resetsAt || '') && w.five_hour.severity === 'warning', JSON.stringify(w.five_hour))
+    ok('limits: semana (todos) + por modelo (limits[])', w.seven_day?.percent === 40 && w['model:fable']?.percent === 96 && w['model:fable'].label === 'Current week (Fable)', JSON.stringify(d.claude.windows))
+    ok('limits: janelas null / campos desconhecidos ignorados', !w.seven_day_opus && !w.some_future_field && d.claude.windows.length === 3)
+    ok('limits: extra usage em dolares', d.claude.extra && d.claude.extra.used === 12.34 && d.claude.extra.limit === 50 && d.claude.extra.percent === 24.7, JSON.stringify(d.claude.extra))
+    const last = fake.usageReqs[fake.usageReqs.length - 1] || {}
+    ok('limits: request igual ao do CLI (Bearer + anthropic-beta oauth)', last.auth === 'Bearer ' + FAKE_TOKEN && last.beta === 'oauth-2025-04-20' && last.url === '/api/oauth/usage?skip_spend=1', JSON.stringify({ url: last.url, beta: last.beta }))
+    ok('api spend: hoje/mes somando paginas (centavos -> US$)', d.api.configured && d.api.status === 'ok' && d.api.today === 2.5 && d.api.month === 13 && d.api.percent === 65, JSON.stringify(d.api))
+    const c0 = fake.costReqs[0] || {}
+    ok('api spend: Admin API com x-api-key + versao + bucket 1d', c0.key === FAKE_ADMIN && c0.ver === '2023-06-01' && c0.q.bucket_width === '1d' && /^\d{4}-\d\d-01T00:00:00Z$/.test(c0.q.starting_at || '') && fake.costReqs.some((x) => x.q.page === 'page_2'), JSON.stringify(c0.q))
+    ok('api spend: avisa que nao existe endpoint de saldo', /no public balance endpoint/i.test(d.api.note || ''))
+    const cacheFile = path.join(ROOT, '.claude', 'run', 'usage-limits.json')
+    const cacheTxt = fs.existsSync(cacheFile) ? fs.readFileSync(cacheFile, 'utf8') : ''
+    const leak = (t) => t.includes(FAKE_TOKEN) || t.includes(FAKE_ADMIN) || t.includes('fake-refresh-SECRET')
+    ok('limits: cache gravado no volume sem token/chave', cacheTxt.includes('five_hour') && !leak(cacheTxt))
+    ok('limits: resposta da API sem token/chave', !leak(JSON.stringify(d)))
+    r = await j('GET', '/api/limits'); ok('GET /api/limits devolve o cache (sem rede)', r.data.claude?.status === 'ok' && r.data.thresholds.join(',') === '80,95')
+    // limiares -> alertas do painel (1x por janela/periodo, o maior limiar cruzado)
+    d = await L()
+    r = await j('GET', '/api/alerts')
+    const ua = (r.data.alerts || []).filter((a) => a.kind === 'usage')
+    ok('limiares: alerta 80% (5h) e 95% (Fable), uma vez so', ua.length === 2 && ua.some((a) => /Current session.*85%/.test(a.msg) && a.level === 'warn') && ua.some((a) => /Fable.*96%/.test(a.msg) && a.level === 'error'), JSON.stringify(ua))
+    // token expirado: nao manda nada (o CLI e quem renova), mantem o ultimo valor marcado como velho
+    let n = fake.usageReqs.length
+    writeCreds('expired-token', Date.now() - 1000)
+    d = await L()
+    ok('token expirado: nao chama a API, avisa e mantem os dados (stale)', d.claude.status === 'expired' && fake.usageReqs.length === n && d.claude.stale === true && d.claude.windows.length === 3, JSON.stringify({ s: d.claude.status, n: fake.usageReqs.length - n }))
+    // 401: "Reconnect Claude"; o mesmo token nao e reenviado; token novo no arquivo volta a funcionar
+    writeCreds('rejected-token'); fake.mode = '401'
+    d = await L(); n = fake.usageReqs.length
+    ok('401 -> auth_error "Reconnect Claude"', d.claude.status === 'auth_error' && /reconnect claude/i.test(d.claude.message), JSON.stringify(d.claude).slice(0, 200))
+    d = await L()
+    ok('401: mesmo token nao e reenviado', d.claude.status === 'auth_error' && fake.usageReqs.length === n)
+    writeCreds('new-token'); fake.mode = 'ok'
+    d = await L(); ok('token novo (CLI renovou/relogou) -> volta ao normal', d.claude.status === 'ok' && d.claude.stale === false)
+    // erro 5xx: mantem os dados, marca stale e faz backoff (proximo poll > intervalo)
+    fake.mode = '500'
+    d = await L()
+    ok('5xx: status error + dados mantidos + backoff', d.claude.status === 'error' && d.claude.stale && d.claude.windows.length === 3 && d.nextPollAt - d.updatedAt >= 1100e3, JSON.stringify({ s: d.claude.status, next: d.nextPollAt - d.updatedAt }))
+    fake.mode = 'ok'
+    fs.rmSync(CREDS)
+    d = await L(); ok('sem credencial -> not_logged_in', d.claude.status === 'not_logged_in' && d.claude.windows.length === 0)
+    writeCreds(FAKE_TOKEN)
+    ok('log do painel nunca tem token/chave', !leak(logs))
+
+    // hooks p/ outros modulos (push): onUsage/onThreshold, num processo separado com HOME proprio
+    const H2 = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-limits-'))
+    const script = path.join(H2, 'hook.cjs')
+    fs.writeFileSync(script, `const l = require(${JSON.stringify(path.join(PANEL, 'server', 'limits.js'))});
+const out = { usage: 0, ev: [] };
+l.onUsage(() => out.usage++);
+const off = l.onThreshold((e) => out.ev.push(e));
+l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); });
+(async () => { await l.refresh(); await l.refresh(); off(); await l.refresh(); out.api = l.snapshot().api.status; console.log(JSON.stringify(out)); process.exit(0); })();`)
+    const child = spawn(process.execPath, [script], { env: { PATH: process.env.PATH, HOME: H2, USAGE_API_BASE_URL: FAKE_BASE, USAGE_CREDENTIALS_FILE: CREDS, USAGE_THRESHOLDS: '50', USAGE_MIN_REFRESH_SECONDS: '0' }, stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''; child.stdout.on('data', (x) => { out += x }); child.stderr.on('data', (x) => { out += x })
+    await new Promise((res) => child.on('exit', res))
+    let h = {}; try { h = JSON.parse(out.trim().split('\n').pop()) } catch { /* */ }
+    ok('hook onUsage chamado a cada poll', h.usage === 3, out.slice(-300))
+    ok('hook onThreshold: 1 evento por janela cruzada (5h 85%, Fable 96%), sem repetir', h.ev?.length === 2 && h.ev.every((e) => e.threshold === 50 && e.source === 'claude' && e.resetsAt) && h.ev.some((e) => e.id === 'five_hour' && e.percent === 85), JSON.stringify(h.ev))
+    ok('sem ANTHROPIC_ADMIN_KEY -> api not_configured', h.api === 'not_configured')
+    fs.rmSync(H2, { recursive: true, force: true })
+  }
   r = await j('POST', '/api/backup/run', { name: 'demo' }); ok('backup run', r.data.ok, r.data.msg)
   r = await j('POST', '/api/backup/config', {}); ok('backup config', r.data.ok && r.data.backups.length >= 1, r.data.msg)
   r = await j('GET', '/api/backup/status'); ok('backup status', r.data.ok && r.data.projects[0].last && r.data.configBackups.length >= 1)
@@ -464,6 +581,7 @@ try {
   console.log('  EXCEPTION', e); fails++
 } finally {
   srv.kill()
+  fakeSrv.close()
   if (HAS_TMUX) spawnSync('tmux', ['kill-server'], { env })
   if (fails) console.log('\n--- server log ---\n' + logs.split('\n').slice(-20).join('\n'))
   try { fs.rmSync(ROOT, { recursive: true, force: true }) } catch { /* */ }

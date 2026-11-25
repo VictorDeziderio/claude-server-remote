@@ -164,6 +164,23 @@ Todas têm default no Dockerfile — o serviço sobe sem definir nada. Referênc
 | `MIN_HEALTHY_RUN_S` | `20` | segundos rodando para o backoff de crash-loop considerar "saudável" e zerar o contador |
 | `MAX_BACKOFF_S` | `60` | teto do backoff exponencial entre reaberturas do Claude/painel (segundos) |
 | `MAX_FAST_FAILS` | `6` | falhas rápidas seguidas até o supervisor desistir de reabrir o Claude sozinho e cair num shell livre |
+| `ANTHROPIC_ADMIN_KEY` | (vazio) | Admin API key (`sk-ant-admin...`) → card de **gasto da API** (hoje / mês). Não há endpoint de saldo na Anthropic. Aceita também no arquivo de segredos do volume; não vai para as sessões tmux |
+| `ANTHROPIC_API_BUDGET_USD` | (vazio) | orçamento mensal da API → % + alertas |
+| `USAGE_POLL_INTERVAL` | `300` | segundos entre checagens dos limites (mín. 60; erro → backoff x2 até 1h) |
+| `USAGE_THRESHOLDS` | `80,95` | limiares (%) que geram alerta no painel e o evento `onThreshold` |
+| `USAGE_MONITOR` | `1` | `0` desliga o monitor de limites |
+
+### 📊 Limites de uso (plano Claude + API)
+`panel/server/limits.js` consulta a cada `USAGE_POLL_INTERVAL` o mesmo endpoint que o `/usage` do
+Claude Code usa (`GET /api/oauth/usage`, token OAuth de `~/.claude/.credentials.json`,
+`anthropic-beta: oauth-2025-04-20`): janela de 5h, semanal (todos os modelos e por modelo) e
+extra usage, com horário de reset. O painel **nunca renova o token** (quem faz isso é o CLI):
+token vencido não é enviado; 401 → "Reconnect Claude" e o mesmo token não é reenviado. Último
+resultado fica em `~/.claude/run/usage-limits.json` (sem token). Rotas: `GET /api/limits`
+(cache) e `POST /api/limits/refresh`. Para outros módulos (ex.: push):
+`require('./limits').onUsage(cb)` (a cada checagem) e `.onThreshold(cb)` (`{source, id, label,
+percent, threshold, resetsAt, level}`, 1x por janela/período). Testes usam um servidor falso via
+`USAGE_API_BASE_URL` (e `USAGE_CREDENTIALS_FILE`).
 
 ---
 

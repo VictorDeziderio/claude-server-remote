@@ -4,6 +4,7 @@ import { Cpu, Radio, RefreshCw, Activity, Plus, Power, Wifi, WifiOff, Save, User
 import { Dot, Btn, Chip, Modal, Drawer, ActivityBadge, inputCls, Skeleton } from '../components/ui.jsx'
 import { fmtInt, fmtTok, fmtSize, fmtDate, fmtUsd, fmtUptime } from '../lib/format.js'
 import * as api from '../api.js'
+import { UsageWidget } from '../components/UsageLimits.jsx'
 
 const SESSION_MODES = [
   ['new', 'Nova conversa'],
@@ -239,6 +240,9 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
               <span className="font-mono">{fmtTok((u.today?.in || 0) + (u.today?.out || 0))}</span> tokens · <span className="font-mono">{fmtUsd(u.today?.cost)}</span> · <span className="font-mono">{fmtInt(u.today?.messages)}</span> msgs
             </Link>
           </StatItem>
+        </div>
+        <div className="mt-4 border-t border-white/6 pt-4 empty:hidden">
+          <UsageWidget />
         </div>
         <div className="mt-4 border-t border-white/6 pt-4">
           <HealthCard onFlash={onFlash} />

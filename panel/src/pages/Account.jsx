@@ -6,6 +6,7 @@ import { copyText } from '../lib/clipboard.js'
 import { Btn, Modal, Card, Dot, inputCls, Skeleton, InlineConfirm } from '../components/ui.jsx'
 import { fmtAgo, fmtDate } from '../lib/format.js'
 import * as api from '../api.js'
+import { UsageDetails } from '../components/UsageLimits.jsx'
 
 export default function Account({ data, onFlash, refresh }) {
   const login = data.login || { logged: false, account: '', org: '', method: '' }
@@ -73,6 +74,7 @@ export default function Account({ data, onFlash, refresh }) {
         </p>
       </Card>
 
+      <UsageDetails />
       <ClaudeVersionCard onFlash={onFlash} refresh={refresh} />
       <TwoFactorCard onFlash={onFlash} />
       <SessionsCard onFlash={onFlash} />

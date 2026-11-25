@@ -17,7 +17,7 @@ let list = [];      // ultimos MAX_KEEP alertas (mais recente no fim)
 let offset = 0;      // bytes do arquivo ja processados
 let lastDiskAlertAt = 0;
 
-const LABELS = { 'crash-loop': 'reinicios em loop', backup: 'backup', memory: 'memoria', disk: 'disco', 'claude-update': 'atualizacao do Claude' };
+const LABELS = { 'crash-loop': 'reinicios em loop', usage: 'limites de uso', backup: 'backup', memory: 'memoria', disk: 'disco', 'claude-update': 'atualizacao do Claude' };
 const titleFor = (a) => (LABELS[a.kind] || a.kind) + (a.project ? ` — ${a.project}` : '');
 
 function pushAndBroadcast(a) {

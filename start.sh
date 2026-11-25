@@ -66,7 +66,7 @@ if [ -f "$SECRETS_FILE" ]; then
   chown root:root "$SECRETS_FILE"; chmod 600 "$SECRETS_FILE"
   while IFS= read -r line || [ -n "$line" ]; do
     k="${line%%=*}"; v="${line#*=}"
-    case "$k" in PANEL_LOGIN|PANEL_PASSWORD|GH_TOKEN) export "$k=$v" ;; esac
+    case "$k" in PANEL_LOGIN|PANEL_PASSWORD|GH_TOKEN|ANTHROPIC_ADMIN_KEY) export "$k=$v" ;; esac
   done < "$SECRETS_FILE"
   say "segredos: lidos de $SECRETS_FILE"
 fi
@@ -113,7 +113,7 @@ as_user git config --global user.name >/dev/null 2>&1 \
 # Claude em bypassPermissions, backups) herdaria PANEL_PASSWORD/GH_TOKEN -- um `env` dentro de
 # qualquer sessao vazaria a senha do painel. Continuam como variaveis do shell (o painel recebe
 # explicitamente em run_bg); o gh ja guardou o proprio login acima.
-export -n PANEL_PASSWORD GH_TOKEN 2>/dev/null || true
+export -n PANEL_PASSWORD GH_TOKEN ANTHROPIC_ADMIN_KEY 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # 3) sessoes tmux (uma por projeto LIGADO) + watchdog
@@ -206,7 +206,7 @@ if [ "${PANEL_ENABLED:-true}" = "true" ]; then
       PANEL_LOGIN="$PANEL_LOGIN" PANEL_PASSWORD="$PANEL_PASSWORD" \
       PANEL_SESSION_DAYS="${PANEL_SESSION_DAYS:-30}" \
       BACKUP_ENABLED="${BACKUP_ENABLED:-true}" BACKUP_INTERVAL="${BACKUP_INTERVAL:-3600}" \
-      GATEWAY_PORT="$GATEWAY_PORT" GH_TOKEN="${GH_TOKEN:-}" \
+      GATEWAY_PORT="$GATEWAY_PORT" GH_TOKEN="${GH_TOKEN:-}" ANTHROPIC_ADMIN_KEY="${ANTHROPIC_ADMIN_KEY:-}" \
       GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-}" GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-}" TZ="${TZ:-}" \
       TERM=xterm-256color \
       nice -n 5 node --max-old-space-size="${PANEL_MAX_MEM_MB:-512}" /usr/local/bin/panel/server.js

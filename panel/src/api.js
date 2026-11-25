@@ -63,6 +63,9 @@ export const termWindow = (name, action, index) => post('/api/term/window', { na
 // --- relatorio por periodo ---
 export const report = (from, to) => get('/api/report?' + q({ from: from || '', to: to || '' }))
 export const usage = () => get('/api/usage')
+// limites do plano Claude (5h/semana) + gasto da API (server/limits.js)
+export const limits = () => get('/api/limits')
+export const limitsRefresh = () => post('/api/limits/refresh', {})
 
 // --- alertas ---
 export const alerts = () => get('/api/alerts')
