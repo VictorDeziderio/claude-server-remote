@@ -710,5 +710,18 @@
   "srv.push.resumed": "O Claude continuou sozinho — {name}",
   "srv.push.resumedBody": "O limite de uso renovou; enviei \"{text}\".",
   "common.confirm": "Confirmar",
-  "files.overwriteYes": "Substituir"
+  "files.overwriteYes": "Substituir",
+  "srv.disk.cleaned": "{n} cópias de trabalho antigas removidas ({size} liberados).",
+  "disk.title": "Disco",
+  "disk.project": "Projeto",
+  "disk.copies": "{n} cópias de trabalho dos agentes",
+  "disk.inUse": "em uso",
+  "disk.dirty": "mudanças não salvas",
+  "disk.old": "antiga — pode remover",
+  "disk.recent": "recente",
+  "disk.clean": "Remover {n} cópias antigas ({size})",
+  "disk.cleanAsk": "Remover {n} cópias de trabalho antigas dos agentes ({size})? Só saem as cópias sem mudanças não salvas e sem nada rodando dentro.",
+  "disk.cleanYes": "Remover",
+  "disk.hint": "Os agentes criam uma cópia inteira do projeto para cada tarefa. Cópias paradas há {days}+ dias, sem mudanças não salvas e sem nada rodando, podem ser removidas.",
+  "disk.error": "não deu para medir o disco"
 }

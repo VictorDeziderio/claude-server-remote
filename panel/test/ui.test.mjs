@@ -103,6 +103,8 @@ try {
     await drawer.waitFor({ timeout: 5000 })
     const db = await drawer.boundingBox()
     ok('drawer opens on the right side, full height', db && Math.round(db.x + db.width) >= 1279 && db.height >= 790, JSON.stringify(db))
+    await drawer.locator('[data-testid="disk-section"]').getByText(/project/i).first().waitFor({ timeout: 8000 }).catch(() => {})
+    ok('drawer shows the disk use of the project', await drawer.locator('[data-testid="disk-section"]').getByText(/project/i).first().isVisible().catch(() => false))
     await page.keyboard.press('Escape')
     await drawer.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
     ok('drawer: Escape closes', !(await drawer.count()))

@@ -764,6 +764,39 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
     ok('tela desconhecida sem opcao de saida: Enter permitido', c.kind === 'unknown' && c.exitSelected === false, JSON.stringify(c))
   }
 
+  // disk use + cleanup of old agent work copies (server/disk.js): only old + clean + not in use go
+  {
+    const PD = path.join(ROOT, 'projects', 'disky')
+    fs.mkdirSync(PD, { recursive: true })
+    const g = (args, cwd = PD) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8' })
+    g(['init', '-q']); fs.writeFileSync(path.join(PD, 'a.txt'), 'x'.repeat(5000)); g(['add', '.']); g(['commit', '-qm', 'init'])
+    const WT = path.join(PD, '.claude', 'worktrees')
+    for (const n of ['old-clean', 'old-dirty', 'new-clean', 'old-busy']) g(['worktree', 'add', '-q', '-b', 'b-' + n, path.join(WT, n)])
+    fs.writeFileSync(path.join(WT, 'old-dirty', 'wip.txt'), 'unsaved work')
+    const old = (Date.now() - 30 * 86400e3) / 1000
+    const age = (dir) => { for (const e of [dir, ...fs.readdirSync(dir).map((x) => path.join(dir, x))]) fs.utimesSync(e, old, old) }
+    for (const n of ['old-clean', 'old-dirty', 'old-busy']) age(path.join(WT, n))
+    const busyProc = spawn('sleep', ['60'], { cwd: path.join(WT, 'old-busy'), stdio: 'ignore' })
+    await new Promise((res) => setTimeout(res, 300))
+    r = await j('GET', '/api/disk?name=disky&fresh=1')
+    const by = Object.fromEntries((r.data.worktrees || []).map((w) => [w.name, w]))
+    ok('disk: project size measured', r.data.ok && r.data.bytes > 5000, JSON.stringify(r.data).slice(0, 200))
+    ok('disk: lists the 4 agent work copies with sizes', Object.keys(by).length === 4 && Object.values(by).every((w) => w.bytes > 0))
+    ok('disk: old + clean + idle -> removable', by['old-clean']?.removable === true)
+    ok('disk: unsaved changes -> kept', by['old-dirty']?.dirty === true && by['old-dirty'].removable === false)
+    ok('disk: recent -> kept', by['new-clean']?.removable === false)
+    ok('disk: a process running inside -> kept', by['old-busy']?.inUse === true && by['old-busy'].removable === false, JSON.stringify(by['old-busy']))
+    r = await j('POST', '/api/disk/clean', { name: 'disky', worktrees: ['old-dirty', 'new-clean', 'old-busy'] })
+    ok('disk: asking to remove kept copies removes nothing', r.data.ok && r.data.removed.length === 0 && r.data.kept.length === 3)
+    r = await j('POST', '/api/disk/clean', { name: 'disky' })
+    ok('disk: cleanup removes only the old clean copy', r.data.ok && r.data.removed.join() === 'old-clean' && !fs.existsSync(path.join(WT, 'old-clean')), JSON.stringify(r.data))
+    ok('disk: the others are still there (work kept)', ['old-dirty', 'new-clean', 'old-busy'].every((n) => fs.existsSync(path.join(WT, n))) && fs.readFileSync(path.join(WT, 'old-dirty', 'wip.txt'), 'utf8') === 'unsaved work')
+    ok('disk: git no longer lists the removed copy', !g(['worktree', 'list']).stdout.includes('old-clean'))
+    r = await j('GET', '/api/disk?name=../etc'); ok('disk: invalid project name refused', r.data.ok === false)
+    r = await j('POST', '/api/disk/clean', { name: 'disky', worktrees: ['../../a.txt'] }); ok('disk: a path in the list is ignored', r.data.removed.length === 0 && fs.existsSync(path.join(PD, 'a.txt')))
+    busyProc.kill()
+  }
+
   // rate limit
   cookie = ''
   let last

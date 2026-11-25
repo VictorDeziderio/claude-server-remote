@@ -710,5 +710,18 @@
   "srv.push.resumed": "Claude resumed automatically — {name}",
   "srv.push.resumedBody": "The usage limit was reset; sent \"{text}\".",
   "common.confirm": "Confirm",
-  "files.overwriteYes": "Replace"
+  "files.overwriteYes": "Replace",
+  "srv.disk.cleaned": "Removed {n} old work copies ({size} freed).",
+  "disk.title": "Disk",
+  "disk.project": "Project",
+  "disk.copies": "{n} agent work copies",
+  "disk.inUse": "in use",
+  "disk.dirty": "unsaved changes",
+  "disk.old": "old — can be removed",
+  "disk.recent": "recent",
+  "disk.clean": "Remove {n} old copies ({size})",
+  "disk.cleanAsk": "Remove {n} old agent work copies ({size})? Only copies with no unsaved changes and nothing running inside are removed.",
+  "disk.cleanYes": "Remove",
+  "disk.hint": "Agents create a full copy of the project for each task. Copies untouched for {days}+ days, with no unsaved changes and nothing running, can be removed.",
+  "disk.error": "could not measure the disk"
 }

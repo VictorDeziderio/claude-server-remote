@@ -102,3 +102,6 @@ export const backupDownloadUrl = (file, full) => '/api/backup/download?' + q({ f
 export const settings = () => get('/api/settings')
 export const setDefaults = (patch) => post('/api/settings/defaults', patch)
 export const setSettings = (patch) => post('/api/settings', patch)
+// disk use of a project + cleanup of old agent work copies (server/disk.js)
+export const projectDisk = (name, fresh) => get('/api/disk?name=' + encodeURIComponent(name) + (fresh ? '&fresh=1' : ''))
+export const cleanWorktrees = (name, worktrees) => post('/api/disk/clean', { name, worktrees })

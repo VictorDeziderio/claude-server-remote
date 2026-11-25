@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Cpu, Radio, RefreshCw, Activity, Plus, Power, Wifi, WifiOff, Save, UserRound, Tag, SquareTerminal, FolderOpen, Trash2, Settings2, History, DatabaseBackup, Pencil, HardDrive, MemoryStick, Gauge, Clock, ArrowUpCircle, CheckCircle2, ExternalLink, BarChart3, Pause, Play, ListTree, Pin } from 'lucide-react'
-import { Dot, Btn, Chip, Modal, Drawer, ActivityBadge, inputCls, Skeleton } from '../components/ui.jsx'
+import { Dot, Btn, Chip, Modal, Drawer, ActivityBadge, inputCls, Skeleton, useConfirm } from '../components/ui.jsx'
 import { fmtInt, fmtTok, fmtSize, fmtDate, fmtUsd, fmtUptime } from '../lib/format.js'
 import * as api from '../api.js'
 import { UsageWidget } from '../components/UsageLimits.jsx'
@@ -373,7 +373,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
         })}
       </section>
 
-      {drawerProj && <ProjectDrawer p={drawerProj} data={data} busy={busy} run={run} onClose={() => setDrawer(null)} />}
+      {drawerProj && <ProjectDrawer p={drawerProj} data={data} busy={busy} run={run} onClose={() => setDrawer(null)} onFlash={onFlash} />}
 
       {/* Modal: novo projeto */}
       {showNew && (
@@ -418,8 +418,59 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
   )
 }
 
+// Disk use of the project and of the agents' work copies (.claude/worktrees). Only copies that
+// are old, have no uncommitted changes and have nothing running inside can be removed
+// (the server checks again before removing: server/disk.js).
+function DiskSection({ name, onFlash }) {
+  const [d, setD] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [confirmEl, ask] = useConfirm()
+  const load = (fresh) => api.projectDisk(name, fresh).then(setD).catch(() => setD({ ok: false }))
+  useEffect(() => { load(false) }, [name]) // eslint-disable-line react-hooks/exhaustive-deps
+  const clean = async () => {
+    if (!(await ask(t('disk.cleanAsk', { n: d.removableCount, size: fmtSize(d.removableBytes) }), { yes: t('disk.cleanYes'), danger: true }))) return
+    setBusy(true)
+    const r = await api.cleanWorktrees(name).catch((e) => ({ ok: false, msg: e.message }))
+    setBusy(false)
+    onFlash?.(r)
+    load(true)
+  }
+  const why = (w) => (w.inUse ? t('disk.inUse') : w.dirty ? t('disk.dirty') : w.removable ? t('disk.old') : t('disk.recent'))
+  return (
+    <section className="rounded-xl border border-border bg-sidebar p-4" data-testid="disk-section">
+      <h4 className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground"><HardDrive className="h-3.5 w-3.5" /> {t('disk.title')}</h4>
+      {!d ? <Skeleton className="h-10" /> : !d.ok ? <p className="text-xs text-destructive">{d.msg || t('disk.error')}</p> : (
+        <div className="space-y-2 text-xs">
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <span>{t('disk.project')}: <b className="font-mono">{d.bytes == null ? '—' : fmtSize(d.bytes)}</b></span>
+            {d.worktrees.length > 0 && <span>{t('disk.copies', { n: d.worktrees.length })}: <b className="font-mono">{fmtSize(d.worktreesBytes)}</b></span>}
+          </div>
+          {d.worktrees.length > 0 && (
+            <ul className="max-h-40 space-y-1 overflow-auto rounded-lg border bg-background p-2">
+              {d.worktrees.map((w) => (
+                <li key={w.name} className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate font-mono" title={w.branch || w.name}>{w.name}</span>
+                  <span className="shrink-0 text-muted-foreground">{w.bytes == null ? '—' : fmtSize(w.bytes)} · <span className={w.removable ? 'text-warning' : ''}>{why(w)}</span></span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex items-center gap-2">
+            {d.removableCount > 0 && (
+              <Btn variant="danger" busy={busy} onClick={clean}><Trash2 className="h-3.5 w-3.5" /> {t('disk.clean', { n: d.removableCount, size: fmtSize(d.removableBytes) })}</Btn>
+            )}
+            <Btn variant="ghost" onClick={() => { setD(null); load(true) }}><RefreshCw className="h-3.5 w-3.5" /> {t('common.refresh')}</Btn>
+          </div>
+          {d.worktrees.length > 0 && <p className="text-muted-foreground">{t('disk.hint', { days: d.days })}</p>}
+        </div>
+      )}
+      {confirmEl}
+    </section>
+  )
+}
+
 // Drawer "Configurar projeto": primeira linha, remote, renomear, historico, backup, excluir
-function ProjectDrawer({ p, data, busy, run, onClose }) {
+function ProjectDrawer({ p, data, busy, run, onClose, onFlash }) {
   const [initLine, setInitLine] = useState(p.initLine || '')
   const [newName, setNewName] = useState(p.name)
   const [renaming, setRenaming] = useState(false)
@@ -512,6 +563,8 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
             <History className="h-3.5 w-3.5" /> {t('dash.viewConversations')}
           </Link>
         </Section>
+
+        <DiskSection name={p.name} onFlash={onFlash} />
 
         <Section title="Backup (git)" icon={DatabaseBackup}>
           <div className="mb-2 text-xs text-muted-foreground">
