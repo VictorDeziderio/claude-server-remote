@@ -572,7 +572,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
   r = await fetch(BASE + '/terminal/demo'); ok('SPA fallback /terminal/demo', r.status === 200 && /<div id="root">/.test(await r.text()))
   r = await fetch(BASE + '/files/projects/demo'); ok('SPA fallback /files/...', r.status === 200)
   const assets = fs.existsSync(path.join(PANEL, 'dist', 'assets')) ? fs.readdirSync(path.join(PANEL, 'dist', 'assets')) : []
-  const asset = assets.find((f) => f.startsWith('xterm-') && f.endsWith('.js'))
+  const asset = assets.find((f) => f.endsWith('.js')) // any hashed asset (the xterm chunk is no longer separate)
   if (asset) { r = await fetch(BASE + '/assets/' + asset); ok('asset imutavel', r.status === 200 && /immutable/.test(r.headers.get('cache-control'))) } else skip('asset imutavel (sem dist)')
   r = await fetch(BASE + '/manifest.webmanifest'); if (assets.length) ok('manifest PWA', r.status === 200); else skip('manifest (sem dist)')
   if (assets.length) {
