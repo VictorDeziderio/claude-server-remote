@@ -1,0 +1,46 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: panel/package-lock.json
+      - name: System deps (tmux, caddy, shellcheck)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tmux shellcheck
+          curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_amd64.tar.gz" | sudo tar -xz -C /usr/local/bin caddy
+      - name: Shellcheck
+        run: shellcheck -S error *.sh tests/*.sh
+      - name: Panel build + tests
+        working-directory: panel
+        run: |
+          npm ci
+          npm run build
+          npm test
+      - name: Supervisor tests
+        run: bash tests/claude-loop.test.sh
+      - name: Gateway tests
+        run: bash tests/gateway.test.sh
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

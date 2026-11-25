@@ -1,0 +1,16 @@
+# Quick start:  cp .env.example .env  (set PANEL_PASSWORD)  &&  docker compose up -d
+# Then open http://localhost:8080 (or https://$PANEL_DOMAIN when PANEL_DOMAIN is set).
+services:
+  claude:
+    build: .
+    # image: ghcr.io/victordeziderio/claude-server-remote:latest
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8080:8080"      # panel (HTTP). Put it behind TLS, a VPN or set PANEL_DOMAIN.
+      # - "80:80"        # uncomment both when PANEL_DOMAIN is set (automatic HTTPS)
+      # - "443:443"
+    volumes:
+      - claude-home:/root   # projects + Claude login + panel config survive rebuilds
+volumes:
+  claude-home:

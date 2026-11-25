@@ -146,7 +146,7 @@ Todas têm default no Dockerfile — o serviço sobe sem definir nada. Referênc
 | `REMOTE_CONTROL_NAME` | (vazio) | vazio → remote usa o **nome do projeto**; defina p/ forçar um fixo |
 | `CLAUDE_AUTOCMD_DELAY` | `15` | segundos mínimos antes de tentar o remote-control |
 | `GH_TOKEN` | (vazio) | token GitHub (escopo `repo`) → auto-login do `gh` + push do backup |
-| `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` | `claude-devbox` / `devbox@easypanel.local` | identidade dos commits de backup |
+| `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` | `claude-devbox` / `devbox@localhost` | identidade dos commits de backup |
 | `BACKUP_ENABLED` | `true` | liga/desliga o backup automático dos projetos |
 | `BACKUP_INTERVAL` | `3600` | intervalo entre backups (segundos) |
 | `CONFIG_BACKUP_INTERVAL` | `86400` | snapshot da config (`~/.claude`) em `/root/.claude-backups` |

@@ -13,9 +13,10 @@
 # passe uma versao exata (ex.: --build-arg CLAUDE_CODE_VERSION=2.1.284).
 ARG CLAUDE_CODE_VERSION=latest
 ARG PLAYWRIGHT_VERSION=1.62.1
-# quais browsers instalar no Playwright: "chromium chrome" (default) | "chrome" (so o Google Chrome,
-# ~300MB a menos; scripts sem channel:'chrome' deixam de funcionar) | "chromium"
-ARG PLAYWRIGHT_BROWSERS="chromium chrome"
+# quais browsers instalar no Playwright: "auto" (default: "chromium chrome" em amd64, so "chromium"
+# em arm64 — o Google Chrome nao tem pacote Linux arm64) | "chromium chrome" | "chrome" | "chromium"
+# | "none" (imagem menor, sem browsers)
+ARG PLAYWRIGHT_BROWSERS=auto
 ARG CADDY_VERSION=2.11.7
 
 # ============================================================================
@@ -52,7 +53,7 @@ ARG PLAYWRIGHT_BROWSERS
 ARG CADDY_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    TZ=America/Sao_Paulo \
+    TZ=UTC \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
     # browsers do Playwright FORA de /root (senao o volume montado em /root os esconde)
@@ -97,8 +98,12 @@ RUN npm install -g "playwright@${PLAYWRIGHT_VERSION}" pnpm yarn bun \
 # 5) Browsers do Playwright + dependencias de SO (ver ARG PLAYWRIGHT_BROWSERS).
 #    - chromium: bundled do Playwright (em /opt/ms-playwright)
 #    - chrome: Google Chrome estavel real (canal "chrome"). Use no Playwright com channel: 'chrome'.
-RUN playwright install --with-deps ${PLAYWRIGHT_BROWSERS} \
-    && rm -rf /var/lib/apt/lists/*
+RUN set -e; B="${PLAYWRIGHT_BROWSERS}"; \
+    if [ "$B" = "auto" ]; then \
+      if [ "$(dpkg --print-architecture)" = "amd64" ]; then B="chromium chrome"; else B="chromium"; fi; \
+    fi; \
+    if [ "$B" != "none" ]; then playwright install --with-deps $B; fi; \
+    rm -rf /var/lib/apt/lists/*
 
 # 6) Caddy — gateway/reverse-proxy de uma porta so (painel em /). Lida com WebSocket nativamente.
 # Binario oficial via GitHub Releases (nao mais via apt do Cloudsmith: o repo publico deles

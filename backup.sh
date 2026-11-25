@@ -86,7 +86,7 @@ backup_repo() {
   fi
 
   # identidade local de fallback (caso a global nao exista)
-  git -C "$dir" config user.email >/dev/null 2>&1 || git -C "$dir" config user.email "devbox@easypanel.local"
+  git -C "$dir" config user.email >/dev/null 2>&1 || git -C "$dir" config user.email "devbox@localhost"
   git -C "$dir" config user.name  >/dev/null 2>&1 || git -C "$dir" config user.name  "claude-devbox"
 
   # nada mudou -> nada a fazer
@@ -94,10 +94,9 @@ backup_repo() {
     return 0
   fi
 
-  # SEGURANÇA (achado F1, @security 2026-08-09): `add -A` sem exceção empurrava
-  # o worklog para o GitHub sem revisão humana. O worklog é escrito pelo Stop
-  # hook a partir da TRANSCRIÇÃO — e já levou uma senha root (2026-06-20) e uma
-  # chave de 256 bits gerada em produção (2026-07-27) para `origin/main`.
+  # SEGURANÇA: `add -A` sem exceção empurraria o worklog para o GitHub sem revisão
+  # humana. O worklog é escrito pelo Stop hook a partir da TRANSCRIÇÃO, que pode
+  # conter segredos digitados ou gerados na sessão.
   #
   # O hook agora redige segredo antes de escrever, mas defesa em profundidade:
   # snapshot AUTOMÁTICO (sem ninguém olhando) não leva worklog. Quem quiser

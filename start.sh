@@ -105,7 +105,7 @@ if [ -n "${GH_TOKEN:-}" ]; then
 fi
 # identidade git global (so define se ainda nao existir) — usada nos commits do backup
 as_user git config --global user.email >/dev/null 2>&1 \
-  || as_user git config --global user.email "${GIT_AUTHOR_EMAIL:-devbox@easypanel.local}"
+  || as_user git config --global user.email "${GIT_AUTHOR_EMAIL:-devbox@localhost}"
 as_user git config --global user.name >/dev/null 2>&1 \
   || as_user git config --global user.name "${GIT_AUTHOR_NAME:-claude-devbox}"
 
@@ -214,24 +214,7 @@ fi
 
 # Gateway (Caddy) — PID principal. So faz proxy: o painel tem login proprio (cookie de sessao).
 CADDYFILE="$H/.claude/Caddyfile"
-cat > "$CADDYFILE" <<CADDY
-{
-	auto_https off
-	admin off
-	# o Traefik do EasyPanel fica na frente: sem isso o Caddy sobrescreve X-Forwarded-For/Proto
-	# (todo cliente vira o IP do Traefik -> rate-limit do login compartilhado; HTTPS invisivel)
-	servers {
-		trusted_proxies static private_ranges
-	}
-}
-:${GATEWAY_PORT} {
-	route {
-		@health path /healthz
-		respond @health "ok" 200
-		reverse_proxy 127.0.0.1:${PANEL_PORT}
-	}
-}
-CADDY
+write_caddyfile "$CADDYFILE"   # (devbox-lib.sh: TRUSTED_PROXIES / PANEL_DOMAIN)
 chown "$U:$U" "$CADDYFILE" 2>/dev/null || true
 say "gateway on (:${GATEWAY_PORT}) | painel: / (login '${PANEL_LOGIN}')"
 exec caddy run --config "$CADDYFILE" --adapter caddyfile

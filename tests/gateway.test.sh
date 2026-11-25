@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Testes do gateway (Caddy) gerado pelo write_caddyfile (devbox-lib.sh) — caddy REAL em portas
+# altas, backend falso que devolve o X-Forwarded-For que recebeu. Uso: bash tests/gateway.test.sh
+set -uo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+T="$(mktemp -d)"; export HOME="$T"
+. "$HERE/devbox-lib.sh"
+pass=0 fail=0
+ok() { if [ "$2" = "0" ]; then echo "  PASS $1"; pass=$((pass + 1)); else echo "  FAIL $1 ${3:-}"; fail=$((fail + 1)); fi; }
+command -v caddy >/dev/null || { echo "  SKIP caddy ausente"; exit 0; }
+PIDS=()
+cleanup() { for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done; rm -rf "$T"; }
+trap cleanup EXIT
+export PANEL_PORT=$((20000 + RANDOM % 20000)) GATEWAY_PORT=$((40000 + RANDOM % 20000))
+node -e "require('http').createServer((q,r)=>r.end(String(q.headers['x-forwarded-for']||''))).listen($PANEL_PORT,'127.0.0.1')" & PIDS+=($!)
+
+echo "== padrao: nao confia em X-Forwarded-For vindo de fora"
+unset TRUSTED_PROXIES PANEL_DOMAIN
+write_caddyfile "$T/Caddyfile"
+caddy validate --adapter caddyfile --config "$T/Caddyfile" >/dev/null 2>&1; ok "Caddyfile valido" $?
+! grep -q trusted_proxies "$T/Caddyfile"; ok "sem trusted_proxies por padrao" $?
+caddy run --adapter caddyfile --config "$T/Caddyfile" >/dev/null 2>&1 & PIDS+=($!)
+for i in $(seq 40); do curl -sf "http://127.0.0.1:$GATEWAY_PORT/healthz" >/dev/null && break; sleep 0.25; done
+got="$(curl -s -H 'X-Forwarded-For: 6.6.6.6' "http://127.0.0.1:$GATEWAY_PORT/")"
+[ "$got" = "127.0.0.1" ]; ok "XFF forjado e trocado pelo IP real (rate-limit nao burla)" $? "(recebeu: $got)"
+[ "$(curl -s "http://127.0.0.1:$GATEWAY_PORT/healthz")" = "ok" ]; ok "/healthz responde" $?
+
+echo "== atras de proxy: TRUSTED_PROXIES e PANEL_DOMAIN"
+TRUSTED_PROXIES="private_ranges" write_caddyfile "$T/C2"
+grep -q 'trusted_proxies static private_ranges' "$T/C2"; ok "TRUSTED_PROXIES vira trusted_proxies" $?
+PANEL_DOMAIN="panel.example.com" write_caddyfile "$T/C3"
+caddy validate --adapter caddyfile --config "$T/C3" >/dev/null 2>&1; ok "Caddyfile com dominio valido" $?
+grep -q '^panel.example.com {' "$T/C3" && ! grep -q 'auto_https off' "$T/C3"; ok "PANEL_DOMAIN liga HTTPS automatico" $?
+
+echo
+echo "$pass PASS, $fail FAIL"
+[ "$fail" = "0" ]

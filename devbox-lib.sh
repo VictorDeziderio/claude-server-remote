@@ -142,3 +142,41 @@ backoff_sleep() {
   [ "$s" -gt "$MAX_BACKOFF_S" ] && s="$MAX_BACKOFF_S"
   echo "$s"
 }
+
+# Rede (vale para qualquer host Docker):
+#  - TRUSTED_PROXIES vazio (padrao): o Caddy NAO confia em X-Forwarded-For vindo de fora e grava
+#    o IP real da conexao -> ninguem burla o rate-limit do login trocando o header.
+#    Atras de um proxy reverso (Traefik, Nginx, Cloudflare Tunnel...), informe a faixa dele,
+#    ex.: TRUSTED_PROXIES="private_ranges" ou "10.0.0.0/8 172.16.0.0/12".
+#  - PANEL_DOMAIN definido: o Caddy tira certificado HTTPS sozinho (Let's Encrypt) para esse
+#    dominio -> publique as portas 80 e 443. Vazio: HTTP em GATEWAY_PORT (use atras de um proxy
+#    com TLS, ou numa VPN/Tailscale).
+write_caddyfile() {  # $1 = caminho do Caddyfile; usa GATEWAY_PORT, PANEL_PORT, TRUSTED_PROXIES, PANEL_DOMAIN
+  local CADDY_TRUST CADDY_HTTPS CADDY_SITE
+if [ -n "${TRUSTED_PROXIES:-}" ]; then
+  CADDY_TRUST="	servers {
+		trusted_proxies static ${TRUSTED_PROXIES}
+	}"
+else
+  CADDY_TRUST=""
+fi
+if [ -n "${PANEL_DOMAIN:-}" ]; then
+  CADDY_HTTPS=""; CADDY_SITE="${PANEL_DOMAIN}"
+else
+  CADDY_HTTPS="	auto_https off"; CADDY_SITE=":${GATEWAY_PORT}"
+fi
+cat > "$1" <<CADDY
+{
+${CADDY_HTTPS}
+	admin off
+${CADDY_TRUST}
+}
+${CADDY_SITE} {
+	route {
+		@health path /healthz
+		respond @health "ok" 200
+		reverse_proxy 127.0.0.1:${PANEL_PORT}
+	}
+}
+CADDY
+}
