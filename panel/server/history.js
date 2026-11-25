@@ -6,7 +6,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const cfg = require('./config');
-const { sh, validName, sessionName, paneOf } = require('./util');
+const { sh, validName, sessionName, typeLine } = require('./util');
 
 const encOf = (p) => p.replace(/[^a-zA-Z0-9]/g, '-');
 const dirOf = (name) => path.join(cfg.CLAUDE_DIR, 'projects', encOf(path.join(cfg.PROJECTS_DIR, name)));
@@ -84,8 +84,7 @@ async function resumeConversation(name, id, running) {
     await require('./projects').recreateSession(name); // lazy: evita ciclo de require
     return { ok: true, msg: tr('srv.resumed', { name, id: id.slice(0, 8) }) };
   }
-  await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', `claude --resume ${id}`]);
-  await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-m']);
+  await typeLine(sess, `claude --resume ${id}`);
   return { ok: true, msg: tr('srv.resumeSent', { name }) };
 }
 

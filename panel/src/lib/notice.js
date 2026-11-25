@@ -5,8 +5,8 @@
 const pick = (tOr, pair, fallback) => (Array.isArray(pair) && pair[0] ? tOr(pair[0], fallback, pair[1] || {}) : fallback)
 
 export function noticeText(n = {}, tOr) {
-  if (n.kind === 'alert' || n.alertKind || (n.level && !n.i18n)) {
-    const kind = n.alertKind || n.kind
+  if (n.alertKind) { // alerta (SSE ou /api/alerts)
+    const kind = n.alertKind
     const title = tOr('alert.kind.' + kind, kind) + (n.project ? ` — ${n.project}` : '')
     const raw = n.msg ?? n.body ?? ''
     const body = n.key ? tOr(n.key, raw, n.vars || {}) : raw

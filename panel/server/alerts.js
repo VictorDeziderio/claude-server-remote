@@ -1,5 +1,5 @@
 'use strict';
-const { tr } = require('./i18n');
+const { trOr } = require('./i18n');
 // Alertas do ecossistema de scripts (claude-loop.sh, backup.sh, memory guard...): eles anexam
 // linhas JSON em RUN_DIR/alerts.jsonl ({t, level, kind, project?, msg}). O servidor le so os
 // bytes NOVOS (offset incremental), guarda os ultimos 100 em memoria e distribui por SSE.
@@ -18,9 +18,12 @@ let list = [];      // ultimos MAX_KEEP alertas (mais recente no fim)
 let offset = 0;      // bytes do arquivo ja processados
 let lastDiskAlertAt = 0;
 
-// titulo = rotulo do tipo (o navegador traduz 'alert.kind.<kind>'); este e so a reserva em ingles
-const LABELS = { 'crash-loop': 'crash loop', usage: 'usage limits', backup: 'backup', memory: 'memory', disk: 'disk', 'claude-update': 'Claude update' };
-const titleFor = (a) => (LABELS[a.kind] || a.kind) + (a.project ? ` — ${a.project}` : '');
+// aviso SSE de um alerta; o navegador traduz (alert.kind.<tipo> + key/vars)
+const toNotice = (a) => ({
+  kind: 'alert', t: a.t, level: a.level, alertKind: a.kind, project: a.project || '', msg: a.msg || '',
+  title: trOr('alert.kind.' + a.kind, a.kind, {}, 'en') + (a.project ? ` — ${a.project}` : ''), body: a.msg || '',
+  ...(a.key ? { key: a.key, vars: a.vars } : {}),
+});
 
 const plainVars = (v) => Object.fromEntries(Object.entries(v && typeof v === 'object' ? v : {}).slice(0, 10)
   .filter(([k, x]) => /^\w{1,30}$/.test(k) && ['string', 'number'].includes(typeof x)).map(([k, x]) => [k, String(x).slice(0, 200)]));
@@ -30,7 +33,7 @@ function pushAndBroadcast(a) {
   if (list.length > MAX_KEEP) list.splice(0, list.length - MAX_KEEP);
   // lazy (evita ciclo: events.js e' quem inicia o sampler que chama ate aqui)
   try {
-    require('./events').broadcast('notify', { kind: 'alert', t: a.t, level: a.level, alertKind: a.kind, project: a.project || '', title: titleFor(a), body: a.msg || '', msg: a.msg || '', ...(a.key ? { key: a.key, vars: a.vars } : {}) });
+    require('./events').broadcast('notify', toNotice(a));
   } catch { /* */ }
 }
 
@@ -76,11 +79,12 @@ function maybeDiskAlert(pct) {
   lastDiskAlertAt = now;
   try {
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
-    fs.appendFileSync(FILE, JSON.stringify({ t: now, level: 'warn', kind: 'disk', msg: tr('srv.diskFull', { pct }, 'en'), key: 'srv.diskFull', vars: { pct } }) + '\n');
+    fs.appendFileSync(FILE, JSON.stringify({ t: now, level: 'warn', kind: 'disk', msg: trOr('srv.diskFull', `disk at ${pct}%`, { pct }, 'en'), key: 'srv.diskFull', vars: { pct } }) + '\n');
   } catch (e) { log('error', 'disk alert', { err: e.message }); }
 }
 
-const list100 = () => list.slice();
+// API: kind = tipo do alerta (contrato antigo) + alertKind, a mesma marca do SSE
+const list100 = () => list.map((a) => ({ ...a, alertKind: a.kind }));
 const clear = () => { list = []; };
 
 module.exports = { poll, maybeDiskAlert, list100, clear };

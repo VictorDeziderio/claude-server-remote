@@ -17,7 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
-const { sh, sessionName, paneOf, log } = require('./util');
+const { sessionName, typeLine, log } = require('./util');
 
 const FILE = path.join(cfg.RUN_DIR, 'autoresume.json');
 const num = (v, d) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : d; };
@@ -41,29 +41,10 @@ const D = {
   limits: () => { try { return require('./limits').snapshot(); } catch { return null; } },
   refreshLimits: async () => { try { await require('./limits').refresh(); } catch { /* */ } },
   sessionUp: async (sess) => { try { return await require('./projects').sessionUp(sess); } catch { return false; } },
-  running: (sess) => fs.existsSync(path.join(cfg.RUN_DIR, sess + '.running')),
-  paused: (sess) => fs.existsSync(path.join(cfg.RUN_DIR, sess + '.paused')),
-  // olha a tela AGORA (o vigia do events.js so captura com navegador conectado — painel fechado
-  // deixaria a atividade congelada): duas capturas com 2,5s de intervalo; igual e sem pergunta/
-  // permissao na tela = 'idle'
-  activity: async (sess) => {
-    const cap = async () => { const r = await sh('tmux', ['capture-pane', '-t', paneOf(sess), '-p', '-J', '-S', '-60']); return r.ok ? r.stdout : null; };
-    const a = await cap();
-    if (a == null) return 'off';
-    await new Promise((r) => setTimeout(r, 2500));
-    const b = await cap();
-    if (b == null) return 'off';
-    if (a !== b) return 'busy';
-    const rx = require('./events').PROMPT_RX;
-    return rx && rx.test(b.split('\n').slice(-60).join('\n')) ? 'prompt' : 'idle';
-  },
-  type: async (sess, text) => {
-    // same method as sendRemote: literal text, a pause for the TUI, then Enter
-    const a = await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', text]);
-    if (!a.ok) return false;
-    await new Promise((r) => setTimeout(r, 800));
-    return (await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-m'])).ok;
-  },
+  running: (sess) => require('./projects').claudeRunningFlag(sess),
+  paused: (sess) => require('./projects').pausedFlag(sess),
+  activity: (sess) => require('./events').probeActivity(sess),
+  type: (sess, text) => typeLine(sess, text),
   notify: (ev) => { try { require('./notify').notify(ev).catch(() => {}); } catch { /* */ } },
   save: (obj) => { try { fs.mkdirSync(path.dirname(FILE), { recursive: true }); fs.writeFileSync(FILE, JSON.stringify(obj)); } catch (e) { log('error', 'autoresume: save', { err: e.message }); } },
   load: () => { try { return JSON.parse(fs.readFileSync(FILE, 'utf8')) || {}; } catch { return {}; } },
@@ -138,7 +119,7 @@ async function tick() {
       const ok = await D.type(sess, S.text);
       p.tries += 1; p.sentAt = D.now(); p.at = p.sentAt + S.fallbackMs; changed = true;
       log('info', 'autoresume: sent', { project, ok, tries: p.tries });
-      if (ok) D.notify({ event: 'usage', project, key: 'resumed:' + project + ':' + p.sentAt, url: '/terminal/' + encodeURIComponent(project), title: ['srv.push.resumed', { name: project }], body: ['srv.push.resumedBody', { text: S.text }] });
+      if (ok) D.notify({ event: 'usage', project, key: 'resumed:' + project + ':' + p.sentAt, title: ['srv.push.resumed', { name: project }], body: ['srv.push.resumedBody', { text: S.text }] });
     }
     if (changed) save();
   } catch (e) { log('error', 'autoresume: tick', { err: e.message }); }

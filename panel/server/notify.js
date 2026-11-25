@@ -37,12 +37,12 @@ const L = (key, vars) => [key, vars || {}];
 const txt = (x, lang) => (Array.isArray(x) ? tr(x[0], x[1], lang) : String(x || ''));
 
 const EVENTS = {
-  done: { label: 'Claude finished a task', gapMs: 2 * 60e3 },
-  waiting: { label: 'Claude is waiting for you (permission, question or input)', gapMs: 2 * 60e3 },
-  crash: { label: 'A project is in a crash-loop', gapMs: 10 * 60e3 },
-  boot: { label: 'The dev-box restarted', gapMs: 0 },
-  login: { label: 'Claude is logged out / needs login', gapMs: 30 * 60e3 },
-  usage: { label: 'Usage is near the limit', gapMs: 6 * 3600e3 },
+  done: { gapMs: 2 * 60e3 },
+  waiting: { gapMs: 2 * 60e3 },
+  crash: { gapMs: 10 * 60e3 },
+  boot: { gapMs: 0 },
+  login: { gapMs: 30 * 60e3 },
+  usage: { gapMs: 6 * 3600e3 },
 };
 const RATE_MAX = 12, RATE_WINDOW_MS = 10 * 60e3;   // at most 12 pushes per 10 minutes, all events
 const STALE_MS = 5 * 60e3;                          // hook lines older than this are ignored
@@ -267,7 +267,7 @@ function stop() { for (const t of timers) clearInterval(t); timers = []; }
 
 const info = () => ({
   ok: true, supported: push.supported(), publicKey: push.publicKey(), devices: push.devices(), prefs: prefs(),
-  events: Object.fromEntries(Object.entries(EVENTS).map(([k, v]) => [k, v.label])),
+  events: Object.fromEntries(Object.keys(EVENTS).map((k) => [k, tr('push.event.' + k)])),
   hooksSeenAt, recent: recent.slice(0, 20),
 });
 const hostOf = (req) => String((req && req.headers && (req.headers['x-forwarded-host'] || req.headers.host)) || '').split(',')[0].trim();

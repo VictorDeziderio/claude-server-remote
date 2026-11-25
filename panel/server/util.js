@@ -82,4 +82,13 @@ function log(level, msg, extra) {
   (level === 'error' ? console.error : console.log)(JSON.stringify(line));
 }
 
-module.exports = { sh, readJson, readRaw, sendJson, truthy, validName, sessionName, paneOf, clampInt, log };
+// digita uma linha numa sessao tmux como uma pessoa: texto literal, pausa para a TUI do Claude
+// processar (sem ela o Enter chega antes e a linha fica no prompt), depois Enter. Mesmo metodo
+// do claude-loop.sh.
+async function typeLine(sess, text) {
+  if (!(await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', text])).ok) return false;
+  await new Promise((r) => setTimeout(r, 800));
+  return (await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-m'])).ok;
+}
+
+module.exports = { sh, readJson, readRaw, sendJson, truthy, validName, sessionName, paneOf, clampInt, log, typeLine };

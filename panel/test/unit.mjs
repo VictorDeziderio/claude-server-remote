@@ -156,10 +156,10 @@ eq('chaves usadas no codigo existem no en.json', [...used].filter((k) => !(k in 
   eq('aviso: titulo/corpo pela chave no idioma de quem ve', N.noticeText({ kind: 'done', title: 'Claude finished — app', body: 'Worked for 7s and is now waiting.', i18n: { title: ['srv.doneTitle', { name: 'app' }], body: ['srv.doneBody', { s: 7 }] } }, tOrPt),
     { title: 'Claude terminou — app', body: 'Ficou 7s trabalhando e agora está aguardando.' })
   eq('aviso sem chave: usa o texto que veio', N.noticeText({ kind: 'done', title: 'X', body: 'Y' }, tOrPt), { title: 'X', body: 'Y' })
-  eq('alerta: rotulo do tipo traduzido + projeto, corpo pela chave', N.noticeLine({ level: 'error', kind: 'crash-loop', project: 'demo', msg: 'Claude crashed 3 times', key: 'srv.alert.crashLoop', vars: { n: '3', rc: '1' } }, tOrPt),
+  eq('alerta: rotulo do tipo traduzido + projeto, corpo pela chave', N.noticeLine({ kind: 'alert', level: 'error', alertKind: 'crash-loop', project: 'demo', msg: 'Claude crashed 3 times', key: 'srv.alert.crashLoop', vars: { n: '3', rc: '1' } }, tOrPt),
     'reinícios em loop — demo — O Claude caiu 3 vezes seguidas (último código 1) — parei de reabrir. Veja Logs → Sessões.')
   eq('alerta (SSE) com alertKind', N.noticeText({ kind: 'alert', alertKind: 'disk', level: 'warn', msg: 'disk at 93% used', key: 'srv.diskFull', vars: { pct: 93 } }, tOrPt).body, 'disco em 93% de uso')
-  eq('alerta de tipo desconhecido: mostra o tipo e a msg', N.noticeLine({ level: 'info', kind: 'custom', msg: 'hello' }, tOrPt), 'custom — hello')
+  eq('alerta de tipo desconhecido: mostra o tipo e a msg', N.noticeLine({ kind: 'alert', level: 'info', alertKind: 'custom', msg: 'hello' }, tOrPt), 'custom — hello')
 }
 console.log(`\n${passes} PASS, ${fails} FAIL${fails ? '' : ' — TUDO OK'}`)
 process.exit(fails ? 1 : 0)

@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { AsyncLocalStorage } = require('async_hooks');
+const core = require('../src/lib/i18n-core.js'); // mesmas regras do navegador (pickLang/format/lookup)
 
 const DIR = process.env.PANEL_LOCALES_DIR || path.join(__dirname, '..', 'src', 'locales');
 const DEFAULT = 'en';
@@ -27,25 +28,14 @@ const cookieLang = (req) => {
   return m ? m[1] : '';
 };
 function pickLang(req) {
-  const avail = Object.keys(LOCALES);
-  const want = [cookieLang(req), ...String((req && req.headers && req.headers['accept-language']) || '').split(',').map((s) => s.split(';')[0].trim())];
-  for (const l of want) {
-    if (!l) continue;
-    if (avail.includes(l)) return l;
-    const base = l.split('-')[0].toLowerCase();
-    const hit = avail.find((a) => a.split('-')[0].toLowerCase() === base);
-    if (hit) return hit;
-  }
-  return DEFAULT;
+  const accept = String((req && req.headers && req.headers['accept-language']) || '').split(',').map((s) => s.split(';')[0].trim());
+  return core.pickLang(cookieLang(req), accept, Object.keys(LOCALES), DEFAULT);
 }
 const withLang = (req, fn) => als.run(pickLang(req), fn);
 const current = () => als.getStore() || DEFAULT;
-const format = (s, vars) => (vars ? String(s).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : String(s));
-// tr = "translate": texto da chave no idioma da requisicao atual (reserva: ingles, depois a chave)
-function tr(key, vars, lang) {
-  const l = lang || current();
-  const v = (LOCALES[l] && LOCALES[l][key]) ?? (LOCALES[DEFAULT] && LOCALES[DEFAULT][key]) ?? key;
-  return format(v, vars);
-}
+// texto da chave no idioma da requisicao atual (reserva: ingles, depois a propria chave)
+const tr = (key, vars, lang) => String(core.lookup(LOCALES, lang || current(), DEFAULT, key, vars));
+// como tr, mas `fallback` quando nenhum idioma tem a chave
+const trOr = (key, fallback, vars, lang) => (key in (LOCALES[lang || current()] || {}) || key in (LOCALES[DEFAULT] || {}) ? tr(key, vars, lang) : fallback);
 
-module.exports = { tr, withLang, pickLang, current, load, DEFAULT };
+module.exports = { tr, trOr, withLang, pickLang, current, load, DEFAULT };

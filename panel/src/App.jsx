@@ -50,7 +50,7 @@ export default function App() {
     const isAlert = n.kind === 'alert'
     const { title, body } = noticeText(n, tOr) // no idioma de quem esta vendo
     const line = body ? `${title} — ${body}` : title
-    if (isAlert) setAlerts((a) => [{ t: Date.now(), level: n.level, kind: n.alertKind, project: n.project, msg: line }, ...a].slice(0, 50))
+    if (isAlert) setAlerts((a) => [{ ...n, msg: line }, ...a].slice(0, 50))
     setFlash({ ok: isAlert ? n.level !== 'error' && n.level !== 'critical' : n.kind !== 'prompt', msg: line })
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
       try {

@@ -5,7 +5,7 @@ const { tr } = require('./i18n');
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
-const { sh, validName, sessionName, paneOf, truthy, log } = require('./util');
+const { sh, validName, sessionName, paneOf, truthy, log, typeLine } = require('./util');
 const { listProjects } = require('./projects-list');
 const { loginInfo, claudeVersion } = require('./claude');
 const events = require('./events');
@@ -196,10 +196,7 @@ async function sendRemote(name) {
   // sem o Claude rodando o texto cairia no bash (ou num vim) da sessao
   if (!claudeRunningFlag(sess)) return { ok: false, msg: tr('srv.claudeNotRunning') };
   const cmd = remoteCmdFor(name);
-  // Mesmo metodo do claude-loop.sh: texto literal, pausa p/ a TUI processar, depois Enter (C-m).
-  await sh('tmux', ['send-keys', '-t', paneOf(sess), '-l', cmd]);
-  await new Promise((r) => setTimeout(r, 800));
-  await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-m']);
+  await typeLine(sess, cmd);
   // Claude Code 2.1.28x+: pede confirmacao ("❯ 1. Enable Remote Control") -> Enter aceita
   // (Esc seria "Never mind"). Olha por ate ~8s.
   for (let i = 0; i < 8; i++) {
@@ -346,6 +343,6 @@ async function buildState() {
 module.exports = {
   listProjects, projConfig, loadConfig, saveConfig, sessionUp, ensureSession, killSession, recreateSession,
   createProject, restartProject, renameProject, deleteProject, sendRemote, setConfig, setPower, setInitLine,
-  setSessionMode, pauseProject, unpauseProject,
+  setSessionMode, pauseProject, unpauseProject, claudeRunningFlag, pausedFlag,
   buildState,
 };

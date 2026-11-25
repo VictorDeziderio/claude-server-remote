@@ -209,4 +209,18 @@ function stop() {
   clients.clear();
 }
 
-module.exports = { attach, broadcast, onNotify, start, stop, poke, remoteUrlOf, currentState, activitySnapshot, activityOf, PROMPT_RX, clientCount: () => clients.size };
+// estado da tela AGORA, sem depender do vigia (que so captura com navegador conectado): duas
+// capturas com 2,5s de intervalo, com a mesma regra do tick: mudou = 'busy'; parada pedindo
+// algo (PROMPT_RX) = 'prompt'; parada = 'idle'; sem sessao = 'off'
+async function probeActivity(sess) {
+  const cap = async () => { const r = await sh('tmux', ['capture-pane', '-t', '=' + sess + ':', '-p', '-J', '-S', '-300']); return r.ok ? (r.stdout || '').split('\n').slice(-60).join('\n') : null; };
+  const a = await cap();
+  if (a == null) return 'off';
+  await new Promise((r) => setTimeout(r, 2500));
+  const b = await cap();
+  if (b == null) return 'off';
+  if (a !== b) return 'busy';
+  return PROMPT_RX.test(b) ? 'prompt' : 'idle';
+}
+
+module.exports = { attach, broadcast, onNotify, start, stop, poke, remoteUrlOf, currentState, activitySnapshot, activityOf, probeActivity, clientCount: () => clients.size };

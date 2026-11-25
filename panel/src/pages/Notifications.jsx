@@ -3,7 +3,7 @@ import { BellRing, BellOff, Send, Trash2, Smartphone, Download, Share, PlusSquar
 import { Btn, Card, Empty, Skeleton } from '../components/ui.jsx'
 import { cn } from '../lib/utils.js'
 import * as P from '../lib/push.js'
-import { t, tOr } from '../lib/i18n.js'
+import { t } from '../lib/i18n.js'
 import { TR } from '../lib/i18n-rich.jsx'
 
 const fmtAgo = (ms) => {
@@ -148,7 +148,7 @@ export default function NotificationsPage({ onFlash }) {
 
       <Card title={t('push.notifyWhen')}>
         <ul className="divide-y divide-border">
-          {Object.entries(info.events).map(([k, srvLabel]) => { const label = tOr('push.event.' + k, srvLabel); return (
+          {Object.entries(info.events).map(([k, label]) => { return (
             <li key={k} className="flex items-center justify-between gap-3 py-3">
               <span className="text-sm text-foreground">{label}</span>
               <Toggle on={!!info.prefs.events[k]} busy={busy === 'ev-' + k} label={label} onChange={(v) => setEvent(k, v)} />
