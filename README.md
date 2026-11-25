@@ -34,7 +34,8 @@ Your projects and your Claude login live in a volume, so nothing is lost on rebu
 - **Conversation history:** browse past conversations and continue any of them (`claude --resume`).
 - **File browser + editor** (CodeMirror), upload/download, create/rename/delete.
 - **Automatic Claude login:** the panel answers the first-run screens for you; you only paste the code.
-- **Backups:** periodic `git commit + push` of each project, plus daily snapshots of the Claude config.
+- **Backups:** periodic `git commit + push` of each project, plus daily snapshots of the Claude config,
+  and optionally an incremental copy of the whole volume to another disk (`VOLUME_BACKUP_DIR`).
 - **Secure by default:** own login with signed, revocable sessions, optional 2FA (TOTP), rate limit,
   CSRF/Origin checks, CSP, audit log. The panel refuses to start without a password.
 - **Light/dark theme** and **multiple languages** (English and Português; adding one is copying a JSON file).
@@ -103,6 +104,7 @@ All variables have defaults; only `PANEL_PASSWORD` is required. Full list with c
 | `PROJECT_FOLDER` | `claude` | default project created on the first start |
 | `GH_TOKEN` | — | GitHub token (repo scope): `gh` login + backup pushes |
 | `BACKUP_ENABLED` / `BACKUP_INTERVAL` | `true` / `3600` | project backups (git commit + push) |
+| `VOLUME_BACKUP_DIR` / `VOLUME_BACKUP_KEEP` | — / `7` | incremental daily copy of the volume to another disk (only what changed takes space) |
 | `ANTHROPIC_ADMIN_KEY` / `ANTHROPIC_API_BUDGET_USD` | — | API spend card and budget alerts |
 | `USAGE_POLL_INTERVAL` / `USAGE_THRESHOLDS` | `300` / `80,95` | plan usage checks and alert levels |
 | `AUTO_RESUME` / `AUTO_RESUME_TEXT` | `1` / `continue` | continue by itself after the usage limit |
@@ -124,7 +126,7 @@ cd panel
 npm install
 npm run dev        # Vite on :5173, proxying /api and /ws to `node server.js` on :7001 (needs tmux)
 npm run check && npm run build && npm test
-cd .. && bash tests/claude-loop.test.sh && bash tests/gateway.test.sh && shellcheck -S error *.sh tests/*.sh
+cd .. && bash tests/claude-loop.test.sh && bash tests/gateway.test.sh && bash tests/backup-volume.test.sh && shellcheck -S error *.sh tests/*.sh
 ```
 
 - Panel: React + Tailwind (shadcn-style) + xterm.js + CodeMirror, built with Vite. Server: Node

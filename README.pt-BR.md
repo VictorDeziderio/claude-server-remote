@@ -33,7 +33,8 @@ notificações push. Os projetos e o login do Claude ficam num volume, então na
 - **Histórico de conversas:** veja conversas antigas e continue qualquer uma (`claude --resume`).
 - **Arquivos + editor** (CodeMirror), upload/download, criar/renomear/excluir.
 - **Login do Claude automático:** o painel responde as telas do primeiro uso; você só cola o código.
-- **Backups:** `git commit + push` periódico de cada projeto e cópia diária da configuração do Claude.
+- **Backups:** `git commit + push` periódico de cada projeto, cópia diária da configuração do Claude e,
+  se quiser, uma cópia incremental do volume inteiro em outro disco (`VOLUME_BACKUP_DIR`).
 - **Seguro por padrão:** login próprio com sessões assinadas e revogáveis, 2FA (TOTP) opcional, limite de
   tentativas, checagem de origem (CSRF), CSP e registro de auditoria. Sem senha, o painel não sobe.
 - **Tema claro/escuro** e **vários idiomas** (inglês e português; um idioma novo é só copiar um arquivo JSON).
@@ -103,6 +104,7 @@ Todas as variáveis têm valor padrão; só `PANEL_PASSWORD` é obrigatória. Li
 | `PROJECT_FOLDER` | `claude` | projeto padrão criado na primeira subida |
 | `GH_TOKEN` | — | token do GitHub (escopo repo): login do `gh` + push dos backups |
 | `BACKUP_ENABLED` / `BACKUP_INTERVAL` | `true` / `3600` | backup dos projetos (git commit + push) |
+| `VOLUME_BACKUP_DIR` / `VOLUME_BACKUP_KEEP` | — / `7` | cópia diária incremental do volume em outro disco (só o que mudou ocupa espaço) |
 | `ANTHROPIC_ADMIN_KEY` / `ANTHROPIC_API_BUDGET_USD` | — | gasto da API e alertas de orçamento |
 | `USAGE_POLL_INTERVAL` / `USAGE_THRESHOLDS` | `300` / `80,95` | checagem do uso do plano e níveis de alerta |
 | `AUTO_RESUME` / `AUTO_RESUME_TEXT` | `1` / `continue` | continuar sozinho depois do limite de uso |
@@ -124,7 +126,7 @@ cd panel
 npm install
 npm run dev        # Vite na :5173, com proxy de /api e /ws para `node server.js` na :7001 (precisa de tmux)
 npm run check && npm run build && npm test
-cd .. && bash tests/claude-loop.test.sh && bash tests/gateway.test.sh && shellcheck -S error *.sh tests/*.sh
+cd .. && bash tests/claude-loop.test.sh && bash tests/gateway.test.sh && bash tests/backup-volume.test.sh && shellcheck -S error *.sh tests/*.sh
 ```
 
 - Painel: React + Tailwind (estilo shadcn) + xterm.js + CodeMirror, com Vite. Servidor: Node

@@ -166,6 +166,16 @@ if [ "${BACKUP_ENABLED:-true}" = "true" ]; then
       as_user nice -n 15 ionice -c3 bash /usr/local/bin/backup.sh --config >/dev/null 2>&1 || true
       sleep "${CONFIG_BACKUP_INTERVAL:-86400}"
     done ) &
+  # incremental copy of the whole volume to ANOTHER disk/mount (backup.sh --volume), if configured
+  if [ -n "${VOLUME_BACKUP_DIR:-}" ]; then
+    mkdir -p "$VOLUME_BACKUP_DIR" && chown "$U:$U" "$VOLUME_BACKUP_DIR" 2>/dev/null || true
+    say "volume backup: on (every ${VOLUME_BACKUP_INTERVAL:-86400}s, keeps ${VOLUME_BACKUP_KEEP:-7}) -> $VOLUME_BACKUP_DIR"
+    ( sleep 600; while true; do
+        as_user env VOLUME_BACKUP_DIR="$VOLUME_BACKUP_DIR" VOLUME_BACKUP_KEEP="${VOLUME_BACKUP_KEEP:-7}" VOLUME_BACKUP_EXCLUDE="${VOLUME_BACKUP_EXCLUDE:-}" \
+          nice -n 15 ionice -c3 bash /usr/local/bin/backup.sh --volume >/dev/null 2>&1 || true
+        sleep "${VOLUME_BACKUP_INTERVAL:-86400}"
+      done ) &
+  fi
 fi
 
 # ---------------------------------------------------------------------------

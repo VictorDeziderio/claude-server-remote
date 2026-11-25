@@ -736,5 +736,12 @@
   "settings.updateBusy": "Trabalhando agora: {names}. \"Quando parado\" espera eles terminarem; tarefas cortadas por um reinício continuam sozinhas.",
   "settings.updateWaiting": "Esperando {names} terminar. A atualização começa assim que todos os projetos estiverem parados.",
   "settings.updateIdleBtn": "Atualizar quando parado",
-  "settings.updateNowBtn": "Atualizar agora"
+  "settings.updateNowBtn": "Atualizar agora",
+  "srv.alert.volumeBackupFailed": "O backup do volume falhou (rsync). Veja o backup-volume.err.",
+  "backup.volume": "Cópia do volume (incremental)",
+  "backup.volumeSub": "Cópia diária do /root inteiro em outro disco; só o que mudou ocupa espaço.",
+  "backup.volumeOff": "Desligado. Defina `VOLUME_BACKUP_DIR` com uma pasta em outro disco ou montagem (ex.: uma pasta do servidor montada em `/backup`).",
+  "backup.volumeDest": "Destino",
+  "backup.volumeKeep": "mantém as últimas {n}",
+  "backup.volumeNever": "nenhuma cópia ainda (a primeira roda 10 minutos depois de ligar)"
 }

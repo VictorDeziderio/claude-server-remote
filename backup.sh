@@ -10,6 +10,14 @@
 #   backup.sh --config   -> tarball da CONFIG (~/.claude sem historico/logs + ~/.claude.json)
 #                           em $H/.claude-backups/config-<data>.tgz (mantem os 7 mais recentes).
 #                           Baixe pelo painel (Backup) — se o volume sumir, o login/config vao junto.
+#   backup.sh --volume   -> incremental copy of the whole home (/root, the volume) into
+#                           $VOLUME_BACKUP_DIR/<date>/ — a folder on ANOTHER disk or mount.
+#                           rsync --link-dest: files that did not change are hard links to the
+#                           previous copy, so each new copy only takes the space of what changed,
+#                           and every copy is still a complete, browsable folder. Keeps the
+#                           newest $VOLUME_BACKUP_KEEP (7). Skips rebuildable data: node_modules,
+#                           caches (.cache .npm .gradle .bun), agent work copies (.claude/worktrees)
+#                           and the config tarballs; add more with VOLUME_BACKUP_EXCLUDE (comma list).
 #
 # Roda como o usuario "ubuntu" (HOME=/root, volume). Identidade git e definida
 # no start.sh (ou cai num default local aqui).
@@ -74,6 +82,36 @@ backup_config() {
   fi
 }
 
+backup_volume() {
+  local dest="${VOLUME_BACKUP_DIR:-}" keep="${VOLUME_BACKUP_KEEP:-7}" stamp prev ex
+  [ -n "$dest" ] || { log "skip  (volume): VOLUME_BACKUP_DIR is not set"; return 0; }
+  dest="$(realpath -m "$dest")"
+  # a copy inside the volume itself is not a backup (it goes away with it) and would copy itself
+  case "$dest/" in "$(realpath -m "$H")/"*) log "WARN  (volume): VOLUME_BACKUP_DIR ($dest) is inside $H — use another disk/mount"; return 1 ;; esac
+  mkdir -p "$dest" || { log "WARN  (volume): cannot create $dest"; return 1; }
+  command -v rsync >/dev/null || { log "WARN  (volume): rsync not found"; return 1; }
+  stamp="$(date '+%Y%m%d-%H%M%S')"
+  prev="$(find "$dest" -mindepth 1 -maxdepth 1 -type d -name '20[0-9][0-9]*' ! -name '*.partial' | sort | tail -n 1)"
+  local args=(-aH --delete --numeric-ids --one-file-system
+    --exclude=node_modules/ --exclude=.cache/ --exclude=.npm/ --exclude=.gradle/ --exclude=.bun/install/cache/
+    --exclude=.claude/worktrees/ --exclude=/.claude-backups/ --exclude=/.claude/run/ --exclude=/.claude/logs/)
+  IFS=',' read -r -a ex <<< "${VOLUME_BACKUP_EXCLUDE:-}"
+  for e in "${ex[@]}"; do [ -n "${e// /}" ] && args+=("--exclude=${e// /}"); done
+  [ -n "$prev" ] && args+=("--link-dest=$prev")
+  # copy into <stamp>.partial and rename at the end: a copy cut in the middle never looks complete
+  if rsync "${args[@]}" "$H/" "$dest/$stamp.partial/" 2>>"$LOG_DIR/backup-volume.err"; then
+    mv "$dest/$stamp.partial" "$dest/$stamp"
+    ln -sfn "$stamp" "$dest/latest"
+    log "ok    (volume): $stamp ($(du -sh --apparent-size "$dest/$stamp" 2>/dev/null | cut -f1) of files${prev:+, unchanged files shared with $(basename "$prev")})"
+    find "$dest" -mindepth 1 -maxdepth 1 -type d -name '20[0-9][0-9]*' ! -name '*.partial' | sort | head -n -"$keep" | xargs -r rm -rf
+    find "$dest" -mindepth 1 -maxdepth 1 -type d -name '*.partial' ! -name "$stamp.partial" -mmin +60 -exec rm -rf {} + 2>/dev/null
+  else
+    log "WARN  (volume): rsync failed (see $LOG_DIR/backup-volume.err); the incomplete copy stays as $stamp.partial"
+    alert warn backup "" "Volume backup failed (rsync). See backup-volume.err." srv.alert.volumeBackupFailed
+    return 1
+  fi
+}
+
 backup_repo() {
   local dir="$1" name
   [ -d "$dir/.git" ] || return 0                       # nao e repo git -> ignora
@@ -124,6 +162,8 @@ backup_repo() {
 
 if [ "${1:-}" = "--config" ]; then
   backup_config
+elif [ "${1:-}" = "--volume" ]; then
+  backup_volume
 elif [ "$#" -ge 1 ]; then
   backup_repo "$1"
 else

@@ -36,7 +36,9 @@ function backupStatus() {
     try { git = fs.existsSync(path.join(dir, '.git')); } catch { /* */ }
     return { name, git, origin, last: byProject[name] || null };
   });
-  return { ok: true, enabled: process.env.BACKUP_ENABLED !== 'false', interval: parseInt(process.env.BACKUP_INTERVAL || '3600', 10), lastRun, projects };
+  // incremental copy of the volume (backup.sh --volume, logged as "(volume)": not a valid project name)
+  const volume = process.env.VOLUME_BACKUP_DIR ? { dir: process.env.VOLUME_BACKUP_DIR, keep: parseInt(process.env.VOLUME_BACKUP_KEEP || '7', 10), interval: parseInt(process.env.VOLUME_BACKUP_INTERVAL || '86400', 10), last: byProject['(volume)'] || null } : null;
+  return { ok: true, enabled: process.env.BACKUP_ENABLED !== 'false', interval: parseInt(process.env.BACKUP_INTERVAL || '3600', 10), lastRun, projects, volume };
 }
 // origin de cada repo (spawn por projeto; so quando a pagina de backup abre)
 async function backupStatusFull() {

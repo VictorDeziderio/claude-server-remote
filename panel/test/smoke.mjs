@@ -767,6 +767,10 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
     ok('tela desconhecida sem opcao de saida: Enter permitido', c.kind === 'unknown' && c.exitSelected === false, JSON.stringify(c))
   }
 
+  // volume copy status on the Backup page: off unless VOLUME_BACKUP_DIR is set; "(volume)" is not a project
+  r = await j('GET', '/api/backup/status')
+  ok('backup: volume copy reported as off when not configured', r.data.ok && r.data.volume === null && !(r.data.projects || []).some((p) => p.name === '(volume)'), JSON.stringify(r.data.volume))
+
   // update the panel through the deploy hook, waiting for idle sessions (server/update.js)
   {
     const RUN = path.join(ROOT, '.claude', 'run')

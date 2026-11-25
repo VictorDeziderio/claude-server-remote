@@ -32,6 +32,8 @@ jobs:
         run: bash tests/claude-loop.test.sh
       - name: Gateway tests
         run: bash tests/gateway.test.sh
+      - name: Volume backup tests
+        run: bash tests/backup-volume.test.sh
       - name: Repo hygiene
         run: bash tests/repo-hygiene.test.sh
   docker:

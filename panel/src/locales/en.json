@@ -736,5 +736,12 @@
   "settings.updateBusy": "Working now: {names}. \"When idle\" waits for them to finish; tasks cut by a restart continue by themselves.",
   "settings.updateWaiting": "Waiting for {names} to finish. The update starts as soon as every project is idle.",
   "settings.updateIdleBtn": "Update when idle",
-  "settings.updateNowBtn": "Update now"
+  "settings.updateNowBtn": "Update now",
+  "srv.alert.volumeBackupFailed": "Volume backup failed (rsync). See backup-volume.err.",
+  "backup.volume": "Volume copy (incremental)",
+  "backup.volumeSub": "Daily copy of the whole /root to another disk; only what changed takes space.",
+  "backup.volumeOff": "Off. Set `VOLUME_BACKUP_DIR` to a folder on another disk or mount (e.g. a host folder bound at `/backup`).",
+  "backup.volumeDest": "Destination",
+  "backup.volumeKeep": "keeps the last {n}",
+  "backup.volumeNever": "no copy yet (the first one runs 10 minutes after start)"
 }

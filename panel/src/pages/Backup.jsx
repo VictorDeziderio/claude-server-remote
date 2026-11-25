@@ -97,6 +97,21 @@ export default function BackupPage({ onFlash }) {
         </p>
       </Card>
 
+      <Card title={t('backup.volume')} subtitle={t('backup.volumeSub')}>
+        <div className="text-sm" data-testid="volume-backup">
+          {!st.volume ? (
+            <p className="text-xs text-muted-foreground"><TR k="backup.volumeOff" /></p>
+          ) : (
+            <div className="space-y-1 text-xs">
+              <div>{t('backup.volumeDest')}: <code className="font-mono">{st.volume.dir}</code> · {t('backup.volumeKeep', { n: st.volume.keep })}</div>
+              <div className={st.volume.last?.level === 'WARN' ? 'text-destructive' : 'text-muted-foreground'}>
+                {st.volume.last ? `${st.volume.last.ts} — ${st.volume.last.msg}` : t('backup.volumeNever')}
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
+
       <Card
         title={t('backup.config')}
         subtitle={t('backup.configSub')}
