@@ -11,6 +11,7 @@ const load = (rel) => import('data:text/javascript;base64,' + Buffer.from(fs.rea
 const K = await load('src/lib/termkeys.js')
 const C = await load('src/lib/clipboard.js')
 const T = await load('src/lib/theme.js')
+const I = await load('src/lib/i18n-core.js')
 
 let fails = 0, passes = 0
 const eq = (name, got, want) => {
@@ -105,6 +106,34 @@ eq('index.html sem <script> inline (CSP)', [...html.matchAll(/<script(?![^>]*\ss
 eq('index.html carrega /theme-init.js antes do app', html.indexOf('/theme-init.js') > 0 && html.indexOf('/theme-init.js') < html.indexOf('/src/main.jsx'), true)
 const init = fs.readFileSync(path.join(PANEL, 'public', 'theme-init.js'), 'utf8')
 eq('theme-init usa a mesma chave do theme.js', init.includes("'" + T.THEME_KEY + "'"), true)
+
+console.log('\n== idiomas (src/locales/*.json)')
+eq('idioma salvo vence', I.pickLang('pt-BR', ['en-US'], ['en', 'pt-BR'], 'en'), 'pt-BR')
+eq('navegador pt-PT -> pt-BR (mesma base)', I.pickLang(null, ['pt-PT'], ['en', 'pt-BR'], 'en'), 'pt-BR')
+eq('navegador em idioma sem arquivo -> padrao', I.pickLang(null, ['ja-JP'], ['en', 'pt-BR'], 'en'), 'en')
+eq('salvo invalido -> navegador', I.pickLang('xx', ['pt-BR'], ['en', 'pt-BR'], 'en'), 'pt-BR')
+eq('variaveis {n}', I.format('{n} linhas de {x}', { n: 3, x: 'a' }), '3 linhas de a')
+eq('chave faltando no idioma cai no ingles', I.lookup({ en: { a: 'A' }, 'pt-BR': {} }, 'pt-BR', 'en', 'a'), 'A')
+eq('chave faltando em tudo mostra a chave', I.lookup({ en: {} }, 'en', 'en', 'x.y'), 'x.y')
+const LOC = path.join(PANEL, 'src', 'locales')
+const locs = Object.fromEntries(fs.readdirSync(LOC).filter((f) => f.endsWith('.json')).map((f) => [f.replace('.json', ''), JSON.parse(fs.readFileSync(path.join(LOC, f), 'utf8'))]))
+const enKeys = Object.keys(locs.en || {}).sort()
+for (const [code, d] of Object.entries(locs)) {
+  eq(`${code}.json tem _name`, typeof d._name === 'string' && d._name.length > 0, true)
+  eq(`${code}.json tem as mesmas chaves do en.json`, JSON.stringify(Object.keys(d).sort().filter((k) => !enKeys.includes(k))) + JSON.stringify(enKeys.filter((k) => !(k in d))), '[][]')
+  const badVars = enKeys.filter((k) => k in d && JSON.stringify((String(locs.en[k]).match(/\{\w+\}/g) || []).sort()) !== JSON.stringify((String(d[k]).match(/\{\w+\}/g) || []).sort()))
+  eq(`${code}.json usa as mesmas {variaveis} do ingles`, badVars, [])
+}
+// toda chave usada no codigo (t('x'), tOr('x'), <TR k="x">) existe no en.json
+const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.jsx?$/.test(e.name) ? [path.join(d, e.name)] : []))
+const used = new Set()
+for (const f of walk(path.join(PANEL, 'src'))) {
+  const src = fs.readFileSync(f, 'utf8').replace(/^\s*\/\/.*$/gm, '')
+  for (const m of src.matchAll(/\b(?:t|tOr)\('([a-zA-Z][\w.-]*)'/g)) if (!m[1].endsWith('.')) used.add(m[1])
+  for (const m of src.matchAll(/<TR k="([\w.-]+)"/g)) used.add(m[1])
+  for (const m of src.matchAll(/'((?:smode|period|login\.(?:phase|screen|step))\.[\w-]+)'/g)) used.add(m[1])
+}
+eq('chaves usadas no codigo existem no en.json', [...used].filter((k) => !(k in (locs.en || {}))), [])
 
 console.log(`\n${passes} PASS, ${fails} FAIL${fails ? '' : ' — TUDO OK'}`)
 process.exit(fails ? 1 : 0)

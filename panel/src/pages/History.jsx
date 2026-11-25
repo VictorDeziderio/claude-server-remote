@@ -4,6 +4,7 @@ import { History, MessageSquare, Play, ArrowLeft, RefreshCw, Bot, User, Wrench, 
 import { Btn, Card, Empty, Skeleton, InlineConfirm } from '../components/ui.jsx'
 import { fmtInt, fmtTok, fmtIso, shortModel } from '../lib/format.js'
 import * as api from '../api.js'
+import { t } from '../lib/i18n.js'
 
 // /history[/:name] — conversas do Claude por projeto (lidas dos .jsonl) + "continuar" (claude --resume)
 export default function HistoryPage({ data, onFlash, refresh }) {
@@ -63,9 +64,9 @@ export default function HistoryPage({ data, onFlash, refresh }) {
 
   if (!name) {
     return (
-      <Card title="Escolha um projeto">
+      <Card title={t('history.pick')}>
         {projects.length === 0 ? (
-          <Empty>nenhum projeto</Empty>
+          <Empty>{t('projects.none')}</Empty>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map((p) => (
@@ -90,25 +91,25 @@ export default function HistoryPage({ data, onFlash, refresh }) {
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-card p-4 border">
           <div className="flex min-w-0 items-center gap-2">
             <Btn variant="ghost" onClick={() => setOpen(null)}>
-              <ArrowLeft className="h-3.5 w-3.5" /> Voltar
+              <ArrowLeft className="h-3.5 w-3.5" /> {t('common.back')}
             </Btn>
             <h2 className="truncate text-sm font-medium text-foreground">{c.title}</h2>
-            {pinnedId === open.id && <span className="rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[11px] text-primary">Fixada</span>}
+            {pinnedId === open.id && <span className="rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[11px] text-primary">{t('history.pinned')}</span>}
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-mono text-xs text-muted-foreground">
               {fmtInt(c.messages)} msgs · {fmtTok(c.tokens)} tokens · {shortModel(c.model)} · {fmtIso(c.first)} → {fmtIso(c.last)}
             </span>
             {pinnedId !== open.id && (
-              <Btn size="sm" variant="ghost" busy={busy === 'pin:' + open.id} onClick={() => pin(open.id)} title="esta conversa volta sempre que o Claude for religado nesta sessão">
-                <Pin className="h-3.5 w-3.5" /> Fixar esta sessão
+              <Btn size="sm" variant="ghost" busy={busy === 'pin:' + open.id} onClick={() => pin(open.id)} title={t('history.pinTitle')}>
+                <Pin className="h-3.5 w-3.5" /> {t('history.pin')}
               </Btn>
             )}
             {confirm === open.id ? (
-              <InlineConfirm danger={false} text={proj?.claudeRunning ? 'Isso encerra a conversa atual e reabre continuando esta. Ok?' : 'Enviar claude --resume ao shell da sessão?'} onYes={() => resume(open.id)} onNo={() => setConfirm('')} busy={busy === 'resume:' + open.id} />
+              <InlineConfirm danger={false} text={proj?.claudeRunning ? t('history.resumeRunning') : t('history.resumeShell')} onYes={() => resume(open.id)} onNo={() => setConfirm('')} busy={busy === 'resume:' + open.id} />
             ) : (
               <Btn variant="accent" onClick={() => setConfirm(open.id)}>
-                <Play className="h-3.5 w-3.5" /> Continuar esta conversa
+                <Play className="h-3.5 w-3.5" /> {t('history.continueThis')}
               </Btn>
             )}
           </div>
@@ -133,12 +134,12 @@ export default function HistoryPage({ data, onFlash, refresh }) {
 
   return (
     <Card
-      title={`Conversas de “${name}”`}
-      subtitle={list ? `${list.length} conversa(s)` : ''}
+      title={t('history.title', { name })}
+      subtitle={list ? t('history.count', { n: list.length }) : ''}
       actions={
         <div className="flex flex-wrap items-center gap-3">
           <Link to="/history" className="text-xs text-muted-foreground hover:text-foreground/80">
-            outro projeto
+            {t('history.other')}
           </Link>
           <Btn size="sm" variant="ghost" onClick={load}>
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
@@ -153,7 +154,7 @@ export default function HistoryPage({ data, onFlash, refresh }) {
           <Skeleton className="h-14" />
         </div>
       ) : list.length === 0 ? (
-        <Empty>nenhuma conversa registrada ainda para este projeto</Empty>
+        <Empty>{t('history.empty')}</Empty>
       ) : (
         <ul className="divide-y divide-border">
           {list.map((s) => (
@@ -162,22 +163,22 @@ export default function HistoryPage({ data, onFlash, refresh }) {
               <button type="button" onClick={() => view(s.id)} className="min-w-0 flex-1 text-left">
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm text-foreground hover:underline">{s.title}</span>
-                  {pinnedId === s.id && <span className="shrink-0 rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[11px] text-primary">Fixada</span>}
+                  {pinnedId === s.id && <span className="shrink-0 rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[11px] text-primary">{t('history.pinned')}</span>}
                 </div>
                 <div className="font-mono text-xs text-muted-foreground">
                   {fmtIso(s.last)} · {fmtInt(s.messages)} msgs · {fmtTok(s.tokens)} tokens · {shortModel(s.model) || '?'} · <span className="text-muted-foreground/70">{s.id.slice(0, 8)}</span>
                 </div>
               </button>
               {pinnedId !== s.id && (
-                <Btn size="sm" variant="ghost" busy={busy === 'pin:' + s.id} onClick={() => pin(s.id)} title="esta conversa volta sempre que o Claude for religado nesta sessão">
+                <Btn size="sm" variant="ghost" busy={busy === 'pin:' + s.id} onClick={() => pin(s.id)} title={t('history.pinTitle')}>
                   <Pin className="h-3.5 w-3.5" />
                 </Btn>
               )}
               {confirm === s.id ? (
-                <InlineConfirm danger={false} text={proj?.claudeRunning ? 'Encerra a conversa atual e reabre continuando esta. Ok?' : 'Enviar claude --resume?'} onYes={() => resume(s.id)} onNo={() => setConfirm('')} busy={busy === 'resume:' + s.id} />
+                <InlineConfirm danger={false} text={proj?.claudeRunning ? t('history.resumeRunning') : t('history.resumeShell')} onYes={() => resume(s.id)} onNo={() => setConfirm('')} busy={busy === 'resume:' + s.id} />
               ) : (
                 <Btn size="sm" variant="accent" onClick={() => setConfirm(s.id)}>
-                  <Play className="h-3.5 w-3.5" /> Continuar
+                  <Play className="h-3.5 w-3.5" /> {t('history.continue')}
                 </Btn>
               )}
             </li>

@@ -3,6 +3,8 @@ import { BarChart3, MessageSquare, Layers, Database, TrendingUp, Loader2, Calend
 import { Card, Empty, inputCls } from '../components/ui.jsx'
 import { fmtTok, fmtInt, fmtUsd, shortModel } from '../lib/format.js'
 import * as api from '../api.js'
+import { t } from '../lib/i18n.js'
+import { TR } from '../lib/i18n-rich.jsx'
 
 const pad = (n) => String(n).padStart(2, '0')
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -40,14 +42,14 @@ function periodRange(key) {
   }
 }
 const PERIODS = [
-  ['today', 'Hoje'],
-  ['yesterday', 'Ontem'],
-  ['week', 'Esta semana'],
-  ['month', 'Este mês'],
-  ['lastmonth', 'Mês passado'],
-  ['year', 'Este ano'],
-  ['lastyear', 'Ano passado'],
-  ['all', 'Tudo'],
+  ['today', 'period.today'],
+  ['yesterday', 'period.yesterday'],
+  ['week', 'period.week'],
+  ['month', 'period.month'],
+  ['lastmonth', 'period.lastmonth'],
+  ['year', 'period.year'],
+  ['lastyear', 'period.lastyear'],
+  ['all', 'period.all'],
 ]
 
 function Kpi({ icon: Icon, label, value, hint, hero }) {
@@ -114,7 +116,7 @@ function DailyChart({ daily, metric }) {
             {fmtTok(daily[hover].in)} in · {fmtTok(daily[hover].out)} out
           </div>
           <div className="font-mono text-xs text-muted-foreground">
-            cache {fmtTok(daily[hover].cacheW)} esc · {fmtTok(daily[hover].cacheR)} leit
+            {t('report.cacheLine', { w: fmtTok(daily[hover].cacheW), r: fmtTok(daily[hover].cacheR) })}
           </div>
           <div className="font-mono text-xs text-primary">
             {fmtUsd(daily[hover].cost)} · {fmtInt(daily[hover].messages)} msgs
@@ -177,48 +179,48 @@ export default function Report({ data }) {
         <div className="flex flex-wrap gap-2">
           {PERIODS.map(([k, label]) => (
             <button key={k} type="button" onClick={() => pick(k)} className={pill(period === k)}>
-              {label}
+              {t(label)}
             </button>
           ))}
           <button type="button" onClick={() => setPeriod('custom')} className={`inline-flex items-center gap-1.5 ${pill(period === 'custom')}`}>
-            <CalendarRange className="h-3.5 w-3.5" /> Personalizado
+            <CalendarRange className="h-3.5 w-3.5" /> {t('period.custom')}
           </button>
           {loading && (
             <span className="inline-flex items-center gap-1.5 px-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> carregando…
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> {t('common.loading')}
             </span>
           )}
         </div>
         {period === 'custom' && (
           <div className="mt-3 flex flex-wrap items-end gap-2">
             <label className="text-xs text-muted-foreground">
-              De
+              {t('period.from')}
               <input type="date" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} className={`mt-1 block ${inputCls}`} />
             </label>
             <label className="text-xs text-muted-foreground">
-              Até
+              {t('period.to')}
               <input type="date" value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} className={`mt-1 block ${inputCls}`} />
             </label>
             <button type="button" onClick={applyCustom} disabled={!custom.from || !custom.to} className="rounded-lg bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground hover:bg-primary disabled:opacity-40">
-              Aplicar
+              {t('period.apply')}
             </button>
           </div>
         )}
         <div className="mt-2 font-mono text-xs text-muted-foreground">
-          período: <code className="text-foreground/80">{range.from || 'início'}</code> → <code className="text-foreground/80">{range.to || 'hoje'}</code>
+          {t('period.label')} <code className="text-foreground/80">{range.from || t('period.start')}</code> → <code className="text-foreground/80">{range.to || t('period.now')}</code>
         </div>
       </Card>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Kpi icon={DollarSign} label="Custo estimado" value={fmtUsd(u.total?.cost)} hint="preço de API por modelo" hero />
+        <Kpi icon={DollarSign} label={t('report.cost')} value={fmtUsd(u.total?.cost)} hint={t('report.costHint')} hero />
         <Kpi icon={BarChart3} label="Tokens (in+out)" value={fmtTok(totalTokens)} hint={`${fmtTok(u.total?.in)} in · ${fmtTok(u.total?.out)} out`} />
-        <Kpi icon={Database} label="Cache (esc+leit)" value={fmtTok(totalCache)} hint={`${fmtTok(u.total?.cacheW)} esc · ${fmtTok(u.total?.cacheR)} leit`} />
-        <Kpi icon={MessageSquare} label="Mensagens" value={fmtInt(u.messages)} />
-        <Kpi icon={Layers} label="Dias com uso" value={fmtInt(daily.length)} />
+        <Kpi icon={Database} label={t('report.cache')} value={fmtTok(totalCache)} hint={t('report.cacheHint', { w: fmtTok(u.total?.cacheW), r: fmtTok(u.total?.cacheR) })} />
+        <Kpi icon={MessageSquare} label={t('report.messages')} value={fmtInt(u.messages)} />
+        <Kpi icon={Layers} label={t('report.days')} value={fmtInt(daily.length)} />
       </div>
 
       <Card
-        title={`Consumo diário · ${metric === 'cost' ? 'custo' : 'entrada + saída'}`}
+        title={t('report.daily', { what: metric === 'cost' ? t('report.dailyCost') : t('report.dailyTokens') })}
         subtitle={daily.length ? `${daily[0].date} → ${daily[daily.length - 1].date}` : ''}
         actions={
           <div className="flex gap-1">
@@ -233,25 +235,25 @@ export default function Report({ data }) {
           </div>
         }
       >
-        {daily.length === 0 ? <Empty>sem dados no período</Empty> : <DailyChart daily={daily} metric={metric} />}
+        {daily.length === 0 ? <Empty>{t('report.noData')}</Empty> : <DailyChart daily={daily} metric={metric} />}
       </Card>
 
-      <Card title="Custo por modelo" subtitle={`${byModel.length} modelo(s)`}>
+      <Card title={t('report.byModel')} subtitle={t('report.models', { n: byModel.length })}>
         {byModel.length === 0 ? (
-          <Empty>sem dados no período</Empty>
+          <Empty>{t('report.noData')}</Empty>
         ) : (
           <>
             <div className="overflow-x-auto rounded-xl border">
               <table className="w-full text-sm">
                 <thead className="bg-accent text-[11px] text-muted-foreground">
                   <tr>
-                    <th className="px-3 py-2 text-left font-medium">Modelo</th>
-                    <th className="px-3 py-2 text-right font-medium">Entrada</th>
-                    <th className="px-3 py-2 text-right font-medium">Saída</th>
-                    <th className="px-3 py-2 text-right font-medium">Cache esc.</th>
-                    <th className="px-3 py-2 text-right font-medium">Cache leit.</th>
-                    <th className="px-3 py-2 text-right font-medium">Msgs</th>
-                    <th className="px-3 py-2 text-right font-medium">Custo</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('col.model')}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t('col.in')}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t('col.out')}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t('col.cacheW')}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t('col.cacheR')}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t('col.msgs')}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t('col.cost')}</th>
                   </tr>
                 </thead>
                 <tbody className="text-foreground">
@@ -260,8 +262,8 @@ export default function Report({ data }) {
                       <td className="px-3 py-2">
                         <span className="font-mono text-xs">{shortModel(m.model)}</span>
                         {!m.known && (
-                          <span className="ml-2 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-300" title="modelo sem preço na tabela — usa o preço do Opus como estimativa">
-                            preço estimado
+                          <span className="ml-2 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-300" title={t('report.unknownTitle')}>
+                            {t('report.unknown')}
                           </span>
                         )}
                       </td>
@@ -277,15 +279,15 @@ export default function Report({ data }) {
               </table>
             </div>
             <p className="mt-2 flex items-start gap-1.5 text-[11px] text-muted-foreground">
-              <Info className="mt-0.5 h-3 w-3 shrink-0" /> Estimativa pela tabela pública de preços da API (entrada/saída/cache por modelo). Se você usa assinatura (Pro/Max), o valor é o <b>equivalente em API</b>, não a sua fatura.{unknown.length ? ` Modelos sem preço conhecido: ${unknown.map(shortModel).join(', ')}.` : ''}
+              <Info className="mt-0.5 h-3 w-3 shrink-0" /> <span><TR k="report.estimateNote" />{unknown.length ? t('report.unknownModels', { list: unknown.map(shortModel).join(', ') }) : ''}</span>
             </p>
           </>
         )}
       </Card>
 
-      <Card title="Custo por projeto" subtitle={`${byProject.length} projeto(s)`}>
+      <Card title={t('report.byProject')} subtitle={t('report.projects', { n: byProject.length })}>
         {byProject.length === 0 ? (
-          <Empty>sem dados no período</Empty>
+          <Empty>{t('report.noData')}</Empty>
         ) : (
           <div className="space-y-3">
             {byProject.map((p) => (
@@ -307,21 +309,21 @@ export default function Report({ data }) {
         )}
       </Card>
 
-      <Card title="Detalhe por projeto">
+      <Card title={t('report.detail')}>
         {byProject.length === 0 ? (
-          <Empty>sem dados no período</Empty>
+          <Empty>{t('report.noData')}</Empty>
         ) : (
           <div className="overflow-x-auto rounded-xl border">
             <table className="w-full text-sm">
               <thead className="bg-accent text-[11px] text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium">Projeto</th>
-                  <th className="px-3 py-2 text-right font-medium">Entrada</th>
-                  <th className="px-3 py-2 text-right font-medium">Saída</th>
-                  <th className="px-3 py-2 text-right font-medium">Cache esc.</th>
-                  <th className="px-3 py-2 text-right font-medium">Cache leit.</th>
-                  <th className="px-3 py-2 text-right font-medium">Msgs</th>
-                  <th className="px-3 py-2 text-right font-medium">Custo</th>
+                  <th className="px-3 py-2 text-left font-medium">{t('col.project')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('col.in')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('col.out')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('col.cacheW')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('col.cacheR')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('col.msgs')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('col.cost')}</th>
                 </tr>
               </thead>
               <tbody className="text-foreground">

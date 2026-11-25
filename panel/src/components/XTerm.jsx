@@ -9,6 +9,7 @@ import '@xterm/xterm/css/xterm.css'
 import { termWsUrl } from '../api.js'
 import { copyText, readClipboard, decodeOsc52 } from '../lib/clipboard.js'
 import { touchScroll } from '../lib/termkeys.js'
+import { t } from '../lib/i18n.js'
 
 // Terminal REAL: xterm.js <-> WebSocket (/ws/term) <-> PTY (node-pty) <-> `tmux attach`.
 // Igual a um SSH: cores, cursor, TUI do Claude, resize automatico, mouse, colar, busca.
@@ -102,7 +103,7 @@ const XTerm = forwardRef(function XTerm({ target, fontSize = 13, detach = false,
       if (d.charCodeAt(0) === 1 && d.charCodeAt(1) === 123) {
         try {
           const c = JSON.parse(d.slice(1))
-          if (c.type === 'exit') term.write(gray('[sessão encerrada]'))
+          if (c.type === 'exit') term.write(gray(t('term.ended')))
         } catch { /* ignora */ }
         return
       }
@@ -113,13 +114,13 @@ const XTerm = forwardRef(function XTerm({ target, fontSize = 13, detach = false,
       wsRef.current = null
       if (st.stopped) return
       if (ev.code >= 4000) { // erro logico do servidor: nao adianta insistir
-        emit('error', ev.reason || 'erro')
-        term.write(red(`[${ev.reason || 'erro no servidor'}]`))
+        emit('error', ev.reason || t('term.error'))
+        term.write(red(`[${ev.reason || t('term.serverError')}]`))
         return
       }
       const delay = Math.min(15000, 800 * 2 ** st.retries++)
       emit('closed', ev.reason, { retryIn: delay, attempt: st.retries })
-      term.write(gray(`[conexão perdida — reconectando em ${Math.max(1, Math.round(delay / 1000))}s]`))
+      term.write(gray(t('term.reconnecting', { s: Math.max(1, Math.round(delay / 1000)) })))
       st.timer = setTimeout(connect, delay)
     }
     ws.onerror = () => { /* onclose cuida */ }

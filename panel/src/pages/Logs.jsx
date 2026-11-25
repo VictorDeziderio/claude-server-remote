@@ -3,6 +3,7 @@ import { ScrollText, RefreshCw, Pause, Play, ArrowDownToLine, Loader2 } from 'lu
 import { Btn, IconBtn, inputCls, Empty } from '../components/ui.jsx'
 import { fmtSize, fmtDate } from '../lib/format.js'
 import * as api from '../api.js'
+import { t, tOr } from '../lib/i18n.js'
 
 // /logs — tail dos logs (painel, backup, auditoria) com auto-refresh e filtro
 export default function LogsPage() {
@@ -66,41 +67,41 @@ export default function LogsPage() {
         <div className="flex items-center gap-1.5">
           {files.map((f) => (
             <button key={f.key} type="button" onClick={() => setCur(f.key)} title={`${f.file} · ${fmtSize(f.size)} · ${fmtDate(f.mtime)}`} className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${cur === f.key ? 'bg-primary/15 text-primary ring-1 ring-primary/25' : 'bg-accent text-muted-foreground border hover:text-foreground'}`}>
-              {f.label}
+              {tOr('logs.file.' + f.key, f.label)}
             </button>
           ))}
         </div>
-        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="filtrar…" className={`${inputCls} w-44`} />
+        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t('logs.filter')} className={`${inputCls} w-44`} />
         <select value={lines} onChange={(e) => setLines(parseInt(e.target.value, 10))} className={inputCls}>
           {[100, 300, 1000, 3000].map((n) => (
             <option key={n} value={n}>
-              {n} linhas
+              {t('logs.lines', { n })}
             </option>
           ))}
         </select>
-        <span className="ml-auto font-mono text-xs text-muted-foreground">{tail ? `${shown.length}/${tail.total} linhas · ${fmtSize(tail.size)} · ${fmtDate(tail.mtime)}` : ''}</span>
-        <IconBtn title={auto ? 'pausar auto-refresh' : 'retomar auto-refresh (5s)'} active={auto} onClick={() => setAuto((a) => !a)}>
+        <span className="ml-auto font-mono text-xs text-muted-foreground">{tail ? t('logs.stats', { shown: shown.length, total: tail.total, size: fmtSize(tail.size), date: fmtDate(tail.mtime) }) : ''}</span>
+        <IconBtn title={auto ? t('logs.pause') : t('logs.resume')} active={auto} onClick={() => setAuto((a) => !a)}>
           {auto ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
         </IconBtn>
         <IconBtn
-          title="ir para o fim"
+          title={t('logs.bottom')}
           onClick={() => {
             if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight
           }}
         >
           <ArrowDownToLine className="h-4 w-4" />
         </IconBtn>
-        <IconBtn title="atualizar" onClick={load}>
+        <IconBtn title={t('common.refreshLower')} onClick={load}>
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
         </IconBtn>
       </div>
       <div ref={preRef} className="min-h-0 flex-1 overflow-auto bg-background">
         {!tail ? (
           <div className="flex h-full items-center justify-center">
-            <span className="font-mono text-xs text-muted-foreground">carregando…</span>
+            <span className="font-mono text-xs text-muted-foreground">{t('common.loading')}</span>
           </div>
         ) : shown.length === 0 ? (
-          <Empty>{tail.total === 0 ? 'log vazio (ainda não existe)' : 'nada bate com o filtro'}</Empty>
+          <Empty>{tail.total === 0 ? t('logs.emptyFile') : t('logs.noMatch')}</Empty>
         ) : (
           <pre className="p-3 font-mono text-xs leading-relaxed">
             {shown.map((l, i) => (
@@ -112,7 +113,7 @@ export default function LogsPage() {
         )}
       </div>
       <p className="border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
-        <ScrollText className="mr-1 inline h-3 w-3" /> arquivos em <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">~/.claude/logs/</code> · o log do container (start.sh/Caddy) fica no EasyPanel → Logs do serviço
+        <ScrollText className="mr-1 inline h-3 w-3" /> {t('logs.footer')}
       </p>
       <Btn className="hidden" />
     </div>

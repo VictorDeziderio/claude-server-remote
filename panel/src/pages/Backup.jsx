@@ -3,6 +3,8 @@ import { DatabaseBackup, Download, RefreshCw, GitBranch, AlertTriangle, CheckCir
 import { Btn, Card, Empty, Skeleton } from '../components/ui.jsx'
 import { fmtSize, fmtDate, fmtUptime } from '../lib/format.js'
 import * as api from '../api.js'
+import { t } from '../lib/i18n.js'
+import { TR } from '../lib/i18n-rich.jsx'
 
 // /backup — status do backup git por projeto, "backup agora", e backup da config (~/.claude)
 export default function BackupPage({ onFlash }) {
@@ -41,15 +43,15 @@ export default function BackupPage({ onFlash }) {
   return (
     <div className="space-y-5">
       <Card
-        title="Projetos (git commit + push)"
-        subtitle={st ? `${st.enabled ? 'automático a cada ' + fmtUptime(st.interval) : 'automático DESLIGADO (BACKUP_ENABLED=false)'}${st.lastRun ? ' · última execução ' + st.lastRun : ''}` : ''}
+        title={t('backup.projects')}
+        subtitle={st ? `${st.enabled ? t('backup.auto', { every: fmtUptime(st.interval) }) : t('backup.autoOff')}${st.lastRun ? t('backup.lastRun', { when: st.lastRun }) : ''}` : ''}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Btn size="sm" variant="ghost" onClick={load}>
               <RefreshCw className="h-3.5 w-3.5" />
             </Btn>
             <Btn size="sm" variant="accent" busy={busy === 'all'} onClick={() => run('')}>
-              <DatabaseBackup className="h-3.5 w-3.5" /> Backup de todos agora
+              <DatabaseBackup className="h-3.5 w-3.5" /> {t('backup.all')}
             </Btn>
           </div>
         }
@@ -57,7 +59,7 @@ export default function BackupPage({ onFlash }) {
         {!st ? (
           <Skeleton className="h-24" />
         ) : st.projects.length === 0 ? (
-          <Empty>nenhum projeto</Empty>
+          <Empty>{t('projects.none')}</Empty>
         ) : (
           <ul className="divide-y divide-border">
             {st.projects.map((p) => (
@@ -66,12 +68,12 @@ export default function BackupPage({ onFlash }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm text-foreground">{p.name}</span>
-                    {!p.git && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">não é repo git</span>}
-                    {p.git && !p.origin && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-300">sem origin — ignorado pelo backup</span>}
-                    {p.dirty ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-300">{p.dirty} alteração(ões) sem commit</span> : null}
+                    {!p.git && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{t('backup.notGit')}</span>}
+                    {p.git && !p.origin && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-300">{t('backup.noOrigin')}</span>}
+                    {p.dirty ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-300">{t('backup.dirty', { n: p.dirty })}</span> : null}
                   </div>
                   <div className="truncate text-xs text-muted-foreground">
-                    {p.origin ? <code>{p.origin}</code> : p.git ? 'configure: git remote add origin <url>' : ''}
+                    {p.origin ? <code>{p.origin}</code> : p.git ? t('backup.configureOrigin') : ''}
                     {p.last && (
                       <span className="ml-2 inline-flex items-center gap-1">
                         {levelIcon(p.last.level)}
@@ -83,7 +85,7 @@ export default function BackupPage({ onFlash }) {
                 </div>
                 {p.git && p.origin && (
                   <Btn size="sm" variant="ghost" busy={busy === p.name} onClick={() => run(p.name)}>
-                    <DatabaseBackup className="h-3.5 w-3.5" /> agora
+                    <DatabaseBackup className="h-3.5 w-3.5" /> {t('backup.now')}
                   </Btn>
                 )}
               </li>
@@ -91,34 +93,34 @@ export default function BackupPage({ onFlash }) {
           </ul>
         )}
         <p className="mt-3 flex items-start gap-1.5 text-[11px] text-muted-foreground">
-          <Info className="mt-0.5 h-3 w-3 shrink-0" /> O push usa o <code>GH_TOKEN</code> (escopo <code>repo</code>) ou um <code>gh auth login</code> feito no terminal. Log em <b>Logs → Backup</b>.
+          <Info className="mt-0.5 h-3 w-3 shrink-0" /> <span><TR k="backup.pushInfo" /></span>
         </p>
       </Card>
 
       <Card
-        title="Config do Claude (~/.claude + ~/.claude.json)"
-        subtitle="login, panel.json, segredos do painel, settings"
+        title={t('backup.config')}
+        subtitle={t('backup.configSub')}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Btn size="sm" variant="ghost" busy={busy === 'config'} onClick={runConfig}>
-              <Archive className="h-3.5 w-3.5" /> Gerar snapshot agora
+              <Archive className="h-3.5 w-3.5" /> {t('backup.snapshotNow')}
             </Btn>
             <a href={api.backupDownloadUrl('', false)} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground transition duration-150 hover:bg-primary/80">
-              <Download className="h-3.5 w-3.5" /> Baixar agora (leve)
+              <Download className="h-3.5 w-3.5" /> {t('backup.downloadLight')}
             </a>
-            <a href={api.backupDownloadUrl('', true)} className="inline-flex items-center gap-1.5 rounded-lg bg-transparent px-3 py-1.5 text-[13px] font-medium text-foreground/80 border transition duration-150 hover:bg-accent" title="inclui o histórico de conversas (pode ser grande)">
-              <Download className="h-3.5 w-3.5" /> Baixar completo
+            <a href={api.backupDownloadUrl('', true)} className="inline-flex items-center gap-1.5 rounded-lg bg-transparent px-3 py-1.5 text-[13px] font-medium text-foreground/80 border transition duration-150 hover:bg-accent" title={t('backup.fullTitle')}>
+              <Download className="h-3.5 w-3.5" /> {t('backup.downloadFull')}
             </a>
           </div>
         }
       >
         <p className="mb-3 text-sm text-foreground/80">
-          Se o volume <code>/root</code> sumir, o login do Claude, o <code>panel.json</code>, o 2FA e as sessões vão junto. Um snapshot é gerado <b>1×/dia</b> em <code>/root/.claude-backups</code> (mantém 7) — mas isso está <b>no mesmo volume</b>: baixe de tempos em tempos.
+          <TR k="backup.volumeWarn" />
         </p>
         {!st ? (
           <Skeleton className="h-16" />
         ) : (st.configBackups || []).length === 0 ? (
-          <Empty>nenhum snapshot ainda — gere um acima</Empty>
+          <Empty>{t('backup.noSnapshots')}</Empty>
         ) : (
           <ul className="divide-y divide-border">
             {st.configBackups.map((b) => (
@@ -129,19 +131,19 @@ export default function BackupPage({ onFlash }) {
                   {fmtSize(b.size)} · {fmtDate(b.mtime)}
                 </span>
                 <a href={api.backupDownloadUrl(b.file)} className="inline-flex items-center gap-1.5 rounded-lg bg-transparent px-2.5 py-1 text-xs font-medium text-foreground/80 border transition duration-150 hover:bg-accent">
-                  <Download className="h-3.5 w-3.5" /> baixar
+                  <Download className="h-3.5 w-3.5" /> {t('backup.download')}
                 </a>
               </li>
             ))}
           </ul>
         )}
         <p className="mt-3 text-[11px] text-muted-foreground">
-          Restaurar: extraia o <code>.tgz</code> em <code>/root</code> (<code>tar xzf config-….tgz -C /root</code>) e reinicie o serviço.
+          <TR k="backup.restore" />
         </p>
       </Card>
       {busy && (
         <div className="fixed bottom-4 right-4 inline-flex items-center gap-2 rounded-lg bg-background px-3 py-2 text-xs text-foreground/80 border">
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> executando…
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> {t('common.running')}
         </div>
       )}
     </div>

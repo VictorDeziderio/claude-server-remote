@@ -11,6 +11,7 @@ import FilesPage from './pages/FilesPage.jsx'
 import TerminalPage from './pages/TerminalPage.jsx'
 import Account from './pages/Account.jsx'
 import * as api from './api.js'
+import { t } from './lib/i18n.js'
 
 const HistoryPage = lazy(() => import('./pages/History.jsx'))
 const LogsPage = lazy(() => import('./pages/Logs.jsx'))
@@ -18,7 +19,7 @@ const BackupPage = lazy(() => import('./pages/Backup.jsx'))
 const SettingsPage = lazy(() => import('./pages/Settings.jsx'))
 const NotificationsPage = lazy(() => import('./pages/Notifications.jsx'))
 
-const Loading = () => <div className="flex h-40 items-center justify-center text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin text-primary" /> carregando…</div>
+const Loading = () => <div className="flex h-40 items-center justify-center text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin text-primary" /> {t('common.loading')}</div>
 function DashboardSkeleton() {
   return (
     <div className="space-y-5">
@@ -71,12 +72,12 @@ export default function App() {
   const doLogout = async () => { try { await api.logout() } catch { /* */ } setData(null); setAuthed(false) }
   const closeFlash = useCallback(() => setFlash(null), [])
   const toggleNotif = async () => {
-    if (typeof Notification === 'undefined') return setFlash({ ok: false, msg: 'este navegador não suporta notificações' })
-    if (Notification.permission === 'granted') return setFlash({ ok: true, msg: 'notificações já estão ativas — desative nas preferências do site no navegador, ou em Configurações' })
-    if (Notification.permission === 'denied') return setFlash({ ok: false, msg: 'notificações bloqueadas no navegador — libere nas permissões do site' })
+    if (typeof Notification === 'undefined') return setFlash({ ok: false, msg: t('notif.unsupported') })
+    if (Notification.permission === 'granted') return setFlash({ ok: true, msg: t('notif.alreadyOn') })
+    if (Notification.permission === 'denied') return setFlash({ ok: false, msg: t('notif.blocked') })
     const p = await Notification.requestPermission()
     setNotifPerm(p)
-    setFlash({ ok: p === 'granted', msg: p === 'granted' ? 'notificações ativadas — você será avisado quando o Claude terminar ou perguntar algo' : 'permissão negada' })
+    setFlash({ ok: p === 'granted', msg: p === 'granted' ? t('notif.enabled') : t('notif.denied') })
   }
 
   if (authed === false) return <Login onSuccess={() => { setAuthed(true); refresh() }} />
@@ -88,7 +89,7 @@ export default function App() {
   const stale = !!data && ((data.panelVersion && data.panelVersion !== __PANEL_VERSION__)
     || (__PANEL_BUILD__ && data.buildTime && data.buildTime !== __PANEL_BUILD__))
   const actions = pathname.startsWith('/dashboard')
-    ? <Btn variant="accent" onClick={() => setShowNew(true)}><Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline"> Novo projeto</span></Btn>
+    ? <Btn variant="accent" onClick={() => setShowNew(true)}><Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline"> {t('projects.new')}</span></Btn>
     : null
 
   return (
@@ -96,8 +97,8 @@ export default function App() {
       {stale && (
         <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-sky-500/10 px-4 py-2.5 text-sm text-sky-800 dark:text-sky-100 ring-1 ring-sky-500/30">
           <RefreshCw className="h-4 w-4 text-sky-600 dark:text-sky-300" />
-          <span>O painel foi atualizado no servidor (v{data.panelVersion}). Esta aba ainda roda a versão anterior.</span>
-          <Btn variant="accent" className="ml-auto" onClick={() => window.location.reload()}><RefreshCw className="h-3.5 w-3.5" /> Recarregar agora</Btn>
+          <span>{t('app.updated', { v: data.panelVersion })}</span>
+          <Btn variant="accent" className="ml-auto" onClick={() => window.location.reload()}><RefreshCw className="h-3.5 w-3.5" /> {t('app.reloadNow')}</Btn>
         </div>
       )}
       {!data ? <DashboardSkeleton /> : (

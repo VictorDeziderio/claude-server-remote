@@ -9,6 +9,8 @@ import { cn } from '../lib/utils.js'
 import { copyText } from '../lib/clipboard.js'
 import { EXTRA_KEYS, CLAUDE_ACTIONS, cycleMod, afterUse, applyModifiers, isUserInput, clampFont, defaultFont } from '../lib/termkeys.js'
 import * as api from '../api.js'
+import { t, tOr } from '../lib/i18n.js'
+import { TR } from '../lib/i18n-rich.jsx'
 
 const LS_FONT = 'cr.term.font',
   LS_KEYS = 'cr.term.keys',
@@ -33,38 +35,38 @@ const narrow = () => window.matchMedia('(max-width: 768px)').matches
 const coarse = () => window.matchMedia('(pointer: coarse)').matches
 
 const STATUS = {
-  connecting: { label: 'conectando…', Icon: Loader2, cls: 'text-amber-600 dark:text-amber-300', spin: true },
-  open: { label: 'conectado', Icon: Wifi, cls: 'text-success drop-shadow-[0_0_6px_rgba(79,224,203,.5)]' },
-  closed: { label: 'reconectando…', Icon: WifiOff, cls: 'text-amber-600 dark:text-amber-300' },
-  error: { label: 'erro', Icon: AlertTriangle, cls: 'text-rose-600 dark:text-rose-300' },
+  connecting: { get label() { return t('term.connecting') }, Icon: Loader2, cls: 'text-amber-600 dark:text-amber-300', spin: true },
+  open: { get label() { return t('term.connected') }, Icon: Wifi, cls: 'text-success drop-shadow-[0_0_6px_rgba(79,224,203,.5)]' },
+  closed: { get label() { return t('term.reconnectingShort') }, Icon: WifiOff, cls: 'text-amber-600 dark:text-amber-300' },
+  error: { get label() { return t('term.error') }, Icon: AlertTriangle, cls: 'text-rose-600 dark:text-rose-300' },
 }
 
 // Botao da barra de teclas: NAO tira o foco do terminal (senao o teclado do celular fecha) e,
 // nas teclas com repeat (setas/PgUp/PgDn), segurar repete.
 function KeyBtn({ k, onPress, active, locked, hot }) {
-  const t = useRef({ delay: null, rep: null, repeated: false })
-  const stop = () => { clearTimeout(t.current.delay); clearInterval(t.current.rep) }
+  const rep = useRef({ delay: null, rep: null, repeated: false })
+  const stop = () => { clearTimeout(rep.current.delay); clearInterval(rep.current.rep) }
   useEffect(() => stop, [])
   const down = (e) => {
     e.preventDefault()
     if (!k.repeat) return
-    t.current.repeated = false
+    rep.current.repeated = false
     stop()
-    t.current.delay = setTimeout(() => {
-      t.current.rep = setInterval(() => { t.current.repeated = true; onPress(k) }, 70)
+    rep.current.delay = setTimeout(() => {
+      rep.current.rep = setInterval(() => { rep.current.repeated = true; onPress(k) }, 70)
     }, 380)
   }
   return (
     <button
       type="button"
-      title={k.title}
+      title={tOr('key.' + k.id, k.title)}
       aria-pressed={k.mod ? active : undefined}
       onPointerDown={down}
       onMouseDown={(e) => e.preventDefault()}
       onPointerUp={stop}
       onPointerLeave={stop}
       onPointerCancel={stop}
-      onClick={() => { if (!t.current.repeated) onPress(k); t.current.repeated = false }}
+      onClick={() => { if (!rep.current.repeated) onPress(k); rep.current.repeated = false }}
       className={cn(
         'h-10 min-w-[2.75rem] shrink-0 select-none rounded-md border px-2.5 font-mono text-[13px] transition active:scale-95 sm:h-8 sm:min-w-0 sm:text-xs',
         active ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-accent text-foreground hover:bg-secondary hover:text-primary-foreground active:bg-primary/30',
@@ -84,7 +86,7 @@ function SelectSheet({ target, font, onClose, onFlash }) {
   const preRef = useRef(null)
   useEffect(() => {
     api.termCapture(target, 2000)
-      .then((r) => setText(r.ok ? r.content : `[${r.msg || 'erro'}]`))
+      .then((r) => setText(r.ok ? r.content : `[${r.msg || t('term.error')}]`))
       .catch((e) => setText(`[${e.message}]`))
   }, [target])
   useEffect(() => {
@@ -94,20 +96,20 @@ function SelectSheet({ target, font, onClose, onFlash }) {
     const sel = all ? '' : String(window.getSelection?.() || '')
     const s = sel || text || ''
     const ok = await copyText(s)
-    onFlash?.(ok ? { ok: true, msg: `copied (${s.length} chars)` } : { ok: false, msg: 'the browser blocked copying — select the text and use the system Copy' })
+    onFlash?.(ok ? { ok: true, msg: t('term.copied', { n: s.length }) } : { ok: false, msg: t('term.copyBlockedMobile') })
     if (ok) onClose()
   }
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col bg-background pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]" role="dialog" aria-modal="true" aria-label="Select text">
+    <div className="fixed inset-0 z-[70] flex flex-col bg-background pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]" role="dialog" aria-modal="true" aria-label={t('term.select')}>
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <TextSelect className="size-4 text-primary" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">Select text</span>
-        <Btn variant="accent" onClick={() => copy(false)}><Copy className="size-4" /> Copy</Btn>
-        <IconBtn title="close" onClick={onClose}><X className="size-4" /></IconBtn>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{t('term.select')}</span>
+        <Btn variant="accent" onClick={() => copy(false)}><Copy className="size-4" /> {t('term.copy')}</Btn>
+        <IconBtn title={t('nav.closeLower')} onClick={onClose}><X className="size-4" /></IconBtn>
       </div>
-      <p className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">Long-press and drag to select, then tap Copy. Without a selection, Copy copies everything.</p>
+      <p className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">{t('term.selectHint')}</p>
       <pre ref={preRef} className="min-h-0 flex-1 select-text overflow-auto whitespace-pre-wrap break-all bg-black p-3 font-mono leading-snug text-[#E8E6E1]" style={{ fontSize: font, WebkitUserSelect: 'text', userSelect: 'text' }}>
-        {text == null ? 'loading…' : text}
+        {text == null ? t('common.loading') : text}
       </pre>
     </div>
   )
@@ -118,12 +120,12 @@ function SelectSheet({ target, font, onClose, onFlash }) {
 function PasteSheet({ onSend, onClose }) {
   const [v, setV] = useState('')
   return (
-    <Modal title="Paste into terminal" icon={ClipboardPaste} onClose={onClose}>
-      <p className="mb-2 text-xs text-muted-foreground">The browser did not allow reading the clipboard. Long-press the box below, choose Paste, then Send.</p>
-      <textarea autoFocus value={v} onChange={(e) => setV(e.target.value)} rows={5} className={cn(inputCls, 'w-full font-mono')} placeholder="paste here" />
+    <Modal title={t('term.pasteTitle')} icon={ClipboardPaste} onClose={onClose}>
+      <p className="mb-2 text-xs text-muted-foreground">{t('term.pasteHint')}</p>
+      <textarea autoFocus value={v} onChange={(e) => setV(e.target.value)} rows={5} className={cn(inputCls, 'w-full font-mono')} placeholder={t('term.pasteHere')} />
       <div className="mt-3 flex justify-end gap-2">
-        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-        <Btn variant="accent" disabled={!v} onClick={() => onSend(v)}><Send className="size-4" /> Send</Btn>
+        <Btn variant="ghost" onClick={onClose}>{t('common.cancel')}</Btn>
+        <Btn variant="accent" disabled={!v} onClick={() => onSend(v)}><Send className="size-4" /> {t('common.send')}</Btn>
       </div>
     </Modal>
   )
@@ -174,7 +176,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
     setStatusMsg(msg || '')
     setStatusInfo(info || {})
   }, [])
-  const onCopy = useCallback((ok, text) => onFlash?.(ok ? { ok: true, msg: `copiado (${text.length} caractere${text.length === 1 ? '' : 's'})` } : { ok: false, msg: 'o navegador bloqueou a cópia — use Ctrl+Shift+C' }), [onFlash])
+  const onCopy = useCallback((ok, text) => onFlash?.(ok ? { ok: true, msg: t('term.copied', { n: text.length }) } : { ok: false, msg: t('term.copyBlocked') }), [onFlash])
   const powerOn = async () => {
     const r = await api.setPower(target, true).catch((e) => ({ ok: false, msg: e.message }))
     onFlash?.(r)
@@ -321,11 +323,11 @@ export default function TerminalPage({ data, activity, onFlash }) {
       {/* Barra: sessoes + status + acoes */}
       <div className="flex items-center gap-2 border-b border-border px-2 py-1.5 sm:flex-wrap sm:px-3 sm:py-2">
         <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
-          <button type="button" onClick={() => navigate('/terminal/shell')} className={tabCls(target === 'shell')} title="bash em /root (sessão cr-shell)">
+          <button type="button" onClick={() => navigate('/terminal/shell')} className={tabCls(target === 'shell')} title={t('term.shellTitle')}>
             <SquareTerminal className="h-3.5 w-3.5" /> Shell
           </button>
           {projects.map((p) => (
-            <button key={p.name} type="button" onClick={() => navigate('/terminal/' + encodeURIComponent(p.name))} className={tabCls(target === p.name)} title={`sessão ${p.session} — ${p.claudeRunning ? actOf(p) : 'Claude parado'}`}>
+            <button key={p.name} type="button" onClick={() => navigate('/terminal/' + encodeURIComponent(p.name))} className={tabCls(target === p.name)} title={t('term.sessionTitle', { s: p.session, state: p.claudeRunning ? actOf(p) : t('term.claudeStopped') })}>
               {p.claudeRunning ? <ActivityDot state={actOf(p)} /> : <Dot on={false} color="bg-slate-600" />} <span className={p.enabled === false ? 'line-through opacity-60' : ''}>{p.name}</span>
             </button>
           ))}
@@ -334,38 +336,38 @@ export default function TerminalPage({ data, activity, onFlash }) {
           <S.Icon className={`h-4 w-4 sm:h-3.5 sm:w-3.5 ${S.spin ? 'animate-spin' : ''}`} /> <span className="hidden sm:inline">{S.label}</span>
         </span>
         <div className="hidden items-center gap-1 sm:flex">
-          <IconBtn title="buscar no terminal (Ctrl+Shift+F)" active={search !== null} onClick={toggleSearch}>
+          <IconBtn title={t('term.search')} active={search !== null} onClick={toggleSearch}>
             <Search className="h-4 w-4" />
           </IconBtn>
           <Separator orientation="vertical" className="mx-1 h-5" />
-          <IconBtn title="diminuir fonte" onClick={() => setFontSafe(font - 1)}>
+          <IconBtn title={t('term.fontSmaller')} onClick={() => setFontSafe(font - 1)}>
             <ZoomOut className="h-4 w-4" />
           </IconBtn>
-          <IconBtn title="aumentar fonte" onClick={() => setFontSafe(font + 1)}>
+          <IconBtn title={t('term.fontBigger')} onClick={() => setFontSafe(font + 1)}>
             <ZoomIn className="h-4 w-4" />
           </IconBtn>
           <Separator orientation="vertical" className="mx-1 h-5" />
-          <IconBtn title="colar da área de transferência (ou botão direito)" onClick={paste}>
+          <IconBtn title={t('term.pasteBtn')} onClick={paste}>
             <ClipboardPaste className="h-4 w-4" />
           </IconBtn>
-          <IconBtn title="Select text (copy from the scrollback)" onClick={() => setSelecting(true)}>
+          <IconBtn title={t('term.selectScroll')} onClick={() => setSelecting(true)}>
             <TextSelect className="h-4 w-4" />
           </IconBtn>
-          <IconBtn title="limpar a tela (local)" onClick={() => termRef.current?.clear()}>
+          <IconBtn title={t('term.clearLocal')} onClick={() => termRef.current?.clear()}>
             <Eraser className="h-4 w-4" />
           </IconBtn>
           <Separator orientation="vertical" className="mx-1 h-5" />
-          <IconBtn title="barra de teclas (Esc, Tab, Ctrl…)" active={keys} onClick={toggleKeys}>
+          <IconBtn title={t('term.keysBar')} active={keys} onClick={toggleKeys}>
             <Keyboard className="h-4 w-4" />
           </IconBtn>
-          <IconBtn title={side ? 'fechar arquivos' : 'arquivos ao lado (split)'} active={side} onClick={toggleSide} className="hidden md:inline-flex">
+          <IconBtn title={side ? t('term.closeFiles') : t('term.openFiles')} active={side} onClick={toggleSide} className="hidden md:inline-flex">
             {side ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
           </IconBtn>
           <Separator orientation="vertical" className="mx-1 h-5" />
-          <IconBtn title="reconectar" onClick={() => termRef.current?.reconnect()}>
+          <IconBtn title={t('term.reconnect')} onClick={() => termRef.current?.reconnect()}>
             <RefreshCw className="h-4 w-4" />
           </IconBtn>
-          <IconBtn title={full ? 'sair da tela cheia (Shift+Esc)' : 'tela cheia'} onClick={() => setFull((f) => !f)}>
+          <IconBtn title={full ? t('term.exitFull') : t('term.full')} onClick={() => setFull((f) => !f)}>
             {full ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </IconBtn>
         </div>
@@ -377,49 +379,49 @@ export default function TerminalPage({ data, activity, onFlash }) {
           <AppWindow className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           {win.windows.map((w) => (
             <span key={w.index} className={`inline-flex shrink-0 items-center overflow-hidden rounded-md ${w.active ? 'border border-transparent ring-1 ring-primary/25 bg-primary/15 text-primary' : 'border border-border bg-accent text-muted-foreground'}`}>
-              <button type="button" onClick={() => winAction('select', w.index)} className="px-2 py-1.5 hover:text-foreground sm:py-0.5" title={`janela ${w.index} · ${w.cmd}`}>
+              <button type="button" onClick={() => winAction('select', w.index)} className="px-2 py-1.5 hover:text-foreground sm:py-0.5" title={t('term.window', { i: w.index, cmd: w.cmd })}>
                 {w.index}:{w.name}
               </button>
               {win.windows.length > 1 &&
                 (killIdx === w.index ? (
-                  <button type="button" onClick={() => winAction('kill', w.index)} className="bg-rose-500/20 px-1.5 py-1.5 text-rose-700 dark:text-rose-200 sm:py-0.5" title="confirmar fechar">
-                    fechar?
+                  <button type="button" onClick={() => winAction('kill', w.index)} className="bg-rose-500/20 px-1.5 py-1.5 text-rose-700 dark:text-rose-200 sm:py-0.5" title={t('term.confirmClose')}>
+                    {t('term.closeQ')}
                   </button>
                 ) : (
-                  <button type="button" onClick={() => setKillIdx(w.index)} className="px-1.5 py-1.5 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-300 sm:px-1 sm:py-0.5" title="fechar janela">
+                  <button type="button" onClick={() => setKillIdx(w.index)} className="px-1.5 py-1.5 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-300 sm:px-1 sm:py-0.5" title={t('term.closeWindow')}>
                     <X className="h-3 w-3" />
                   </button>
                 ))}
             </span>
           ))}
-          <button type="button" onClick={() => winAction('new')} className="inline-flex shrink-0 items-center gap-0.5 rounded-md border bg-accent px-2 py-1.5 text-muted-foreground hover:text-foreground sm:px-1.5 sm:py-0.5" title="nova janela tmux (Ctrl+b c)">
+          <button type="button" onClick={() => winAction('new')} className="inline-flex shrink-0 items-center gap-0.5 rounded-md border bg-accent px-2 py-1.5 text-muted-foreground hover:text-foreground sm:px-1.5 sm:py-0.5" title={t('term.newWindow')}>
             <Plus className="h-3 w-3" />
           </button>
-          <span className="ml-auto inline-flex shrink-0 items-center gap-1 pl-1 text-muted-foreground" title="clientes tmux conectados nesta sessão (painel + Console)">
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1 pl-1 text-muted-foreground" title={t('term.clients')}>
             <Users className="h-3 w-3" /> {win.clients}
           </span>
           {win.clients > 1 && !detach && (
-            <button type="button" onClick={() => setDetach(true)} className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-amber-600 dark:text-amber-300 ring-1 ring-amber-500/25 hover:bg-amber-500/20 sm:py-0.5" title="derruba os outros clientes (tamanho da tela passa a ser o seu)">
-              <LogIn className="h-3 w-3" /> assumir sessão
+            <button type="button" onClick={() => setDetach(true)} className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-amber-600 dark:text-amber-300 ring-1 ring-amber-500/25 hover:bg-amber-500/20 sm:py-0.5" title={t('term.takeOverTitle')}>
+              <LogIn className="h-3 w-3" /> {t('term.takeOver')}
             </button>
           )}
         </div>
         {/* ferramentas no celular: fonte, selecionar texto, teclas, mais */}
         <div className="flex shrink-0 items-center gap-1 sm:hidden">
-          <IconBtn title="smaller font" onClick={() => setFontSafe(font - 1)}><ZoomOut className="h-4 w-4" /></IconBtn>
-          <IconBtn title="bigger font" onClick={() => setFontSafe(font + 1)}><ZoomIn className="h-4 w-4" /></IconBtn>
-          <IconBtn title="Select text" onClick={() => setSelecting(true)}><TextSelect className="h-4 w-4" /></IconBtn>
-          <IconBtn title="extra keys" active={keys} onClick={toggleKeys}><Keyboard className="h-4 w-4" /></IconBtn>
+          <IconBtn title={t('term.fontSmaller')} onClick={() => setFontSafe(font - 1)}><ZoomOut className="h-4 w-4" /></IconBtn>
+          <IconBtn title={t('term.fontBigger')} onClick={() => setFontSafe(font + 1)}><ZoomIn className="h-4 w-4" /></IconBtn>
+          <IconBtn title={t('term.select')} onClick={() => setSelecting(true)}><TextSelect className="h-4 w-4" /></IconBtn>
+          <IconBtn title={t('term.extraKeys')} active={keys} onClick={toggleKeys}><Keyboard className="h-4 w-4" /></IconBtn>
           <div className="relative">
-            <IconBtn title="more" active={menu} onClick={() => setMenu((m) => !m)}><Ellipsis className="h-4 w-4" /></IconBtn>
+            <IconBtn title={t('term.more')} active={menu} onClick={() => setMenu((m) => !m)}><Ellipsis className="h-4 w-4" /></IconBtn>
             {menu && (
               <div className="absolute right-0 top-full z-[65] mt-1 w-56 rounded-lg border border-border bg-popover p-1 shadow-xl" role="menu">
-                <button type="button" className={menuItem} onClick={paste}><ClipboardPaste className="size-4" /> Paste</button>
-                <button type="button" className={menuItem} onClick={toggleSearch}><Search className="size-4" /> Search</button>
-                <button type="button" className={menuItem} onClick={() => termRef.current?.clear()}><Eraser className="size-4" /> Clear screen (local)</button>
-                <button type="button" className={menuItem} onClick={() => termRef.current?.reconnect()}><RefreshCw className="size-4" /> Reconnect</button>
-                <button type="button" className={menuItem} onClick={() => setFull((f) => !f)}>{full ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />} {full ? 'Exit full screen' : 'Full screen'}</button>
-                <div className="px-3 pb-1.5 pt-1 text-[11px] text-muted-foreground">font {font}px · pinch to zoom</div>
+                <button type="button" className={menuItem} onClick={paste}><ClipboardPaste className="size-4" /> {t('term.paste')}</button>
+                <button type="button" className={menuItem} onClick={toggleSearch}><Search className="size-4" /> {t('term.searchShort')}</button>
+                <button type="button" className={menuItem} onClick={() => termRef.current?.clear()}><Eraser className="size-4" /> {t('term.clearShort')}</button>
+                <button type="button" className={menuItem} onClick={() => termRef.current?.reconnect()}><RefreshCw className="size-4" /> {t('term.reconnectShort')}</button>
+                <button type="button" className={menuItem} onClick={() => setFull((f) => !f)}>{full ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />} {full ? t('term.exitFullShort') : t('term.fullShort')}</button>
+                <div className="px-3 pb-1.5 pt-1 text-[11px] text-muted-foreground">{t('term.fontInfo', { n: font })}</div>
               </div>
             )}
           </div>
@@ -450,16 +452,16 @@ export default function TerminalPage({ data, activity, onFlash }) {
                 termRef.current?.findPrevious(search)
               }
             }}
-            placeholder="buscar no histórico do terminal…"
+            placeholder={t('term.searchPh')}
             className={`${inputCls} min-w-0 flex-1 py-1 sm:w-72 sm:flex-none`}
           />
-          <IconBtn title="anterior (Shift+Enter)" onClick={() => termRef.current?.findPrevious(search)}>
+          <IconBtn title={t('term.prev')} onClick={() => termRef.current?.findPrevious(search)}>
             <ChevronUp className="h-3.5 w-3.5" />
           </IconBtn>
-          <IconBtn title="próximo (Enter)" onClick={() => termRef.current?.findNext(search)}>
+          <IconBtn title={t('term.next')} onClick={() => termRef.current?.findNext(search)}>
             <ChevronDown className="h-3.5 w-3.5" />
           </IconBtn>
-          <IconBtn title="fechar (Esc)" onClick={() => setSearch(null)}>
+          <IconBtn title={t('term.closeEsc')} onClick={() => setSearch(null)}>
             <X className="h-3.5 w-3.5" />
           </IconBtn>
         </form>
@@ -472,22 +474,22 @@ export default function TerminalPage({ data, activity, onFlash }) {
           {lost && (
             <div className="absolute inset-x-0 top-2 z-10 mx-auto flex w-fit max-w-[92%] items-center gap-2 rounded-lg bg-amber-950/90 px-3 py-2 text-xs text-amber-800 dark:text-amber-100 ring-1 ring-amber-500/30" role="status">
               <WifiOff className="size-4 shrink-0 text-amber-600 dark:text-amber-300" />
-              <span>{status === 'closed' ? `Connection lost — retrying in ${Math.max(1, Math.round((statusInfo.retryIn || 0) / 1000))}s` : `Reconnecting… (attempt ${statusInfo.attempt})`}</span>
+              <span>{status === 'closed' ? t('term.lost', { s: Math.max(1, Math.round((statusInfo.retryIn || 0) / 1000)) }) : t('term.reconnAttempt', { n: statusInfo.attempt })}</span>
               <button type="button" className="rounded-md bg-amber-500/20 px-2.5 py-1.5 font-medium text-amber-800 dark:text-amber-100 ring-1 ring-amber-500/40 hover:bg-amber-500/30" onClick={() => termRef.current?.reconnect()}>
-                Reconnect now
+                {t('term.reconnectNow')}
               </button>
             </div>
           )}
           {status === 'error' && (
             <div className="absolute inset-x-0 bottom-3 z-10 mx-auto flex w-fit max-w-[92%] flex-wrap items-center gap-2 rounded-lg bg-rose-950/90 px-3 py-2 text-xs text-rose-800 dark:text-rose-100 ring-1 ring-rose-500/30">
-              {statusMsg || 'erro'} —
+              {statusMsg || t('term.error')} —
               {proj && proj.enabled === false ? (
                 <button type="button" className="inline-flex items-center gap-1 rounded-md bg-emerald-500/20 px-2 py-1 text-emerald-700 dark:text-emerald-200 ring-1 ring-emerald-500/30 hover:bg-emerald-500/30" onClick={powerOn}>
-                  <Power className="h-3 w-3" /> ligar o projeto
+                  <Power className="h-3 w-3" /> {t('term.powerOn')}
                 </button>
               ) : (
                 <button type="button" className="underline" onClick={() => termRef.current?.reconnect()}>
-                  tentar de novo
+                  {t('common.retry')}
                 </button>
               )}
             </div>
@@ -495,7 +497,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
         </div>
         {side && (
           <>
-            <div onMouseDown={onDragStart} className="hidden w-1.5 shrink-0 cursor-col-resize bg-border transition hover:bg-primary/40 md:block" title="arraste para redimensionar" />
+            <div onMouseDown={onDragStart} className="hidden w-1.5 shrink-0 cursor-col-resize bg-border transition hover:bg-primary/40 md:block" title={t('term.drag')} />
             <div className="hidden min-h-0 shrink-0 p-1 md:block" style={{ width: sideW }}>
               <Files path={sidePath} onNavigate={setSidePath} onFlash={onFlash} embedded />
             </div>
@@ -507,14 +509,14 @@ export default function TerminalPage({ data, activity, onFlash }) {
       {keys && (
         <div className="border-t border-border bg-sidebar">
           {target !== 'shell' && (
-            <div className="no-scrollbar flex items-center gap-1 overflow-x-auto px-2 pt-1.5" aria-label="Claude shortcuts">
-              <span className={cn('shrink-0 pr-1 text-[10px] uppercase tracking-wide', waiting ? 'text-destructive' : 'text-muted-foreground')}>{waiting ? 'waiting' : 'claude'}</span>
+            <div className="no-scrollbar flex items-center gap-1 overflow-x-auto px-2 pt-1.5" aria-label={t('term.claudeKeys')}>
+              <span className={cn('shrink-0 pr-1 text-[10px] uppercase tracking-wide', waiting ? 'text-destructive' : 'text-muted-foreground')}>{waiting ? t('term.waiting') : 'claude'}</span>
               {CLAUDE_ACTIONS.map((a) => (
                 <KeyBtn key={a.id} k={a} onPress={pressAction} hot={waiting && /^a\d$/.test(a.id)} />
               ))}
             </div>
           )}
-          <div className="no-scrollbar flex items-center gap-1 overflow-x-auto px-2 py-1.5" aria-label="extra keys">
+          <div className="no-scrollbar flex items-center gap-1 overflow-x-auto px-2 py-1.5" aria-label={t('term.extraKeys')}>
             {EXTRA_KEYS.map((k) => (
               <KeyBtn key={k.id} k={k} onPress={pressKey} active={k.mod ? mods[k.mod] !== 'off' : false} locked={k.mod ? mods[k.mod] === 'lock' : false} />
             ))}
@@ -525,13 +527,13 @@ export default function TerminalPage({ data, activity, onFlash }) {
       {!full && (
         <p className="hidden flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-1.5 text-xs text-muted-foreground sm:flex">
           <span className="inline-flex items-center gap-1 font-mono">
-            <Cpu className="h-3 w-3" /> {proj ? `sessão ${proj.session} em ${proj.dir}` : 'bash em /root (sessão cr-shell)'}
+            <Cpu className="h-3 w-3" /> {proj ? t('term.sessionIn', { s: proj.session, dir: proj.dir }) : t('term.shellTitle')}
           </span>
-          <span>· fechar a aba não encerra a sessão</span>
-          <span>· selecionar com o mouse já copia · Ctrl+C copia a seleção (sem seleção = interromper) · Ctrl+V / botão direito cola · Ctrl+Shift+F busca · roda do mouse rola</span>
+          <span>{t('term.tabHint')}</span>
+          <span>{t('term.mouseHint')}</span>
           {target === 'shell' && (
             <span>
-              · para o Claude: <code className="font-mono text-muted-foreground">claude</code> ou <code className="font-mono text-muted-foreground">tmux attach -t claude-&lt;projeto&gt;</code>
+              <TR k="term.forClaude" />
             </span>
           )}
         </p>

@@ -4,6 +4,7 @@ import { Btn, IconBtn, Empty, InlineConfirm, InlineInput, Skeleton } from './ui.
 import { Button } from './ui/button.jsx'
 import { fmtSize, fmtDate, joinPath, parentOf } from '../lib/format.js'
 import * as api from '../api.js'
+import { t } from '../lib/i18n.js'
 
 const CodeEditor = lazy(() => import('./CodeEditor.jsx'))
 
@@ -135,12 +136,12 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
     for (const f of files) {
       const target = joinPath(cur, f.name)
       let r = await api.fsUpload(target, f, false)
-      if (!r.ok && /ja existe/.test(r.msg) && window.confirm(`"${f.name}" já existe. Sobrescrever?`)) r = await api.fsUpload(target, f, true)
+      if (!r.ok && /ja existe/.test(r.msg) && window.confirm(t('files.overwrite', { name: f.name }))) r = await api.fsUpload(target, f, true)
       if (r.ok) okN++
       else onFlash?.(r)
     }
     setBusy('')
-    if (okN) onFlash?.({ ok: true, msg: `${okN} arquivo(s) enviado(s) para /root/${cur || ''}` })
+    if (okN) onFlash?.({ ok: true, msg: t('files.uploaded', { n: okN, dir: cur || '' }) })
     load()
   }
   const onDrop = (e) => {
@@ -175,10 +176,10 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
             <Btn size="sm" onClick={() => go(parentOf(cur))}>
-              <ArrowLeft className="h-3.5 w-3.5" /> {!embedded && 'Voltar'}
+              <ArrowLeft className="h-3.5 w-3.5" /> {!embedded && t('common.back')}
             </Btn>
             <Crumbs />
-            {dirty && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-300">não salvo</span>}
+            {dirty && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-300">{t('files.unsaved')}</span>}
             {!embedded && (
               <span className="font-mono text-xs text-muted-foreground">
                 {fmtSize(file.size)} · {fmtDate(file.mtime)}
@@ -186,13 +187,13 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
             )}
           </div>
           <div className="flex items-center gap-1.5">
-            <Button asChild variant="secondary" size="icon-sm" title="baixar">
+            <Button asChild variant="secondary" size="icon-sm" title={t('files.download')}>
               <a href={api.fsDownloadUrl(file.path)}>
                 <Download className="h-3.5 w-3.5" />
               </a>
             </Button>
             <Btn size="sm" variant="accent" busy={busy === 'save'} disabled={!dirty} onClick={save} title="Ctrl+S">
-              <Save className="h-3.5 w-3.5" /> Salvar
+              <Save className="h-3.5 w-3.5" /> {t('common.save')}
             </Btn>
           </div>
         </div>
@@ -220,13 +221,13 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
               e.target.value = ''
             }}
           />
-          <IconBtn onClick={() => uploadRef.current?.click()} title="enviar arquivos (ou arraste aqui)">
+          <IconBtn onClick={() => uploadRef.current?.click()} title={t('files.upload')}>
             {busy === 'upload' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
           </IconBtn>
-          <IconBtn onClick={() => setCreating('file')} active={creating === 'file'} title="novo arquivo">
+          <IconBtn onClick={() => setCreating('file')} active={creating === 'file'} title={t('files.newFile')}>
             <FilePlus className="h-4 w-4" />
           </IconBtn>
-          <IconBtn onClick={() => setCreating('dir')} active={creating === 'dir'} title="nova pasta">
+          <IconBtn onClick={() => setCreating('dir')} active={creating === 'dir'} title={t('files.newDir')}>
             <FolderPlus className="h-4 w-4" />
           </IconBtn>
           <IconBtn onClick={load} title="atualizar">
@@ -239,7 +240,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
         {creating && (
           <div className="flex items-center gap-2 px-3 py-2 text-sm text-foreground/80">
             {creating === 'dir' ? <FolderPlus className="h-4 w-4 text-primary" /> : <FilePlus className="h-4 w-4 text-primary" />}
-            <InlineInput placeholder={creating === 'dir' ? 'nome da pasta' : 'nome do arquivo'} onSubmit={createItem} onCancel={() => setCreating('')} busy={busy === 'create'} />
+            <InlineInput placeholder={creating === 'dir' ? t('files.dirName') : t('files.fileName')} onSubmit={createItem} onCancel={() => setCreating('')} busy={busy === 'create'} />
           </div>
         )}
         {cur !== '' && <Row onOpen={() => go(parentOf(cur))} icon={<Folder className="h-4 w-4 text-muted-foreground" />} name=".." muted />}
@@ -252,7 +253,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
         )}
         {entries.length === 0 && !loading && !creating && (
           <div className="m-1.5 rounded-xl border border-dashed border-border">
-            <Empty>pasta vazia — arraste arquivos aqui para enviar</Empty>
+            <Empty>{t('files.empty')}</Empty>
           </div>
         )}
         {entries.map((e) => {
@@ -270,7 +271,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
             return (
               <div key={e.name} className="flex items-center gap-2 rounded-lg bg-rose-500/5 px-3 py-1.5 text-sm">
                 <Trash2 className="h-4 w-4 text-rose-600 dark:text-rose-300" />
-                <InlineConfirm text={`Excluir "${e.name}"${e.type === 'dir' ? ' e todo o conteúdo' : ''}? Sem volta.`} onYes={() => delItem(e)} onNo={() => setDeleting('')} busy={busy === 'del:' + e.name} />
+                <InlineConfirm text={t(e.type === 'dir' ? 'files.confirmDeleteDir' : 'files.confirmDelete', { name: e.name })} onYes={() => delItem(e)} onNo={() => setDeleting('')} busy={busy === 'del:' + e.name} />
               </div>
             )
           }
@@ -282,8 +283,8 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
               name={e.name}
               right={
                 e.outside ? (
-                  <span className="text-xs text-amber-600 dark:text-amber-300" title="symlink que aponta para fora de /root — o painel não abre; você pode renomear ou excluir o link">
-                    link p/ fora de /root
+                  <span className="text-xs text-amber-600 dark:text-amber-300" title={t('files.outsideTitle')}>
+                    {t('files.outside')}
                   </span>
                 ) : (
                   !embedded && (

@@ -5,11 +5,13 @@ import { Dot, Btn, Chip, Modal, Drawer, ActivityBadge, inputCls, Skeleton } from
 import { fmtInt, fmtTok, fmtSize, fmtDate, fmtUsd, fmtUptime } from '../lib/format.js'
 import * as api from '../api.js'
 import { UsageWidget } from '../components/UsageLimits.jsx'
+import { t } from '../lib/i18n.js'
+import { TR } from '../lib/i18n-rich.jsx'
 
 const SESSION_MODES = [
-  ['new', 'Nova conversa'],
-  ['continue', 'Continuar a última'],
-  ['pinned', 'Sessão fixa'],
+  ['new', 'smode.new'],
+  ['continue', 'smode.continue'],
+  ['pinned', 'smode.pinned'],
 ]
 
 function StatItem({ icon: Icon, label, children, warn, className = '' }) {
@@ -43,7 +45,7 @@ function Meter({ icon: Icon, label, value, hint }) {
 
 // linha fina (sparkline) 0-100% para o historico de CPU/memoria — sem lib de grafico
 function MiniLine({ points, color }) {
-  if (!points || points.length < 2) return <div className="flex h-10 items-center text-[11px] text-muted-foreground">sem histórico ainda</div>
+  if (!points || points.length < 2) return <div className="flex h-10 items-center text-[11px] text-muted-foreground">{t('dash.noHistory')}</div>
   const w = 100, h = 32
   const path = points.map((v, i) => `${(i / (points.length - 1)) * w},${h - Math.min(100, Math.max(0, v || 0)) / 100 * h}`).join(' ')
   return (
@@ -87,9 +89,9 @@ export function HealthCard({ onFlash, compact }) {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Meter icon={HardDrive} label="Disco (/root)" value={h.disk?.pct ?? 0} hint={h.disk ? `${fmtSize(h.disk.used)} de ${fmtSize(h.disk.total)} · livre ${fmtSize(h.disk.avail)}` : ''} />
-        <Meter icon={MemoryStick} label="Memória" value={h.mem?.pct ?? 0} hint={h.mem ? `${fmtSize(h.mem.used)} de ${fmtSize(h.mem.total)}` : ''} />
-        <Meter icon={Gauge} label="CPU" value={h.cpu?.pct ?? 0} hint={h.cpu?.cores ? `${h.cpu.cores} núcleo(s)` : ''} />
+        <Meter icon={HardDrive} label={t('dash.disk')} value={h.disk?.pct ?? 0} hint={h.disk ? t('dash.diskHint', { used: fmtSize(h.disk.used), total: fmtSize(h.disk.total), free: fmtSize(h.disk.avail) }) : ''} />
+        <Meter icon={MemoryStick} label={t('dash.mem')} value={h.mem?.pct ?? 0} hint={h.mem ? t('dash.memHint', { used: fmtSize(h.mem.used), total: fmtSize(h.mem.total) }) : ''} />
+        <Meter icon={Gauge} label="CPU" value={h.cpu?.pct ?? 0} hint={h.cpu?.cores ? t('dash.cores', { n: h.cpu.cores }) : ''} />
         <div className="rounded-xl bg-accent p-3 border">
           <div className="text-[11px] text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
@@ -101,7 +103,7 @@ export function HealthCard({ onFlash, compact }) {
           </div>
           <div className="mt-1 text-[11px] text-muted-foreground">
             <Clock className="mr-1 inline h-3 w-3" />
-            host há {fmtUptime(h.uptime)} · painel há {fmtUptime(h.panel?.uptime)}
+            {t('dash.uptime', { host: fmtUptime(h.uptime), panel: fmtUptime(h.panel?.uptime) })}
           </div>
         </div>
         <div className={`col-span-2 rounded-xl border bg-accent p-3 lg:col-span-1 ${c.updateAvailable ? 'border-amber-500/40' : 'border-border'}`}>
@@ -117,16 +119,16 @@ export function HealthCard({ onFlash, compact }) {
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             {c.updateAvailable ? (
               <Btn size="sm" variant="accent" busy={busy} onClick={update} title="npm i -g @anthropic-ai/claude-code@latest">
-                <ArrowUpCircle className="h-3.5 w-3.5" /> Atualizar p/ {c.latest}
+                <ArrowUpCircle className="h-3.5 w-3.5" /> {t('dash.updateTo', { v: c.latest })}
               </Btn>
             ) : (
               <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-300">
-                <CheckCircle2 className="h-3.5 w-3.5" /> {c.latest ? 'atualizado' : 'sem acesso ao npm'}
+                <CheckCircle2 className="h-3.5 w-3.5" /> {c.latest ? t('dash.upToDate') : t('dash.noNpm')}
               </span>
             )}
             {!compact && (
               <Link to="/account" className="text-[11px] text-muted-foreground hover:text-foreground/80">
-                detalhes →
+                {t('dash.details')}
               </Link>
             )}
           </div>
@@ -137,10 +139,10 @@ export function HealthCard({ onFlash, compact }) {
         <div className="grid gap-3 lg:grid-cols-2">
           {history.length > 0 && (
             <div className="rounded-xl bg-accent p-3 border">
-              <div className="mb-1 text-[11px] text-muted-foreground">Últimas 6h</div>
+              <div className="mb-1 text-[11px] text-muted-foreground">{t('dash.last6h')}</div>
               <div className="mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                 <span className="inline-block h-1.5 w-3 rounded-full bg-sky-400" /> CPU
-                <span className="ml-3 inline-block h-1.5 w-3 rounded-full bg-amber-400" /> Memória
+                <span className="ml-3 inline-block h-1.5 w-3 rounded-full bg-amber-400" /> {t('dash.mem')}
               </div>
               <div className="relative">
                 <MiniLine points={history.map((p) => p.cpu)} color="#38bdf8" />
@@ -153,7 +155,7 @@ export function HealthCard({ onFlash, compact }) {
           {top.length > 0 && (
             <div className="rounded-xl bg-accent p-3 border">
               <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <ListTree className="h-3.5 w-3.5 text-primary" /> Top processos
+                <ListTree className="h-3.5 w-3.5 text-primary" /> {t('dash.top')}
               </div>
               <table className="w-full text-xs">
                 <tbody>
@@ -223,19 +225,19 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
       {/* Resumo */}
       <section className="order-1 rounded-lg border bg-card p-3 sm:p-5">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
-          <StatItem icon={UserRound} label="Conta Claude" warn={!login.logged} className="col-span-2 sm:col-span-1">
+          <StatItem icon={UserRound} label={t('account.claude')} warn={!login.logged} className="col-span-2 sm:col-span-1">
             <Link to={login.logged ? '/account' : '/account?login=1'} className="inline-flex items-center gap-2 hover:underline">
-              <Dot on={login.logged} /> {login.logged ? login.account || 'logado' : 'deslogado — clique p/ logar'}
+              <Dot on={login.logged} /> {login.logged ? login.account || t('account.loggedIn') : t('dash.loggedOutClick')}
             </Link>
           </StatItem>
-          <StatItem icon={Cpu} label="Sessões">
+          <StatItem icon={Cpu} label={t('dash.sessions')}>
             <span className="font-mono text-sm text-foreground">
               {running}/{projects.length}
             </span>{' '}
-            com Claude rodando{off ? <span className="text-muted-foreground"> · {off} desligado(s)</span> : ''}
-            {waiting ? <span className="text-rose-600 dark:text-rose-300"> · {waiting} aguardando você</span> : ''}
+            {t('dash.withClaude')}{off ? <span className="text-muted-foreground">{t('dash.offCount', { n: off })}</span> : ''}
+            {waiting ? <span className="text-rose-600 dark:text-rose-300">{t('dash.waitingCount', { n: waiting })}</span> : ''}
           </StatItem>
-          <StatItem icon={BarChart3} label="Hoje">
+          <StatItem icon={BarChart3} label={t('dash.today')}>
             <Link to="/report" className="text-sm hover:underline">
               <span className="font-mono">{fmtTok((u.today?.in || 0) + (u.today?.out || 0))}</span> tokens · <span className="font-mono">{fmtUsd(u.today?.cost)}</span> · <span className="font-mono">{fmtInt(u.today?.messages)}</span> msgs
             </Link>
@@ -255,21 +257,21 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
       <section className="order-2 space-y-3 sm:order-3">
         <div className="flex items-center justify-between px-1">
           <h2 className="text-sm font-medium text-foreground">
-            Projetos <span className="font-mono text-xs text-muted-foreground">({projects.length})</span>
+            {t('dash.projects')} <span className="font-mono text-xs text-muted-foreground">({projects.length})</span>
           </h2>
           {data.remoteNameForced ? (
             <span className="text-[11px] text-muted-foreground">
-              remote fixo: <code className="font-mono text-xs">/remote-control {data.remoteNameForced}</code>
+              {t('dash.remoteFixed')} <code className="font-mono text-xs">/remote-control {data.remoteNameForced}</code>
             </span>
           ) : (
-            <span className="text-[11px] text-muted-foreground">remote = nome do projeto</span>
+            <span className="text-[11px] text-muted-foreground">{t('dash.remoteName')}</span>
           )}
         </div>
         {projects.length === 0 && (
           <div className="rounded-lg bg-card p-8 text-center text-sm text-muted-foreground border">
-            Nenhum projeto ainda.{' '}
+            {t('dash.noProjects')}{' '}
             <button type="button" className="text-primary hover:underline" onClick={() => setShowNew(true)}>
-              Criar o primeiro
+              {t('dash.createFirst')}
             </button>
             .
           </div>
@@ -288,38 +290,38 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                       <Link to={'/terminal/' + encodeURIComponent(p.name)} className="truncate text-lg font-semibold text-foreground hover:underline sm:text-base">
                         {p.name}
                       </Link>
-                      {!on ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground border">desligado</span> : p.claudeRunning ? <ActivityBadge state={act} since={p.activitySince} /> : <ActivityBadge state="off" />}
-                      {p.paused && <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-600 dark:text-amber-300" title="Claude pausado por inatividade — não consome CPU/memória até retomar">Pausado</span>}
+                      {!on ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground border">{t('dash.off')}</span> : p.claudeRunning ? <ActivityBadge state={act} since={p.activitySince} /> : <ActivityBadge state="off" />}
+                      {p.paused && <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-600 dark:text-amber-300" title={t('dash.pausedTitle')}>{t('dash.paused')}</span>}
                     </div>
                     {/* celular: configurar fica no canto do cartao (no desktop, no fim dos botoes) */}
-                    <Btn variant="ghost" className="-mr-2 -mt-1 sm:hidden" onClick={() => setDrawer(p.name)} title="configurar: primeira linha, renomear, histórico, backup, excluir">
+                    <Btn variant="ghost" className="-mr-2 -mt-1 sm:hidden" onClick={() => setDrawer(p.name)} title={t('dash.configure')}>
                       <Settings2 className="h-4 w-4" />
                     </Btn>
                   </div>
                   {act === 'prompt' && on && p.claudeRunning && (
                     <Link to={'/terminal/' + encodeURIComponent(p.name)} className="mt-2 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                      <SquareTerminal className="h-4 w-4 shrink-0" /> Claude is waiting for your answer — open the terminal
+                      <SquareTerminal className="h-4 w-4 shrink-0" /> {t('dash.waitingBanner')}
                     </Link>
                   )}
                   <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground sm:mt-1.5 sm:gap-y-1">
                     <span className="inline-flex items-center gap-1.5">
-                      <Activity className="h-3.5 w-3.5 text-muted-foreground" /> tmux <Dot on={p.up} /> {p.up ? 'de pé' : 'fora'}
+                      <Activity className="h-3.5 w-3.5 text-muted-foreground" /> tmux <Dot on={p.up} /> {p.up ? t('dash.up') : t('dash.down')}
                     </span>
                     <span className="inline-flex items-center gap-1.5">
-                      <Cpu className="h-3.5 w-3.5 text-muted-foreground" /> Claude <Dot on={p.claudeRunning} /> {p.claudeRunning ? 'rodando' : 'parado'}
+                      <Cpu className="h-3.5 w-3.5 text-muted-foreground" /> Claude <Dot on={p.claudeRunning} /> {p.claudeRunning ? t('dash.running') : t('dash.stopped')}
                     </span>
                     <span className="inline-flex min-w-0 items-center gap-1.5">
-                      <Radio className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> {p.autoRemote ? <code className="truncate font-mono text-xs text-foreground/80">{p.remoteCmd}</code> : <span className="text-muted-foreground">remote desligado</span>}
+                      <Radio className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> {p.autoRemote ? <code className="truncate font-mono text-xs text-foreground/80">{p.remoteCmd}</code> : <span className="text-muted-foreground">{t('dash.remoteOff')}</span>}
                     </span>
                     {p.initLine && (
                       <span className="w-full truncate text-muted-foreground sm:w-auto" title={p.initLine}>
-                        1ª linha: “{p.initLine.slice(0, 60)}
+                        {t('dash.firstLine')} “{p.initLine.slice(0, 60)}
                         {p.initLine.length > 60 ? '…' : ''}”
                       </span>
                     )}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Chip Icon={Power} on={on} busy={busy === `power:${p.name}`} labelOn="Ligado" labelOff="Desligado" onClick={() => run(`power:${p.name}`, () => api.setPower(p.name, !on))} />
+                    <Chip Icon={Power} on={on} busy={busy === `power:${p.name}`} labelOn={t('dash.on')} labelOff={t('dash.offChip')} onClick={() => run(`power:${p.name}`, () => api.setPower(p.name, !on))} />
                     <Chip Icon={Cpu} on={p.autoStartClaude} busy={busy === `cfg:${p.name}:autoStartClaude`} labelOn="Claude: ON" labelOff="Claude: OFF" onClick={() => run(`cfg:${p.name}:autoStartClaude`, () => api.setConfig(p.name, 'autoStartClaude', !p.autoStartClaude))} />
                     <Chip Icon={p.autoRemote ? Wifi : WifiOff} on={p.autoRemote} busy={busy === `cfg:${p.name}:autoRemote`} labelOn="Remote: ON" labelOff="Remote: OFF" onClick={() => run(`cfg:${p.name}:autoRemote`, () => api.setConfig(p.name, 'autoRemote', !p.autoRemote))} />
                   </div>
@@ -330,37 +332,37 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                     <SquareTerminal className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> Terminal
                   </Link>
                   {p.remoteUrl ? (
-                    <a href={p.remoteUrl} target="_blank" rel="noreferrer" title="abre/reconecta o controle remoto — o link continua válido mesmo se você fechou a aba no PC" className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-sky-500/90 px-3 text-sm font-medium text-white transition hover:bg-sky-500 sm:h-auto sm:py-1.5 sm:text-[13px]">
-                      <ExternalLink className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> Abrir remote
+                    <a href={p.remoteUrl} target="_blank" rel="noreferrer" title={t('dash.openRemoteTitle')} className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-sky-500/90 px-3 text-sm font-medium text-white transition hover:bg-sky-500 sm:h-auto sm:py-1.5 sm:text-[13px]">
+                      <ExternalLink className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> {t('dash.openRemote')}
                     </a>
                   ) : (
                     <Link to={'/files/projects/' + encodeURIComponent(p.name)} className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-secondary px-3 text-sm font-medium text-foreground transition hover:bg-secondary/80 sm:hidden">
-                      <FolderOpen className="h-4 w-4" /> Arquivos
+                      <FolderOpen className="h-4 w-4" /> {t('nav.files')}
                     </Link>
                   )}
                   {on && p.claudeRunning && (
-                    <Btn busy={busy === `remote:${p.name}`} className="h-11 justify-center sm:h-8" onClick={() => run(`remote:${p.name}`, () => api.reconnectRemote(p.name))} title="re-emite o /remote-control sem reiniciar (preserva a conversa)">
+                    <Btn busy={busy === `remote:${p.name}`} className="h-11 justify-center sm:h-8" onClick={() => run(`remote:${p.name}`, () => api.reconnectRemote(p.name))} title={t('dash.remoteAgainTitle')}>
                       <Radio className="h-3.5 w-3.5" /> /remote-control
                     </Btn>
                   )}
-                  <Btn busy={busy === `restart:${p.name}`} className="h-11 justify-center sm:h-8" onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title={on ? 'mata a sessão tmux (fecha remote + Claude) → reabre o Claude → religa o remote → envia a primeira linha' : 'liga o projeto e sobe a sessão'}>
-                    <RefreshCw className="h-3.5 w-3.5" /> {on ? 'Reiniciar' : 'Ligar'}
+                  <Btn busy={busy === `restart:${p.name}`} className="h-11 justify-center sm:h-8" onClick={() => run(`restart:${p.name}`, () => api.restartProject(p.name))} title={on ? t('dash.restartTitle') : t('dash.powerOnTitle')}>
+                    <RefreshCw className="h-3.5 w-3.5" /> {on ? t('dash.restart') : t('dash.powerOn')}
                   </Btn>
                   <Link to={'/files/projects/' + encodeURIComponent(p.name)} className={`${p.remoteUrl ? 'inline-flex' : 'hidden sm:inline-flex'} h-11 items-center justify-center gap-1.5 rounded-lg bg-secondary px-3 text-sm font-medium text-foreground transition hover:bg-secondary/80 sm:h-auto sm:py-1.5 sm:text-[13px]`}>
-                    <FolderOpen className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> Arquivos
+                    <FolderOpen className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> {t('nav.files')}
                   </Link>
                   {p.paused ? (
-                    <Btn variant="accent" className="h-11 justify-center sm:h-8" busy={busy === `unpause:${p.name}`} onClick={() => run(`unpause:${p.name}`, () => api.unpauseProject(p.name))} title="retoma o Claude pausado">
-                      <Play className="h-3.5 w-3.5" /> Retomar
+                    <Btn variant="accent" className="h-11 justify-center sm:h-8" busy={busy === `unpause:${p.name}`} onClick={() => run(`unpause:${p.name}`, () => api.unpauseProject(p.name))} title={t('dash.resumeTitle')}>
+                      <Play className="h-3.5 w-3.5" /> {t('dash.resume')}
                     </Btn>
                   ) : (
                     p.claudeRunning && (
-                      <Btn variant="ghost" className="h-11 justify-center border border-border sm:h-8 sm:border-transparent" busy={busy === `pause:${p.name}`} onClick={() => run(`pause:${p.name}`, () => api.pauseProject(p.name))} title="pausa o Claude desta sessão — libera CPU/memória até você retomar">
-                        <Pause className="h-3.5 w-3.5" /> Pausar
+                      <Btn variant="ghost" className="h-11 justify-center border border-border sm:h-8 sm:border-transparent" busy={busy === `pause:${p.name}`} onClick={() => run(`pause:${p.name}`, () => api.pauseProject(p.name))} title={t('dash.pauseTitle')}>
+                        <Pause className="h-3.5 w-3.5" /> {t('dash.pause')}
                       </Btn>
                     )
                   )}
-                  <Btn variant="ghost" className="hidden sm:inline-flex" onClick={() => setDrawer(p.name)} title="configurar: primeira linha, renomear, histórico, backup, excluir">
+                  <Btn variant="ghost" className="hidden sm:inline-flex" onClick={() => setDrawer(p.name)} title={t('dash.configure')}>
                     <Settings2 className="h-3.5 w-3.5" />
                   </Btn>
                 </div>
@@ -374,8 +376,8 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
 
       {/* Modal: novo projeto */}
       {showNew && (
-        <Modal title="Novo projeto" icon={Plus} onClose={() => setShowNew(false)}>
-          <label className="mb-1 block text-xs text-muted-foreground">Nome do projeto</label>
+        <Modal title={t('projects.new')} icon={Plus} onClose={() => setShowNew(false)}>
+          <label className="mb-1 block text-xs text-muted-foreground">{t('dash.projectName')}</label>
           <input
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -388,26 +390,26 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
             className={`w-full ${inputCls} px-3 py-2`}
           />
           <div className="mt-4 space-y-2">
-            <div className="text-xs text-muted-foreground">Serviços</div>
+            <div className="text-xs text-muted-foreground">{t('dash.services')}</div>
             <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-background px-3 py-2 text-sm text-foreground border">
               <input type="checkbox" checked={form.autoStartClaude} onChange={(e) => setForm((f) => ({ ...f, autoStartClaude: e.target.checked }))} className="accent-[#D97757]" />
-              <Cpu className="h-4 w-4 text-primary" /> Iniciar o Claude na sessão
+              <Cpu className="h-4 w-4 text-primary" /> {t('settings.autoStart')}
             </label>
             <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-background px-3 py-2 text-sm text-foreground border">
               <input type="checkbox" checked={form.autoRemote} onChange={(e) => setForm((f) => ({ ...f, autoRemote: e.target.checked }))} className="accent-[#D97757]" />
-              <Radio className="h-4 w-4 text-primary" /> Religar o remote-control
+              <Radio className="h-4 w-4 text-primary" /> {t('settings.autoRemote')}
             </label>
           </div>
           <div className="mt-5 flex justify-end gap-2">
             <Btn variant="ghost" onClick={() => setShowNew(false)}>
-              Cancelar
+              {t('common.cancel')}
             </Btn>
             <Btn variant="accent" busy={busy === 'create'} onClick={createNow} disabled={!form.name.trim()}>
-              <Power className="h-3.5 w-3.5" /> Criar projeto
+              <Power className="h-3.5 w-3.5" /> {t('dash.create')}
             </Btn>
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            Cria a pasta em <code>{data.projectsDir}</code> + <code>git init</code> e sobe a sessão tmux do projeto.
+            <TR k="dash.createHint" vars={{ dir: data.projectsDir }} />
           </p>
         </Modal>
       )}
@@ -441,14 +443,14 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
   )
 
   return (
-    <Drawer title={`Configurar “${p.name}”`} icon={Settings2} onClose={onClose}>
+    <Drawer title={t('dash.configureTitle', { name: p.name })} icon={Settings2} onClose={onClose}>
       <div className="space-y-4">
         <div className="text-xs text-muted-foreground">
-          {p.dir} · sessão <code className="font-mono text-xs">{p.session}</code>
+          {p.dir} · {t('dash.sessionLabel')} <code className="font-mono text-xs">{p.session}</code>
         </div>
 
-        <Section title="Primeira linha" icon={Pencil}>
-          <p className="mb-2 text-xs text-muted-foreground">Enviada ao Claude assim que ele fica pronto, em todo início (como prompt inicial).</p>
+        <Section title={t('dash.firstLineTitle')} icon={Pencil}>
+          <p className="mb-2 text-xs text-muted-foreground">{t('dash.firstLineHint')}</p>
           <div className="flex items-center gap-2">
             <input
               value={initLine}
@@ -456,7 +458,7 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') run(`init:${p.name}`, () => api.setInitLine(p.name, initLine))
               }}
-              placeholder="ex.: Você é o assistente da Empresa X. Cumprimente o cliente e ofereça ajuda."
+              placeholder={t('dash.firstLinePh')}
               className={`flex-1 ${inputCls}`}
             />
             <Btn variant="accent" busy={busy === `init:${p.name}`} onClick={() => run(`init:${p.name}`, () => api.setInitLine(p.name, initLine))}>
@@ -465,76 +467,76 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
           </div>
         </Section>
 
-        <Section title="Ao reiniciar o Claude" icon={Pin}>
-          <p className="mb-2 text-xs text-muted-foreground">O que acontece com a conversa quando o Claude é religado nesta sessão (reiniciar, ligar, ou religar remote).</p>
+        <Section title={t('dash.onRestart')} icon={Pin}>
+          <p className="mb-2 text-xs text-muted-foreground">{t('dash.onRestartHint')}</p>
           <select value={p.sessionMode || 'new'} onChange={(e) => run(`sessmode:${p.name}`, () => api.setSessionMode(p.name, e.target.value))} className={inputCls}>
             {SESSION_MODES.map(([k, label]) => (
-              <option key={k} value={k}>{label}</option>
+              <option key={k} value={k}>{t(label)}</option>
             ))}
           </select>
           {(p.sessionMode || 'new') === 'pinned' && (
             <p className="mt-2 text-xs text-muted-foreground">
               {p.pinnedSession ? (
                 <>
-                  sessão fixada: <code className="font-mono text-xs text-foreground/80">{String(p.pinnedSession).slice(0, 8)}</code> · trocar em{' '}
+                  {t('dash.pinnedSession')} <code className="font-mono text-xs text-foreground/80">{String(p.pinnedSession).slice(0, 8)}</code> {t('dash.changeIn')}{' '}
                 </>
               ) : (
-                <>nenhuma conversa fixada ainda — escolha uma em </>
+                <>{t('dash.noPinned')} </>
               )}
               <Link to={'/history/' + encodeURIComponent(p.name)} onClick={onClose} className="text-primary hover:underline">
-                Histórico
+                {t('nav.history')}
               </Link>
             </p>
           )}
         </Section>
 
-        <Section title="Controle remoto" icon={Radio}>
+        <Section title={t('dash.remoteControl')} icon={Radio}>
           <div className="flex flex-wrap items-center gap-2">
-            <Btn busy={busy === `remote:${p.name}`} onClick={() => run(`remote:${p.name}`, () => api.reconnectRemote(p.name))} title="re-emite o /remote-control sem reiniciar (preserva a conversa)">
-              <Radio className="h-3.5 w-3.5" /> Religar remote
+            <Btn busy={busy === `remote:${p.name}`} onClick={() => run(`remote:${p.name}`, () => api.reconnectRemote(p.name))} title={t('dash.remoteAgainTitle')}>
+              <Radio className="h-3.5 w-3.5" /> {t('dash.restartRemote')}
             </Btn>
             {p.remoteUrl && (
               <a href={p.remoteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500/90 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-sky-500">
-                <ExternalLink className="h-3.5 w-3.5" /> Abrir link
+                <ExternalLink className="h-3.5 w-3.5" /> {t('dash.openLink')}
               </a>
             )}
             <span className="text-xs text-muted-foreground">
-              comando: <code className="font-mono text-xs">{p.remoteCmd}</code>
+              {t('dash.command')} <code className="font-mono text-xs">{p.remoteCmd}</code>
             </span>
           </div>
         </Section>
 
-        <Section title="Histórico de conversas" icon={History}>
+        <Section title={t('dash.history')} icon={History}>
           <Link to={'/history/' + encodeURIComponent(p.name)} onClick={onClose} className="inline-flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 text-[13px] font-medium text-foreground hover:bg-secondary/80">
-            <History className="h-3.5 w-3.5" /> Ver conversas / continuar
+            <History className="h-3.5 w-3.5" /> {t('dash.viewConversations')}
           </Link>
         </Section>
 
         <Section title="Backup (git)" icon={DatabaseBackup}>
           <div className="mb-2 text-xs text-muted-foreground">
             {bk === null ? (
-              'carregando…'
+              t('common.loading')
             ) : !bk?.git ? (
-              'esta pasta não é um repositório git'
+              t('dash.notGitRepo')
             ) : !bk.origin ? (
-              'sem remote origin — o backup automático ignora este projeto'
+              t('dash.noOrigin')
             ) : bk.last ? (
               <>
-                último: <span className={bk.last.level === 'ok' ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'}>{bk.last.level}</span> em {bk.last.ts} — {bk.last.msg}
+                {t('dash.lastBackup')} <span className={bk.last.level === 'ok' ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'}>{bk.last.level}</span> {t('dash.at')} {bk.last.ts} — {bk.last.msg}
               </>
             ) : (
-              'ainda sem backup registrado'
+              t('dash.noBackup')
             )}
-            {bk?.dirty ? <span className="text-amber-600 dark:text-amber-300"> · {bk.dirty} arquivo(s) alterado(s) sem commit</span> : null}
+            {bk?.dirty ? <span className="text-amber-600 dark:text-amber-300">{t('dash.dirtyFiles', { n: bk.dirty })}</span> : null}
           </div>
           <Btn busy={busy === `backup:${p.name}`} onClick={() => run(`backup:${p.name}`, () => api.backupRun(p.name))}>
-            <DatabaseBackup className="h-3.5 w-3.5" /> Fazer backup agora
+            <DatabaseBackup className="h-3.5 w-3.5" /> {t('dash.backupNow')}
           </Btn>
         </Section>
 
-        <Section title="Renomear" icon={Pencil}>
+        <Section title={t('dash.rename')} icon={Pencil}>
           <p className="mb-2 text-xs text-muted-foreground">
-            Renomeia a <b>pasta no servidor</b>, migra o histórico do Claude e recria a sessão tmux (a conversa atual é encerrada).
+            <TR k="dash.renameHint" />
           </p>
           {renaming ? (
             <div className="flex flex-wrap items-center gap-2">
@@ -560,7 +562,7 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
                   })
                 }
               >
-                <Save className="h-3.5 w-3.5" /> Salvar
+                <Save className="h-3.5 w-3.5" /> {t('common.save')}
               </Btn>
               <Btn
                 variant="ghost"
@@ -569,23 +571,23 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
                   setNewName(p.name)
                 }}
               >
-                Cancelar
+                {t('common.cancel')}
               </Btn>
             </div>
           ) : (
             <Btn variant="ghost" onClick={() => setRenaming(true)}>
-              <Pencil className="h-3.5 w-3.5" /> Alterar nome
+              <Pencil className="h-3.5 w-3.5" /> {t('dash.changeName')}
             </Btn>
           )}
         </Section>
 
-        <Section title="Excluir projeto" icon={Trash2} danger>
+        <Section title={t('dash.delete')} icon={Trash2} danger>
           <p className="mb-2 text-xs text-muted-foreground">
-            Apaga{' '}
+            {t('dash.deletes')}{' '}
             <code className="font-mono text-xs text-foreground/80">
               {data.projectsDir}/{p.name}
             </code>{' '}
-            e mata a sessão. Sem volta (o histórico de conversas é mantido). Digite o nome para confirmar:
+            {t('dash.deleteHint')}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <input value={delTyped} onChange={(e) => setDelTyped(e.target.value)} placeholder={p.name} className={`w-48 ${inputCls}`} />
@@ -601,7 +603,7 @@ function ProjectDrawer({ p, data, busy, run, onClose }) {
                 })
               }
             >
-              <Trash2 className="h-3.5 w-3.5" /> Excluir definitivamente
+              <Trash2 className="h-3.5 w-3.5" /> {t('dash.deleteForever')}
             </Btn>
           </div>
         </Section>

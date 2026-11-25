@@ -1,3 +1,4 @@
+import { t } from './i18n.js'
 // Web Push / PWA helpers for the Notifications tab (API calls + browser feature detection).
 const handle = async (r) => {
   let j = null
@@ -53,11 +54,11 @@ export async function currentSubscription() {
 
 // asks permission (must run inside a tap), subscribes and registers this device on the server
 export async function enableOnThisDevice(publicKey) {
-  if (!pushSupported()) return { ok: false, msg: isIOS() && !isStandalone() ? 'On iPhone/iPad, open the panel from its Home Screen icon first (see the steps below).' : 'This browser does not support Web Push.' }
+  if (!pushSupported()) return { ok: false, msg: isIOS() && !isStandalone() ? t('pushjs.iosHome') : t('push.unsupported') }
   const p = await Notification.requestPermission()
-  if (p !== 'granted') return { ok: false, msg: p === 'denied' ? 'Notifications are blocked for this site — allow them in the browser/system settings.' : 'Permission was not granted.' }
+  if (p !== 'granted') return { ok: false, msg: p === 'denied' ? t('pushjs.blocked') : t('pushjs.notGranted') }
   const reg = await registration()
-  if (!reg) return { ok: false, msg: 'Service worker not available (the panel must be served over HTTPS).' }
+  if (!reg) return { ok: false, msg: t('pushjs.noSw') }
   let sub = await reg.pushManager.getSubscription()
   const want = keyToBytes(publicKey)
   // subscribed with an older server key (state file recreated): start over
@@ -70,7 +71,7 @@ export async function enableOnThisDevice(publicKey) {
 }
 export async function disableOnThisDevice() {
   const sub = await currentSubscription()
-  if (!sub) return { ok: true, msg: 'this device was not subscribed' }
+  if (!sub) return { ok: true, msg: t('pushjs.notSubscribed') }
   const endpoint = sub.endpoint
   await sub.unsubscribe().catch(() => {})
   return pushUnsubscribe({ endpoint })

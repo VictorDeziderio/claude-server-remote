@@ -5,6 +5,7 @@ import { Card as SCard, CardHeader, CardTitle, CardContent, CardAction } from '.
 import { Badge } from './ui/badge.jsx'
 import { Skeleton as SSkeleton } from './ui/skeleton.jsx'
 import { cn } from '../lib/utils.js'
+import { t } from '../lib/i18n.js'
 
 export function Dot({ on, pulse, color }) {
   const c = color || (on ? 'bg-success' : 'bg-destructive')
@@ -15,10 +16,10 @@ export function Dot({ on, pulse, color }) {
 // (primary/ambar) e reservada pra "trabalhando"; os outros 3 estados usam as cores semanticas
 // do tema (success/destructive/muted) em vez de inventar um 5o acento.
 export const ACTIVITY = {
-  busy: { label: 'trabalhando', cls: 'bg-warning', text: 'text-warning', pulse: true },
-  prompt: { label: 'aguardando você', cls: 'bg-destructive', text: 'text-destructive', pulse: true },
-  idle: { label: 'ocioso', cls: 'bg-success', text: 'text-success', pulse: false },
-  off: { label: 'parado', cls: 'bg-muted-foreground/40', text: 'text-muted-foreground', pulse: false },
+  busy: { get label() { return t('activity.busy') }, cls: 'bg-warning', text: 'text-warning', pulse: true },
+  prompt: { get label() { return t('activity.prompt') }, cls: 'bg-destructive', text: 'text-destructive', pulse: true },
+  idle: { get label() { return t('activity.idle') }, cls: 'bg-success', text: 'text-success', pulse: false },
+  off: { get label() { return t('activity.off') }, cls: 'bg-muted-foreground/40', text: 'text-muted-foreground', pulse: false },
 }
 export function ActivityDot({ state }) {
   const a = ACTIVITY[state] || ACTIVITY.off
@@ -27,7 +28,7 @@ export function ActivityDot({ state }) {
 export function ActivityBadge({ state, since }) {
   const a = ACTIVITY[state] || ACTIVITY.off
   return (
-    <Badge variant="outline" className={cn('gap-1.5 font-normal', a.text)} title={since ? 'desde ' + new Date(since).toLocaleTimeString() : ''}>
+    <Badge variant="outline" className={cn('gap-1.5 font-normal', a.text)} title={since ? t('activity.since', { time: new Date(since).toLocaleTimeString() }) : ''}>
       <Dot color={a.cls} pulse={a.pulse} /> {a.label}
     </Badge>
   )
@@ -60,7 +61,7 @@ export function IconBtn({ onClick, title, children, active, className = '', disa
 // e' um ESTADO que se le, nao uma acao que se dispara.
 export function Chip({ on, onClick, busy, labelOn, labelOff, Icon }) {
   return (
-    <button type="button" onClick={onClick} disabled={busy} title="clique para alternar"
+    <button type="button" onClick={onClick} disabled={busy} title={t('chip.toggle')}
       className={cn(
         'group/badge inline-flex h-9 shrink-0 items-center gap-1.5 rounded-4xl border px-3 py-0.5 text-xs font-medium transition-all disabled:pointer-events-none disabled:opacity-50 sm:h-5 sm:px-2', // alvo de toque maior no celular
         on ? 'border-transparent bg-success/15 text-success' : 'border-transparent bg-destructive/10 text-destructive'
@@ -153,7 +154,7 @@ export function Card({ title, subtitle, children, className = '', actions }) {
   )
 }
 
-export const Empty = ({ children = 'sem dados' }) => <div className="py-8 text-center text-sm text-muted-foreground">{children}</div>
+export const Empty = ({ children = t('common.noData') }) => <div className="py-8 text-center text-sm text-muted-foreground">{children}</div>
 
 export const Skeleton = SSkeleton
 
@@ -162,8 +163,8 @@ export function InlineConfirm({ text, onYes, onNo, busy, danger = true }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-2 text-xs text-foreground">
       <span>{text}</span>
-      <Btn size="sm" variant={danger ? 'danger' : 'accent'} busy={busy} onClick={onYes}>Sim</Btn>
-      <Btn size="sm" variant="ghost" onClick={onNo}>Não</Btn>
+      <Btn size="sm" variant={danger ? 'danger' : 'accent'} busy={busy} onClick={onYes}>{t('common.yes')}</Btn>
+      <Btn size="sm" variant="ghost" onClick={onNo}>{t('common.no')}</Btn>
     </span>
   )
 }

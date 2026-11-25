@@ -4,6 +4,7 @@ import Logo from './Logo.jsx'
 import { Btn, inputCls } from './ui.jsx'
 import { cn } from '../lib/utils.js'
 import { login, loginInfo } from '../api.js'
+import { t } from '../lib/i18n.js'
 
 export default function Login({ onSuccess }) {
   const [form, setForm] = useState({ login: '', password: '', code: '' })
@@ -21,7 +22,7 @@ export default function Login({ onSuccess }) {
     try {
       const r = await login(form.login.trim(), form.password, form.code.trim())
       if (r.ok) onSuccess()
-      else { if (r.need2fa) setNeed2fa(true); setErr(r.msg || 'login ou senha incorretos') }
+      else { if (r.need2fa) setNeed2fa(true); setErr(r.msg || t('login.wrong')) }
     } catch (e2) {
       setErr(e2.message)
     } finally {
@@ -38,7 +39,7 @@ export default function Login({ onSuccess }) {
           <div className="mb-3 grid size-12 place-items-center rounded-xl bg-primary text-brand shadow-sm"><Logo size={26} /></div>
           <h1 className="text-lg font-medium text-foreground">claude<span className="text-brand">/</span>remote</h1>
           <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="inline-block size-1.5 rounded-full bg-success" /> entre para acessar o painel
+            <span className="inline-block size-1.5 rounded-full bg-success" /> {t('login.hint')}
           </p>
         </div>
 
@@ -49,20 +50,20 @@ export default function Login({ onSuccess }) {
         )}
 
         <label className="mb-3 block">
-          <span className="mb-1 block text-xs text-muted-foreground">Login</span>
+          <span className="mb-1 block text-xs text-muted-foreground">{t('login.user')}</span>
           <div className={field}><User className="size-4 text-muted-foreground" />
             <input value={form.login} onChange={(e) => setForm((f) => ({ ...f, login: e.target.value }))} autoFocus autoComplete="username" className={input} placeholder="admin" />
           </div>
         </label>
         <label className="mb-3 block">
-          <span className="mb-1 block text-xs text-muted-foreground">Senha</span>
+          <span className="mb-1 block text-xs text-muted-foreground">{t('login.password')}</span>
           <div className={field}><Lock className="size-4 text-muted-foreground" />
             <input type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} autoComplete="current-password" className={input} placeholder="••••••••" />
           </div>
         </label>
         {need2fa && (
           <label className="mb-3 block">
-            <span className="mb-1 block text-xs text-muted-foreground">Código do autenticador (2FA)</span>
+            <span className="mb-1 block text-xs text-muted-foreground">{t('login.code')}</span>
             <div className={field}><ShieldCheck className="size-4 text-muted-foreground" />
               <input inputMode="numeric" pattern="[0-9 ]*" maxLength={7} value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} autoComplete="one-time-code" className={cn(input, 'tracking-widest')} placeholder="123 456" />
             </div>
@@ -70,9 +71,9 @@ export default function Login({ onSuccess }) {
         )}
 
         <Btn type="submit" variant="accent" busy={busy} className="mt-2 w-full justify-center py-2.5">
-          <LogIn className="size-4" /> Entrar
+          <LogIn className="size-4" /> {t('login.submit')}
         </Btn>
-        {ver && <p className="mt-4 text-center text-[10px] text-muted-foreground/60">painel v{ver}</p>}
+        {ver && <p className="mt-4 text-center text-[10px] text-muted-foreground/60">{t('login.version', { v: ver })}</p>}
       </form>
     </div>
   )

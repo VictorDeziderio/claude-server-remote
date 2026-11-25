@@ -7,6 +7,8 @@ import { Btn, Modal, Card, Dot, inputCls, Skeleton, InlineConfirm } from '../com
 import { fmtAgo, fmtDate } from '../lib/format.js'
 import * as api from '../api.js'
 import { UsageDetails } from '../components/UsageLimits.jsx'
+import { t } from '../lib/i18n.js'
+import { TR } from '../lib/i18n-rich.jsx'
 
 export default function Account({ data, onFlash, refresh }) {
   const login = data.login || { logged: false, account: '', org: '', method: '' }
@@ -38,39 +40,39 @@ export default function Account({ data, onFlash, refresh }) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <Dot on={login.logged} />
-              <span className={`min-w-0 truncate text-sm text-foreground ${login.logged && login.account ? 'font-mono' : ''}`}>{login.logged ? login.account || 'Conta conectada' : 'Nenhuma conta conectada'}</span>
+              <span className={`min-w-0 truncate text-sm text-foreground ${login.logged && login.account ? 'font-mono' : ''}`}>{login.logged ? login.account || t('acc.connected') : t('acc.none')}</span>
             </div>
-            {login.org && <div className="mt-1.5 text-sm text-muted-foreground">organização: {login.org}</div>}
+            {login.org && <div className="mt-1.5 text-sm text-muted-foreground">{t('acc.org', { org: login.org })}</div>}
             <div className="mt-1.5 font-mono text-xs text-muted-foreground">
-              método: {login.method || '—'} · {data.version || '?'}
+              {t('acc.method')} {login.method || '—'} · {data.version || '?'}
             </div>
           </div>
         </div>
         <div className="mt-5 flex flex-wrap items-center gap-2">
           {login.logged ? (
             confirmLogout ? (
-              <InlineConfirm text="Deslogar a conta do Claude neste servidor? Você precisará logar de novo." onYes={doLogout} onNo={() => setConfirmLogout(false)} busy={busy} />
+              <InlineConfirm text={t('acc.logoutConfirm')} onYes={doLogout} onNo={() => setConfirmLogout(false)} busy={busy} />
             ) : (
               <>
                 <Btn variant="danger" onClick={() => setConfirmLogout(true)} className="px-4 py-2 text-sm">
-                  <LogOut className="h-4 w-4" /> Deslogar do Claude
+                  <LogOut className="h-4 w-4" /> {t('acc.logout')}
                 </Btn>
                 <Btn onClick={() => setShowLogin(true)} className="px-4 py-2 text-sm">
-                  <LogIn className="h-4 w-4" /> Switch account
+                  <LogIn className="h-4 w-4" /> {t('acc.switch')}
                 </Btn>
               </>
             )
           ) : (
             <Btn variant="accent" onClick={() => setShowLogin(true)} className="px-4 py-2 text-sm">
-              <LogIn className="h-4 w-4" /> Connect Claude
+              <LogIn className="h-4 w-4" /> {t('acc.connect')}
             </Btn>
           )}
           <Link to="/terminal/shell" className="inline-flex items-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm font-medium text-foreground transition hover:bg-accent">
-            <SquareTerminal className="h-4 w-4" /> Abrir terminal
+            <SquareTerminal className="h-4 w-4" /> {t('acc.openTerminal')}
           </Link>
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
-          Sign-in uses your Claude subscription account (OAuth). The panel answers every Claude Code setup screen for you: open the link, authorize and paste the code. Credentials are stored in <code>~/.claude</code> (volume) and survive redeploys.
+          <TR k="acc.oauthInfo" />
         </p>
       </Card>
 
@@ -126,7 +128,7 @@ function ClaudeVersionCard({ onFlash, refresh }) {
       title="Claude Code"
       subtitle={h ? `node ${h.node}` : ''}
       actions={
-        <Btn size="sm" variant="ghost" onClick={load} title="verificar de novo">
+        <Btn size="sm" variant="ghost" onClick={load} title={t('acc.checkAgain')}>
           <RefreshCw className="h-3.5 w-3.5" />
         </Btn>
       }
@@ -139,7 +141,7 @@ function ClaudeVersionCard({ onFlash, refresh }) {
             <div className="mb-3 flex items-start gap-2 rounded-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-100 ring-1 ring-amber-500/30" role="alert">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
               <span>
-                <b>Claude Code desatualizado:</b> instalado <code>{c.currentNum}</code>, disponível <code>{c.latest}</code>. Atualize para receber correções e novos recursos.
+                <TR k="acc.outdated" vars={{ cur: c.currentNum, latest: c.latest }} />
               </span>
             </div>
           )}
@@ -150,29 +152,29 @@ function ClaudeVersionCard({ onFlash, refresh }) {
               </div>
               <div>
                 <div className="text-sm text-foreground">
-                  instalado: <code className="font-mono text-xs text-foreground">{c.current || '?'}</code>
+                  {t('acc.installed')} <code className="font-mono text-xs text-foreground">{c.current || '?'}</code>
                 </div>
-                <div className="font-mono text-xs text-muted-foreground">última no npm: {c.latest ? <code>{c.latest}</code> : <span className="font-sans text-amber-600 dark:text-amber-300">não consegui consultar (sem acesso ao registry?)</span>}</div>
+                <div className="font-mono text-xs text-muted-foreground">{t('acc.npmLatest')} {c.latest ? <code>{c.latest}</code> : <span className="font-sans text-amber-600 dark:text-amber-300">{t('acc.npmFail')}</span>}</div>
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">
               {c.updateAvailable ? (
                 <Btn variant="accent" busy={busy} onClick={update} title="sudo npm i -g @anthropic-ai/claude-code@latest">
-                  <ArrowUpCircle className="h-4 w-4" /> Atualizar para {c.latest}
+                  <ArrowUpCircle className="h-4 w-4" /> {t('acc.updateTo', { v: c.latest })}
                 </Btn>
               ) : c.latest ? (
                 <span className="inline-flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-300">
-                  <CheckCircle2 className="h-4 w-4" /> atualizado
+                  <CheckCircle2 className="h-4 w-4" /> {t('dash.upToDate')}
                 </span>
               ) : (
                 <Btn variant="ghost" busy={busy} onClick={update}>
-                  <ArrowUpCircle className="h-4 w-4" /> Forçar atualização
+                  <ArrowUpCircle className="h-4 w-4" /> {t('acc.forceUpdate')}
                 </Btn>
               )}
             </div>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            A atualização roda <code>npm i -g</code> no container (1–2 min). Sessões abertas continuam na versão antiga até você <b>Reiniciar</b> o projeto no dashboard. A imagem pina a versão <code>CLAUDE_CODE_VERSION</code> no Dockerfile — num redeploy ela volta a essa versão.
+            <TR k="acc.updateInfo" />
           </p>
           {out && <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-background p-2 font-mono text-[11px] text-muted-foreground">{out}</pre>}
         </>
@@ -249,19 +251,19 @@ function TwoFactorCard({ onFlash }) {
   )
 
   return (
-    <Card title="Autenticação em dois fatores (2FA)" subtitle={st?.enabled ? `ativo desde ${fmtDate(st.enabledAt)}` : 'desativado'}>
+    <Card title={t('tfa.title')} subtitle={st?.enabled ? t('tfa.since', { d: fmtDate(st.enabledAt) }) : t('tfa.off')}>
       {!st ? (
         <Skeleton className="h-16" />
       ) : st.enabled ? (
         <div className="flex flex-wrap items-center gap-3">
           <span className="inline-flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-300">
-            <ShieldCheck className="h-5 w-5" /> O login pede senha <b>e</b> o código do autenticador.
+            <ShieldCheck className="h-5 w-5" /> <span><TR k="tfa.on" /></span>
           </span>
           {disabling ? (
             <span className="ml-auto inline-flex items-center gap-2">
               {codeInput}
               <Btn variant="danger" busy={busy} disabled={code.replace(/\s/g, '').length !== 6} onClick={disable}>
-                <ShieldOff className="h-4 w-4" /> Confirmar desativação
+                <ShieldOff className="h-4 w-4" /> {t('tfa.confirmOff')}
               </Btn>
               <Btn
                 variant="ghost"
@@ -270,28 +272,28 @@ function TwoFactorCard({ onFlash }) {
                   setCode('')
                 }}
               >
-                Cancelar
+                {t('common.cancel')}
               </Btn>
             </span>
           ) : (
             <Btn variant="ghost" className="ml-auto" onClick={() => setDisabling(true)}>
-              <ShieldOff className="h-4 w-4" /> Desativar 2FA
+              <ShieldOff className="h-4 w-4" /> {t('tfa.disable')}
             </Btn>
           )}
         </div>
       ) : setup ? (
         <div className="flex flex-col gap-4 sm:flex-row">
           <div className="shrink-0 rounded-xl bg-white p-3 border">
-            <img src={setup.qr} alt="QR code do 2FA" className="h-[200px] w-[200px] rounded-lg" />
+            <img src={setup.qr} alt={t('tfa.qrAlt')} className="h-[200px] w-[200px] rounded-lg" />
           </div>
           <div className="min-w-0 flex-1 space-y-3 text-sm text-foreground/80">
-            <p>1. Abra o app autenticador (Google Authenticator, Authy, 1Password, Bitwarden…) e escaneie o QR — ou digite a chave:</p>
+            <p>{t('tfa.step1')}</p>
             <code className="block break-all rounded-lg bg-background px-3 py-2 font-mono text-xs text-foreground">{setup.secret}</code>
-            <p>2. Digite o código de 6 dígitos que o app mostra para confirmar:</p>
+            <p>{t('tfa.step2')}</p>
             <div className="flex flex-wrap items-center gap-2">
               {codeInput}
               <Btn variant="accent" busy={busy} disabled={code.replace(/\s/g, '').length !== 6} onClick={enable}>
-                <Check className="h-4 w-4" /> Ativar 2FA
+                <Check className="h-4 w-4" /> {t('tfa.enable')}
               </Btn>
               <Btn
                 variant="ghost"
@@ -300,21 +302,21 @@ function TwoFactorCard({ onFlash }) {
                   setCode('')
                 }}
               >
-                Cancelar
+                {t('common.cancel')}
               </Btn>
             </div>
             <p className="text-xs text-amber-300/90">
-              Guarde a chave num lugar seguro: sem o app e sem a chave você perde o acesso ao painel (aí só apagando <code>~/.claude/.panel-totp.json</code> pelo Console do EasyPanel).
+              <TR k="tfa.keep" />
             </p>
           </div>
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-3">
           <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-            <Dot on={false} /> Este painel expõe um shell no servidor. Ative o 2FA para exigir um código do celular além da senha.
+            <Dot on={false} /> {t('tfa.warn')}
           </span>
           <Btn variant="accent" className="ml-auto" busy={busy} onClick={start}>
-            <ShieldCheck className="h-4 w-4" /> Ativar 2FA
+            <ShieldCheck className="h-4 w-4" /> {t('tfa.enable')}
           </Btn>
         </div>
       )}
@@ -362,16 +364,16 @@ function SessionsCard({ onFlash }) {
   }
   return (
     <Card
-      title="Sessões do painel"
-      subtitle={list ? `${list.length} ativa(s)` : ''}
+      title={t('ses.title')}
+      subtitle={list ? t('ses.count', { n: list.length }) : ''}
       actions={
         list &&
         list.length > 1 &&
         (confirmAll ? (
-          <InlineConfirm text="Encerrar todas as outras sessões?" onYes={revokeAll} onNo={() => setConfirmAll(false)} busy={busy === 'all'} />
+          <InlineConfirm text={t('ses.revokeAllQ')} onYes={revokeAll} onNo={() => setConfirmAll(false)} busy={busy === 'all'} />
         ) : (
           <Btn size="sm" variant="ghost" onClick={() => setConfirmAll(true)}>
-            <LogOut className="h-3.5 w-3.5" /> sair de todos os outros dispositivos
+            <LogOut className="h-3.5 w-3.5" /> {t('ses.revokeAll')}
           </Btn>
         ))
       }
@@ -385,7 +387,7 @@ function SessionsCard({ onFlash }) {
               {/iPhone|iPad|Android/.test(s.ua) ? <Smartphone className="h-4 w-4 text-muted-foreground" /> : <Monitor className="h-4 w-4 text-muted-foreground" />}
               <div className="min-w-0 flex-1">
                 <div className="text-foreground">
-                  {uaShort(s.ua)} {s.current && <span className="ml-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium text-primary-300">esta sessão</span>}
+                  {uaShort(s.ua)} {s.current && <span className="ml-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium text-primary-300">{t('ses.current')}</span>}
                 </div>
                 <div className="font-mono text-xs text-muted-foreground">
                   IP {s.ip || '?'} · último acesso {fmtAgo(s.last * 1000)} · login {fmtDate(s.iat * 1000)} · expira {fmtDate(s.exp * 1000)}
@@ -393,7 +395,7 @@ function SessionsCard({ onFlash }) {
               </div>
               {!s.current && (
                 <Btn size="sm" variant="danger" busy={busy === s.id} onClick={() => revoke(s.id)}>
-                  <Trash2 className="h-3.5 w-3.5" /> encerrar
+                  <Trash2 className="h-3.5 w-3.5" /> {t('ses.revoke')}
                 </Btn>
               )}
             </li>
@@ -409,29 +411,29 @@ function SessionsCard({ onFlash }) {
 // link (Abrir/Copiar) + campo do codigo -> sucesso. A tela crua so aparece no ULTIMO recurso
 // (fase "attention": tela desconhecida que o painel nao conseguiu passar).
 const STEP_TEXT = {
-  idle: 'Starting…',
-  starting: 'Preparing Claude Code…',
-  url: 'Authorize on the link below, then paste the code',
-  'code-sent': 'Checking the code…',
-  finishing: 'Signed in — finishing setup…',
-  success: 'Claude connected!',
-  error: 'Something went wrong',
-  attention: 'Claude Code is showing a screen the panel does not know yet',
+  idle: 'login.phase.idle',
+  starting: 'login.phase.starting',
+  url: 'login.phase.url',
+  'code-sent': 'login.phase.code-sent',
+  finishing: 'login.phase.finishing',
+  success: 'login.phase.success',
+  error: 'login.phase.error',
+  attention: 'login.phase.attention',
 }
 // telas que o painel passa sozinho (o id vem da tabela SCREENS do server/login.js)
 const SCREEN_TEXT = {
-  theme: 'choosing the theme',
-  'login-method': 'choosing “Claude account with subscription”',
-  'api-key': 'skipping the API key',
-  'login-command': 'opening /login',
-  'login-success': 'login confirmed',
-  'security-notes': 'accepting the security notes',
-  'terminal-setup': 'skipping terminal setup',
-  'trust-folder': 'trusting the home folder',
-  'bypass-warning': 'confirming the permission mode',
-  'press-enter': 'continuing',
+  theme: 'login.screen.theme',
+  'login-method': 'login.screen.login-method',
+  'api-key': 'login.screen.api-key',
+  'login-command': 'login.screen.login-command',
+  'login-success': 'login.screen.login-success',
+  'security-notes': 'login.screen.security-notes',
+  'terminal-setup': 'login.screen.terminal-setup',
+  'trust-folder': 'login.screen.trust-folder',
+  'bypass-warning': 'login.screen.bypass-warning',
+  'press-enter': 'login.screen.press-enter',
 }
-const STEPS = ['Prepare', 'Authorize', 'Finish']
+const STEPS = ['login.step.prepare', 'login.step.authorize', 'login.step.finish']
 const stepIndex = (phase) => (phase === 'url' ? 1 : ['code-sent', 'finishing'].includes(phase) ? 2 : phase === 'success' ? 3 : 0)
 const LOGIN_KEYS = [
   ['↑', 'Up'],
@@ -473,7 +475,7 @@ function LoginModal({ onClose, onFlash }) {
   useEffect(() => {
     if (st.phase === 'success' && !doneRef.current) {
       doneRef.current = true
-      onFlash?.({ ok: true, msg: 'Claude connected — projects waiting on the login screen were restarted' })
+      onFlash?.({ ok: true, msg: t('login.connectedFlash') })
     }
   }, [st.phase, onFlash])
 
@@ -493,7 +495,7 @@ function LoginModal({ onClose, onFlash }) {
     const done = await copyText(st.url)
     setCopied(done)
     if (done) setTimeout(() => setCopied(false), 2000)
-    else onFlash?.({ ok: false, msg: 'could not copy — select the link below and copy it' })
+    else onFlash?.({ ok: false, msg: t('login.copyFail') })
   }
   const key = (k) => api.loginKey(k).catch(() => {})
 
@@ -501,9 +503,9 @@ function LoginModal({ onClose, onFlash }) {
   const working = ['idle', 'starting', 'code-sent', 'finishing'].includes(phase)
   const showLink = st.url && ['url', 'code-sent'].includes(phase)
   const idx = stepIndex(phase)
-  const detail = working ? SCREEN_TEXT[st.step] || '' : ''
+  const detail = working ? (SCREEN_TEXT[st.step] ? t(SCREEN_TEXT[st.step]) : '') : ''
   return (
-    <Modal title="Connect your Claude account" icon={LogIn} onClose={close} wide>
+    <Modal title={t('login.modalTitle')} icon={LogIn} onClose={close} wide>
       <ol className="mb-4 flex items-center gap-2 text-xs">
         {STEPS.map((label, i) => (
           <li key={label} className="flex flex-1 items-center gap-2">
@@ -514,7 +516,7 @@ function LoginModal({ onClose, onFlash }) {
             >
               {i < idx ? <Check className="h-3.5 w-3.5" /> : i + 1}
             </span>
-            <span className={i === idx ? 'text-foreground' : 'text-muted-foreground'}>{label}</span>
+            <span className={i === idx ? 'text-foreground' : 'text-muted-foreground'}>{t(label)}</span>
             {i < STEPS.length - 1 && <span className="h-px flex-1 bg-border" />}
           </li>
         ))}
@@ -525,7 +527,7 @@ function LoginModal({ onClose, onFlash }) {
         {phase === 'success' && <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" />}
         {(phase === 'error' || phase === 'attention') && <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />}
         <div className="min-w-0">
-          <div className={phase === 'success' ? 'text-emerald-600 dark:text-emerald-300' : phase === 'error' ? 'text-rose-600 dark:text-rose-300' : 'text-foreground'}>{STEP_TEXT[phase] || phase}</div>
+          <div className={phase === 'success' ? 'text-emerald-600 dark:text-emerald-300' : phase === 'error' ? 'text-rose-600 dark:text-rose-300' : 'text-foreground'}>{STEP_TEXT[phase] ? t(STEP_TEXT[phase]) : phase}</div>
           {detail && <div className="text-xs text-muted-foreground">{detail}…</div>}
           {st.msg && phase !== 'success' && <div className="text-xs text-muted-foreground">{st.msg}</div>}
         </div>
@@ -534,7 +536,7 @@ function LoginModal({ onClose, onFlash }) {
       {showLink && (
         <div className="space-y-3">
           <div className="rounded-xl bg-primary/5 p-3 ring-1 ring-primary/20">
-            <div className="mb-2 text-xs font-medium text-primary">1. Open the link and sign in with your Claude account (Pro/Max/Team/Enterprise)</div>
+            <div className="mb-2 text-xs font-medium text-primary">{t('login.s1')}</div>
             <div className="grid gap-2 sm:grid-cols-2">
               <a
                 href={st.url}
@@ -542,20 +544,20 @@ function LoginModal({ onClose, onFlash }) {
                 rel="noreferrer"
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90"
               >
-                <ExternalLink className="h-5 w-5" /> Open link
+                <ExternalLink className="h-5 w-5" /> {t('login.openLink')}
               </a>
               <button
                 type="button"
                 onClick={copyUrl}
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border bg-secondary px-4 py-3 text-base font-medium text-foreground hover:bg-accent"
               >
-                {copied ? <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-300" /> : <Copy className="h-5 w-5" />} {copied ? 'Copied' : 'Copy link'}
+                {copied ? <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-300" /> : <Copy className="h-5 w-5" />} {copied ? t('login.copied') : t('login.copyLink')}
               </button>
             </div>
             <code className="mt-2 block max-h-16 select-all overflow-auto break-all rounded-lg bg-background px-2.5 py-2 font-mono text-[11px] text-sky-600 dark:text-sky-300">{st.url}</code>
           </div>
           <div className="rounded-xl border bg-sidebar p-3">
-            <div className="mb-2 text-xs font-medium text-foreground/80">2. Paste the code shown after you authorize</div>
+            <div className="mb-2 text-xs font-medium text-foreground/80">{t('login.s2')}</div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <input
                 value={code}
@@ -563,14 +565,14 @@ function LoginModal({ onClose, onFlash }) {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') connect()
                 }}
-                placeholder="authorization code"
+                placeholder={t('login.codePh')}
                 autoComplete="off"
                 autoCapitalize="off"
                 spellCheck={false}
                 className={`min-w-0 flex-1 font-mono ${inputCls} px-3 py-3 text-base`}
               />
               <Btn variant="accent" busy={busy || phase === 'code-sent'} disabled={!code.trim()} onClick={connect} className="min-h-12 justify-center px-5 text-base">
-                <Link2 className="h-4 w-4" /> Connect
+                <Link2 className="h-4 w-4" /> {t('login.connect')}
               </Btn>
             </div>
           </div>
@@ -579,22 +581,22 @@ function LoginModal({ onClose, onFlash }) {
 
       {phase === 'success' && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl bg-emerald-500/10 p-4 text-sm text-emerald-800 dark:text-emerald-100 ring-1 ring-emerald-500/25">
-          <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-300" /> Signed in. The login is saved in <code>~/.claude</code>, works for every project and survives redeploys.
+          <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-300" /> <span><TR k="login.done" /></span>
           <Btn variant="accent" className="ml-auto" onClick={onClose}>
-            Close
+            {t('common.close')}
           </Btn>
         </div>
       )}
       {phase === 'error' && (
         <Btn variant="accent" busy={busy} onClick={begin} className="min-h-12 px-5 text-base">
-          <RefreshCw className="h-4 w-4" /> Try again
+          <RefreshCw className="h-4 w-4" /> {t('login.tryAgain')}
         </Btn>
       )}
 
       {/* ultimo recurso: tela desconhecida que o painel nao passou sozinho */}
       {(phase === 'attention' || (phase === 'error' && st.screen)) && (
         <div className="mt-4">
-          {phase === 'attention' && <div className="mb-2 text-xs text-muted-foreground">Pick the right option with the keys below. The panel carries on by itself afterwards.</div>}
+          {phase === 'attention' && <div className="mb-2 text-xs text-muted-foreground">{t('login.attention')}</div>}
           <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-background p-2.5 font-mono text-[11px] leading-snug text-foreground/80">{st.screen || '…'}</pre>
           {phase === 'attention' && (
             <div className="mt-2 flex flex-wrap gap-1.5">

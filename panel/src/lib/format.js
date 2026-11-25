@@ -1,4 +1,5 @@
-export const fmtInt = (n) => String(Math.round(n ?? 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+import { t, getLang } from './i18n.js'
+export const fmtInt = (n) => Math.round(n ?? 0).toLocaleString(getLang())
 export const fmtTok = (n) => {
   n = n || 0
   if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B'
@@ -28,10 +29,10 @@ export const fmtUptime = (sec) => {
 export const fmtAgo = (ms) => {
   if (!ms) return ''
   const s = Math.max(0, Math.round((Date.now() - ms) / 1000))
-  if (s < 60) return `${s}s atrás`
-  if (s < 3600) return `${Math.floor(s / 60)}min atrás`
-  if (s < 86400) return `${Math.floor(s / 3600)}h atrás`
-  return `${Math.floor(s / 86400)}d atrás`
+  if (s < 60) return t('ago.s', { n: s })
+  if (s < 3600) return t('ago.min', { n: Math.floor(s / 60) })
+  if (s < 86400) return t('ago.h', { n: Math.floor(s / 3600) })
+  return t('ago.d', { n: Math.floor(s / 86400) })
 }
 export const joinPath = (a, b) => (a ? a.replace(/\/+$/, '') + '/' + b : b)
 export const parentOf = (p) => (p && p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '')

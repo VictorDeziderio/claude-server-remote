@@ -5,6 +5,7 @@ import { Card, Btn } from './ui.jsx'
 import { fmtAgo } from '../lib/format.js'
 import { cn } from '../lib/utils.js'
 import * as api from '../api.js'
+import { t } from '../lib/i18n.js'
 
 // Plan limits (Claude subscription 5h/weekly windows) + Anthropic API spend, from the server's
 // poller (server/limits.js). GET /api/limits only reads the server cache, so polling it every
@@ -31,13 +32,13 @@ export function useLimits() {
 // "in 2h 14m" / "Sun 02:00" — short enough for a phone row
 export function fmtReset(isoStr) {
   if (!isoStr) return ''
-  const t = new Date(isoStr).getTime()
-  const s = Math.round((t - Date.now()) / 1000)
+  const ts = new Date(isoStr).getTime()
+  const s = Math.round((ts - Date.now()) / 1000)
   if (!Number.isFinite(s)) return ''
-  if (s <= 0) return 'resetting now'
-  if (s < 3600) return `resets in ${Math.max(1, Math.round(s / 60))}m`
-  if (s < 86400) return `resets in ${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
-  const d = new Date(t)
+  if (s <= 0) return t('usage.resettingNow')
+  if (s < 3600) return t('usage.resetsInM', { m: Math.max(1, Math.round(s / 60)) })
+  if (s < 86400) return t('usage.resetsInHM', { h: Math.floor(s / 3600), m: Math.floor((s % 3600) / 60) })
+  const d = new Date(ts)
   return 'resets ' + d.toLocaleDateString(undefined, { weekday: 'short' }) + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
@@ -71,7 +72,7 @@ function ClaudeStatus({ c, compact }) {
     <div className="flex flex-wrap items-center gap-2 text-xs text-amber-700 dark:text-amber-200">
       <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
       <span className={cn('min-w-0', compact && 'truncate')}>{c.message}</span>
-      {reconnect && <Link to="/account?login=1" className="inline-flex items-center gap-1 font-medium text-primary hover:underline"><LogIn className="h-3 w-3" /> Reconnect Claude</Link>}
+      {reconnect && <Link to="/account?login=1" className="inline-flex items-center gap-1 font-medium text-primary hover:underline"><LogIn className="h-3 w-3" /> {t('usage.reconnect')}</Link>}
     </div>
   )
 }
@@ -88,7 +89,7 @@ export function UsageWidget() {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <Link to="/account#usage" className="inline-flex items-center gap-1.5 hover:underline"><Gauge className="h-3.5 w-3.5" /> Plan usage{c.plan ? ` · ${c.plan}` : ''}</Link>
+        <Link to="/account#usage" className="inline-flex items-center gap-1.5 hover:underline"><Gauge className="h-3.5 w-3.5" /> {t('usage.plan')}{c.plan ? ` · ${c.plan}` : ''}</Link>
         {c.fetchedAt ? <span>{fmtAgo(c.fetchedAt)}</span> : null}
       </div>
       <ClaudeStatus c={c} compact />
@@ -99,8 +100,8 @@ export function UsageWidget() {
       )}
       {a.configured && a.status === 'ok' && (
         <div className="text-xs text-foreground/80">
-          API spend: <span className="font-mono">{money(a.today, a.currency)}</span> today · <span className="font-mono">{money(a.month, a.currency)}</span> this month
-          {a.budget ? <span className="text-muted-foreground"> ({Math.round(a.percent || 0)}% of {money(a.budget, a.currency)})</span> : null}
+          <span className="font-mono">{t('usage.apiSpendLine', { today: money(a.today, a.currency), month: money(a.month, a.currency) })}</span>
+          {a.budget ? <span className="text-muted-foreground"> {t('usage.ofBudget', { pct: Math.round(a.percent || 0), budget: money(a.budget, a.currency) })}</span> : null}
         </div>
       )}
     </div>
@@ -114,14 +115,14 @@ export function UsageDetails() {
   const a = (snap && snap.api) || {}
   return (
     <div id="usage">
-      <Card title="Usage & limits" subtitle={snap && snap.updatedAt ? `updated ${fmtAgo(snap.updatedAt)}` : ''}
-        actions={<Btn size="sm" onClick={refresh} busy={busy} title="Check now"><RefreshCw className="h-3.5 w-3.5" /> Refresh</Btn>}>
-        {!snap ? <div className="text-sm text-muted-foreground">loading…</div> : snap.enabled === false ? (
-          <div className="text-sm text-muted-foreground">The usage monitor is disabled (USAGE_MONITOR=0).</div>
+      <Card title={t('usage.title')} subtitle={snap && snap.updatedAt ? t('usage.updated', { ago: fmtAgo(snap.updatedAt) }) : ''}
+        actions={<Btn size="sm" onClick={refresh} busy={busy} title={t('usage.checkNow')}><RefreshCw className="h-3.5 w-3.5" /> {t('common.refresh')}</Btn>}>
+        {!snap ? <div className="text-sm text-muted-foreground">{t('common.loading')}</div> : snap.enabled === false ? (
+          <div className="text-sm text-muted-foreground">{t('usage.disabled')}</div>
         ) : (
           <div className="space-y-5">
             <section className="space-y-3">
-              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Claude subscription{c.plan ? ` (${c.plan})` : ''}</h3>
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('usage.subscription')}{c.plan ? ` (${c.plan})` : ''}</h3>
               <ClaudeStatus c={c} />
               {(c.windows || []).length > 0 && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -130,30 +131,30 @@ export function UsageDetails() {
               )}
               {c.extra && (
                 <div className="text-xs text-foreground/80">
-                  Extra usage: <span className="font-mono">{money(c.extra.used, c.extra.currency)}</span> of <span className="font-mono">{money(c.extra.limit, c.extra.currency)}</span>
+                  <span className="font-mono">{t('usage.extra', { used: money(c.extra.used, c.extra.currency), limit: money(c.extra.limit, c.extra.currency) })}</span>
                   {c.extra.percent !== null ? ` (${Math.round(c.extra.percent)}%)` : ''}
                 </div>
               )}
               {c.status === 'ok' && !(c.windows || []).length && <div className="text-xs text-muted-foreground">{c.message}</div>}
             </section>
             <section className="space-y-2 border-t border-border pt-4">
-              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Anthropic API</h3>
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('usage.api')}</h3>
               {!a.configured ? (
-                <div className="text-xs text-muted-foreground">Not configured. Set <code className="font-mono">ANTHROPIC_ADMIN_KEY</code> (an Admin API key) to see API spend.</div>
+                <div className="text-xs text-muted-foreground">{t('usage.apiNotConfigured')}</div>
               ) : (
                 <>
                   {a.status !== 'ok' && a.message && <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-200"><AlertTriangle className="h-3.5 w-3.5" /> {a.message}</div>}
                   <div className="grid grid-cols-2 gap-3">
-                    <div><div className="text-[11px] text-muted-foreground">Today (UTC)</div><div className="font-mono text-sm text-foreground">{money(a.today, a.currency)}</div></div>
-                    <div><div className="text-[11px] text-muted-foreground">This month</div><div className="font-mono text-sm text-foreground">{money(a.month, a.currency)}</div></div>
+                    <div><div className="text-[11px] text-muted-foreground">{t('usage.todayUtc')}</div><div className="font-mono text-sm text-foreground">{money(a.today, a.currency)}</div></div>
+                    <div><div className="text-[11px] text-muted-foreground">{t('usage.thisMonth')}</div><div className="font-mono text-sm text-foreground">{money(a.month, a.currency)}</div></div>
                   </div>
-                  {a.budget ? <LimitBar label={`Monthly budget ${money(a.budget, a.currency)}`} percent={a.percent} thresholds={snap.thresholds} stale={a.stale} /> : null}
+                  {a.budget ? <LimitBar label={t('usage.budget', { v: money(a.budget, a.currency) })} percent={a.percent} thresholds={snap.thresholds} stale={a.stale} /> : null}
                   <div className="text-[11px] text-muted-foreground">{a.note}</div>
                 </>
               )}
             </section>
             <div className="text-[11px] text-muted-foreground">
-              Checked every {Math.round((snap.intervalSec || 300) / 60)} min · alerts at {(snap.thresholds || []).join('% / ')}%
+              {t('usage.footer', { min: Math.round((snap.intervalSec || 300) / 60), th: (snap.thresholds || []).join('% / ') })}
             </div>
           </div>
         )}
