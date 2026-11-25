@@ -708,5 +708,7 @@
   "srv.push.testTitle": "Claude Remote — teste",
   "srv.push.testBody": "As notificações estão funcionando neste aparelho.",
   "srv.push.resumed": "O Claude continuou sozinho — {name}",
-  "srv.push.resumedBody": "O limite de uso renovou; enviei \"{text}\"."
+  "srv.push.resumedBody": "O limite de uso renovou; enviei \"{text}\".",
+  "common.confirm": "Confirmar",
+  "files.overwriteYes": "Substituir"
 }

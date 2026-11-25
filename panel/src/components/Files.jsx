@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react'
 import { Folder, FileText, RefreshCw, Save, Trash2, FilePlus, FolderPlus, Home, Loader2, ChevronRight, Pencil, ArrowLeft, Download, Upload, FileCode2, FileImage, FileArchive } from 'lucide-react'
-import { Btn, IconBtn, Empty, InlineConfirm, InlineInput, Skeleton } from './ui.jsx'
+import { Btn, IconBtn, Empty, InlineConfirm, InlineInput, Skeleton, useConfirm } from './ui.jsx'
 import { Button } from './ui/button.jsx'
 import { fmtSize, fmtDate, joinPath, parentOf } from '../lib/format.js'
 import * as api from '../api.js'
@@ -30,6 +30,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
   const [creating, setCreating] = useState('') // 'file' | 'dir' | ''
   const [renaming, setRenaming] = useState('') // nome da entrada
   const [deleting, setDeleting] = useState('') // nome da entrada
+  const [confirmEl, ask] = useConfirm()
   const uploadRef = useRef(null)
 
   const load = useCallback(async () => {
@@ -136,7 +137,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
     for (const f of files) {
       const target = joinPath(cur, f.name)
       let r = await api.fsUpload(target, f, false)
-      if (!r.ok && r.code === 'EXISTS' && window.confirm(t('files.overwrite', { name: f.name }))) r = await api.fsUpload(target, f, true)
+      if (!r.ok && r.code === 'EXISTS' && (await ask(t('files.overwrite', { name: f.name }), { yes: t('files.overwriteYes') }))) r = await api.fsUpload(target, f, true)
       if (r.ok) okN++
       else onFlash?.(r)
     }
@@ -334,6 +335,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
           )
         })}
       </div>
+      {confirmEl}
     </div>
   )
 }

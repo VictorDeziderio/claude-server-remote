@@ -101,6 +101,25 @@ try {
     ok('drawer: Escape closes', !(await drawer.count()))
   } else ok('configure button found on the dashboard', false, 'no button[title^=configure]')
 
+  // ---- file upload over an existing file: asks in the panel's modal (not window.confirm)
+  let nativeDialog = false
+  page.on('dialog', (d) => { nativeDialog = true; d.dismiss().catch(() => {}) })
+  fs.writeFileSync(path.join(ROOT, 'projects', 'demo', 'same.txt'), 'old')
+  await page.goto(BASE + '/files/projects/demo')
+  const fileInput = page.locator('input[type="file"]').first()
+  await fileInput.waitFor({ state: 'attached', timeout: 8000 })
+  await fileInput.setInputFiles({ name: 'same.txt', mimeType: 'text/plain', buffer: Buffer.from('new') })
+  const ask = page.locator('[data-slot="modal"]')
+  await ask.waitFor({ timeout: 5000 }).catch(() => {})
+  ok('overwrite asks in the panel modal, not the browser box', (await ask.count()) === 1 && !nativeDialog)
+  if (await ask.count()) {
+    await ask.getByRole('button', { name: /replace/i }).click()
+    await ask.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    for (let i = 0; i < 20 && fs.readFileSync(path.join(ROOT, 'projects', 'demo', 'same.txt'), 'utf8') !== 'new'; i++) await page.waitForTimeout(150)
+    ok('"Replace" overwrites the file', fs.readFileSync(path.join(ROOT, 'projects', 'demo', 'same.txt'), 'utf8') === 'new')
+  }
+  await page.goto(BASE + '/dashboard')
+
   // ---- mobile: the modal fits the screen
   await page.setViewportSize({ width: 375, height: 640 })
   await page.getByRole('button', { name: /new project/i }).first().click() // icon-only on the phone: needs its aria-label

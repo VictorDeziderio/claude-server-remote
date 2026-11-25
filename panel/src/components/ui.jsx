@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Check, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { Button } from './ui/button.jsx'
@@ -120,6 +120,24 @@ function Overlay({ title, icon: Icon, onClose, dismissible = true, side, wide, c
 export const Modal = (props) => <Overlay {...props} />
 // side panel on the right — used for "configure project"
 export const Drawer = (props) => <Overlay {...props} side />
+
+// Confirmation in the panel's own modal (window.confirm is blocked or looks foreign in the
+// installed phone app). const [confirmEl, ask] = useConfirm(); ... if (await ask(text)) ...; render {confirmEl}
+export function useConfirm() {
+  const [q, setQ] = useState(null) // { text, title, danger, resolve }
+  const ask = useCallback((text, opts = {}) => new Promise((resolve) => setQ({ text, ...opts, resolve })), [])
+  const answer = (v) => { q?.resolve(v); setQ(null) }
+  const el = q && (
+    <Modal title={q.title || t('common.confirm')} icon={q.icon} onClose={() => answer(false)}>
+      <p className="text-sm text-muted-foreground">{q.text}</p>
+      <div className="mt-4 flex justify-end gap-2">
+        <Btn variant="ghost" onClick={() => answer(false)}>{t('common.cancel')}</Btn>
+        <Btn variant={q.danger ? 'danger' : 'accent'} onClick={() => answer(true)}>{q.yes || t('common.yes')}</Btn>
+      </div>
+    </Modal>
+  )
+  return [el, ask]
+}
 
 export function Toast({ flash, onClose, position = 'bottom' }) {
   useEffect(() => {
