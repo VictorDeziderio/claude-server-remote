@@ -672,7 +672,7 @@
   "srv.unknownLog": "log desconhecido",
   "srv.textTooLong": "texto muito longo",
   "srv.loginStartFailed": "não consegui abrir o Claude Code: ",
-  "srv.noLoginTap": "nenhum login em andamento — toque em Conectar Claude",
+  "srv.noLoginTap": "nenhum login em andamento — toque em Conectar o Claude",
   "srv.codeSent": "código enviado — conferindo…",
   "srv.noLogin": "nenhum login em andamento",
   "srv.pushMissing": "web push indisponível no servidor (web-push não instalado)",
