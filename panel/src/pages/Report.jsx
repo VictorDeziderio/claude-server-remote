@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { BarChart3, MessageSquare, Layers, Database, TrendingUp, Loader2, CalendarRange, DollarSign, Info } from 'lucide-react'
-import { Card, Empty, inputCls } from '../components/ui.jsx'
+import { Card, Empty, inputCls, StatCard } from '../components/ui.jsx'
 import { fmtTok, fmtInt, fmtUsd, shortModel } from '../lib/format.js'
 import * as api from '../api.js'
 import { t } from '../lib/i18n.js'
@@ -52,17 +52,6 @@ const PERIODS = [
   ['all', 'period.all'],
 ]
 
-function Kpi({ icon: Icon, label, value, hint, hero }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1.5 rounded-xl border bg-linear-to-t from-primary/[0.03] to-card p-4 shadow-xs dark:from-primary/[0.04]">
-      <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
-        <span className="truncate">{label}</span> <Icon className="size-3.5 shrink-0" />
-      </div>
-      <div className={`truncate font-semibold tabular-nums tracking-tight text-foreground ${hero ? 'text-2xl' : 'text-xl'}`}>{value}</div>
-      {hint && <div className="truncate text-xs tabular-nums text-muted-foreground">{hint}</div>}
-    </div>
-  )
-}
 
 // daily bar chart with a Y axis, X ticks and a tooltip
 function DailyChart({ daily, metric }) {
@@ -212,11 +201,11 @@ export default function Report({ data }) {
       </Card>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Kpi icon={DollarSign} label={t('report.cost')} value={fmtUsd(u.total?.cost)} hint={t('report.costHint')} hero />
-        <Kpi icon={BarChart3} label="Tokens (in+out)" value={fmtTok(totalTokens)} hint={`${fmtTok(u.total?.in)} in · ${fmtTok(u.total?.out)} out`} />
-        <Kpi icon={Database} label={t('report.cache')} value={fmtTok(totalCache)} hint={t('report.cacheHint', { w: fmtTok(u.total?.cacheW), r: fmtTok(u.total?.cacheR) })} />
-        <Kpi icon={MessageSquare} label={t('report.messages')} value={fmtInt(u.messages)} />
-        <Kpi icon={Layers} label={t('report.days')} value={fmtInt(daily.length)} />
+        <StatCard icon={DollarSign} label={t('report.cost')} value={fmtUsd(u.total?.cost)}>{t('report.costHint')}</StatCard>
+        <StatCard icon={BarChart3} label="Tokens (in+out)" value={fmtTok(totalTokens)}>{`${fmtTok(u.total?.in)} in · ${fmtTok(u.total?.out)} out`}</StatCard>
+        <StatCard icon={Database} label={t('report.cache')} value={fmtTok(totalCache)}>{t('report.cacheHint', { w: fmtTok(u.total?.cacheW), r: fmtTok(u.total?.cacheR) })}</StatCard>
+        <StatCard icon={MessageSquare} label={t('report.messages')} value={fmtInt(u.messages)} />
+        <StatCard icon={Layers} label={t('report.days')} value={fmtInt(daily.length)} />
       </div>
 
       <Card

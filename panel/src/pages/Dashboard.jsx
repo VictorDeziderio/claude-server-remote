@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Cpu, Radio, RefreshCw, Activity, Plus, Power, Wifi, WifiOff, Save, UserRound, Tag, SquareTerminal, FolderOpen, Trash2, Settings2, History, DatabaseBackup, Pencil, HardDrive, MemoryStick, Gauge, Clock, ArrowUpCircle, CheckCircle2, ExternalLink, BarChart3, Pause, Play, ListTree, Pin } from 'lucide-react'
-import { Dot, Btn, Chip, Modal, Drawer, ActivityBadge, inputCls, Skeleton, useConfirm } from '../components/ui.jsx'
-import { fmtInt, fmtTok, fmtSize, fmtDate, fmtUsd, fmtUptime } from '../lib/format.js'
+import { Dot, Btn, Chip, Modal, Drawer, ActivityBadge, inputCls, Skeleton, useConfirm, StatCard } from '../components/ui.jsx'
+import { useHealth } from '../hooks/useHealth.js'
+import { fmtInt, fmtTok, fmtSize, fmtUsd, fmtUptime } from '../lib/format.js'
 import * as api from '../api.js'
 import { UsageWidget } from '../components/UsageLimits.jsx'
 import { t, getLang } from '../lib/i18n.js'
@@ -14,20 +15,6 @@ const SESSION_MODES = [
   ['pinned', 'smode.pinned'],
 ]
 
-// summary card in the style of the shadcn dashboard-01 "section cards": small label, big value,
-// a muted footer line; a soft gradient from the top. warn = needs attention (brand-colored edge).
-function StatCard({ icon: Icon, label, value, children, warn, className = '' }) {
-  return (
-    <div data-slot="stat-card" className={`flex min-w-0 flex-col gap-2 rounded-xl border bg-linear-to-t from-primary/[0.03] to-card p-3.5 shadow-xs sm:gap-3 sm:p-5 dark:from-primary/[0.04] ${warn ? 'border-brand/50' : ''} ${className}`}>
-      <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
-        <span>{label}</span>
-        <span className={`grid size-7 place-items-center rounded-md border ${warn ? 'border-brand/40 text-brand' : 'text-muted-foreground'}`}><Icon className="size-3.5" /></span>
-      </div>
-      <div className="min-w-0 truncate text-xl font-semibold tabular-nums tracking-tight text-foreground sm:text-2xl">{value}</div>
-      <div className="min-w-0 text-xs text-muted-foreground sm:text-sm">{children}</div>
-    </div>
-  )
-}
 const pct = (p) => (p >= 90 ? 'bg-destructive' : p >= 75 ? 'bg-warning' : 'bg-success')
 function Meter({ icon: Icon, label, value, hint }) {
   return (
@@ -59,25 +46,9 @@ function MiniLine({ points, color }) {
 }
 
 // Host health + Claude Code version (with "update"); CPU/memory + top processes.
-// Only queries /api/health with the tab visible (found by @qa 2026-10-09: "CPU-light" panel).
 export function HealthCard({ onFlash, compact }) {
-  const [h, setH] = useState(null)
+  const [h, load] = useHealth()
   const [busy, setBusy] = useState(false)
-  const load = () =>
-    api
-      .health()
-      .then((r) => {
-        if (r.ok) setH(r)
-      })
-      .catch(() => {})
-  useEffect(() => {
-    const tick = () => { if (document.visibilityState === 'visible') load() }
-    load()
-    const t = setInterval(tick, 60000)
-    const onVis = () => { if (document.visibilityState === 'visible') load() }
-    document.addEventListener('visibilitychange', onVis)
-    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
-  }, [])
   const update = async () => {
     setBusy(true)
     const r = await api.claudeUpdate().catch((e) => ({ ok: false, msg: e.message }))

@@ -6,7 +6,8 @@ import {
   AlertTriangle, Trash2, Ellipsis, X, Sun, Moon, Monitor, Search, ChevronRight,
 } from 'lucide-react'
 import CommandMenu, { useCommandMenuHotkey } from './CommandMenu.jsx'
-import { readTheme, saveTheme, nextTheme } from '../lib/theme.js'
+import { readTheme, saveTheme, nextTheme, onThemeChange } from '../lib/theme.js'
+import { useHealth } from '../hooks/useHealth.js'
 import Logo from './Logo.jsx'
 import { Dot, Btn, Empty } from './ui.jsx'
 import { cn } from '../lib/utils.js'
@@ -14,7 +15,6 @@ import { fmtAgo } from '../lib/format.js'
 import * as api from '../api.js'
 import { t } from '../lib/i18n.js'
 
-// Routes with their own URL (react-router)
 export const NAV = [
   { to: '/dashboard', get label() { return t('nav.dashboard') }, icon: LayoutDashboard, group: 'workspace' },
   { to: '/terminal', get label() { return t('nav.terminal') }, icon: SquareTerminal, group: 'workspace' },
@@ -87,9 +87,10 @@ const THEME_ICON = { system: Monitor, light: Sun, dark: Moon }
 const THEME_LABEL = { system: 'theme.system', light: 'theme.light', dark: 'theme.dark' }
 function ThemeToggle() {
   const [pref, setPref] = useState(readTheme)
+  useEffect(() => onThemeChange(setPref), [])
   const Icon = THEME_ICON[pref] || Monitor
   return (
-    <Btn variant="ghost" size="sm" onClick={() => setPref(saveTheme(nextTheme(pref)))} title={`${t(THEME_LABEL[pref])} (${t('theme.click')})`}>
+    <Btn variant="ghost" size="sm" onClick={() => saveTheme(nextTheme(pref))} title={`${t(THEME_LABEL[pref])} (${t('theme.click')})`}>
       <Icon className="size-3.5" />
     </Btn>
   )
@@ -149,23 +150,11 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
   const login = data?.login || { logged: false, account: '' }
   const isTerm = pathname.startsWith('/terminal')
   const [collapsed, setCollapsed] = useState(() => readLS(LS_NAV, false))
-  const [health, setHealth] = useState(null)
   const [cmdOpen, setCmdOpen] = useState(false)
   useCommandMenuHotkey(setCmdOpen)
   const toggle = () => setCollapsed((c) => { try { localStorage.setItem(LS_NAV, JSON.stringify(!c)) } catch { /* */ } return !c })
 
-  // only queries /api/health with the tab visible (found by @qa 2026-10-09: "CPU-light" panel)
-  const ready = !!data
-  useEffect(() => {
-    if (!ready) return undefined
-    let alive = true
-    const load = () => { if (document.visibilityState === 'visible') api.health().then((h) => { if (alive && h.ok) setHealth(h) }).catch(() => {}) }
-    load()
-    const t = setInterval(load, 60000)
-    const onVis = () => { if (document.visibilityState === 'visible') load() }
-    document.addEventListener('visibilitychange', onVis)
-    return () => { alive = false; clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
-  }, [ready])
+  const [health] = useHealth(!!data)
 
   const navCls = ({ isActive }) =>
     cn('flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',

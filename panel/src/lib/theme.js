@@ -3,7 +3,7 @@
 // same rule as resolveTheme. Pure functions tested in test/unit.mjs.
 export const THEME_KEY = 'cr.theme'
 export const THEMES = ['system', 'light', 'dark']
-export const THEME_COLOR = { light: '#ffffff', dark: '#09090b' }
+export const THEME_COLOR = { light: '#ffffff', dark: '#0a0a0a' }
 
 export const normTheme = (v) => (THEMES.includes(v) ? v : 'system')
 export const resolveTheme = (pref, prefersDark) => {
@@ -26,7 +26,15 @@ export function saveTheme(pref) {
   const p = normTheme(pref)
   try { localStorage.setItem(THEME_KEY, p) } catch { /* private mode */ }
   applyTheme(p)
+  try { window.dispatchEvent(new CustomEvent(THEME_EVENT, { detail: p })) } catch { /* no DOM (tests) */ }
   return p
+}
+// components that show the current choice (header button, command palette) follow changes made anywhere
+export const THEME_EVENT = 'cr-theme'
+export function onThemeChange(fn) {
+  const on = (e) => fn(e.detail)
+  window.addEventListener(THEME_EVENT, on)
+  return () => window.removeEventListener(THEME_EVENT, on)
 }
 // "system": follows the device's light/dark switch without reloading
 export function watchSystemTheme() {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { LogIn, Lock, User, Loader2, AlertCircle, ShieldCheck } from 'lucide-react'
+import { LogIn, Lock, User, AlertCircle, ShieldCheck } from 'lucide-react'
 import Logo from './Logo.jsx'
-import { Btn, inputCls } from './ui.jsx'
+import { Btn } from './ui.jsx'
 import { cn } from '../lib/utils.js'
 import { login, loginInfo } from '../api.js'
 import { t } from '../lib/i18n.js'
@@ -34,7 +34,6 @@ export default function Login({ onSuccess }) {
 
   return (
     <div className="relative flex h-full items-center justify-center overflow-auto bg-background px-4 py-10">
-      {/* background: faint grid that fades out + a soft glow in the brand color */}
       <div aria-hidden className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,var(--border)_1px,transparent_1px),linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] bg-[size:44px_44px] [mask-image:radial-gradient(ellipse_60%_55%_at_50%_45%,#000_30%,transparent_100%)]" />
       <div aria-hidden className="pointer-events-none absolute left-1/2 top-[38%] h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/20 blur-3xl" />
       <form onSubmit={submit} className="relative w-full max-w-sm animate-fade-up rounded-xl border bg-card p-6 text-card-foreground shadow-xl sm:p-8">

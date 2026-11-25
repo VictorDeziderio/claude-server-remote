@@ -138,6 +138,7 @@ try {
 
   // ---- theme (shadcn on Tailwind v4): the classes the shadcn components use must produce CSS.
   // Under Tailwind v3 classes like rounded-4xl / ring-3 / has-data-[...] silently produced nothing.
+  await page.locator('[data-slot="project-card"], [data-slot="stat-card"]').first().waitFor({ timeout: 10000 }).catch(() => {})
   const look = await page.evaluate(() => {
     const px = (v) => parseFloat(v) || 0
     const card = document.querySelector('[data-slot="project-card"], [data-slot="stat-card"]')
@@ -173,6 +174,21 @@ try {
   await page.keyboard.press('Escape')
   ok('Escape closes the palette', !(await cmd.count()))
   await page.goto(BASE + '/dashboard')
+
+  // ---- one shared health poll: header pill + dashboard card ask /api/health once, not once each
+  let healthCalls = 0
+  const countHealth = (r) => { if (r.url().endsWith('/api/health')) healthCalls++ }
+  page.on('request', countHealth)
+  await page.goto(BASE + '/dashboard'); await page.waitForTimeout(2500)
+  page.off('request', countHealth)
+  ok(`dashboard asks /api/health once (header + card share it): ${healthCalls}`, healthCalls === 1, String(healthCalls))
+
+  // ---- the header theme button follows a theme change made from the palette
+  const themeTitle = () => page.locator('header button[title*="("]').first().getAttribute('title')
+  const before = await themeTitle()
+  await page.keyboard.press('Control+k'); await page.keyboard.type('theme'); await page.keyboard.press('Enter')
+  await page.waitForTimeout(300)
+  ok('header theme button follows a change made in the palette', (await themeTitle()) !== before, before)
 
   // ---- mobile: the modal fits the screen
   await page.setViewportSize({ width: 375, height: 640 })

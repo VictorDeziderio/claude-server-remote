@@ -179,6 +179,21 @@ export function Card({ title, subtitle, children, className = '', actions }) {
   )
 }
 
+// summary card in the style of the shadcn dashboard-01 "section cards": small label, big value,
+// a muted footer line, a soft gradient from the top. warn = needs attention (brand-colored edge).
+export function StatCard({ icon: Icon, label, value, children, warn, className = '' }) {
+  return (
+    <div data-slot="stat-card" className={cn('flex min-w-0 flex-col gap-2 rounded-xl border bg-linear-to-t from-primary/[0.03] to-card p-3.5 shadow-xs sm:gap-3 sm:p-5 dark:from-primary/[0.04]', warn && 'border-brand/50', className)}>
+      <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+        <span className="truncate">{label}</span>
+        <span className={cn('grid size-7 shrink-0 place-items-center rounded-md border', warn ? 'border-brand/40 text-brand' : 'text-muted-foreground')}><Icon className="size-3.5" /></span>
+      </div>
+      <div className="min-w-0 truncate text-xl font-semibold tabular-nums tracking-tight text-foreground sm:text-2xl">{value}</div>
+      {children != null && children !== '' && <div className="min-w-0 truncate text-xs text-muted-foreground sm:text-sm">{children}</div>}
+    </div>
+  )
+}
+
 export const Empty = ({ children = t('common.noData') }) => <div className="py-8 text-center text-sm text-muted-foreground">{children}</div>
 
 export const Skeleton = SSkeleton
