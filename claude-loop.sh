@@ -66,13 +66,13 @@ accept_trust_prompt() {
     [ "$waited" -ge 60 ] && return 0          # nao apareceu em 60s -> nao insiste
   done
   for _ in 1 2 3 4 5; do
-    trust_prompt_open || { slog "trust: workspace confiado, TUI liberada"; return 0; }
+    trust_prompt_open || { slog "trust: workspace trusted, TUI unlocked"; return 0; }
     tmux send-keys -t "=$SESS:" Down
     sleep 0.3
     tmux send-keys -t "=$SESS:" Enter
     sleep 1
   done
-  slog "trust: dialogo de confianca nao sumiu apos 5 tentativas — confira manualmente"
+  slog "trust: the trust dialog did not go away after 5 tries — check it by hand"
 }
 
 # Espera a TUI ficar pronta (le a tela em vez de um sleep fixo), envia o /remote-control
@@ -81,27 +81,27 @@ accept_trust_prompt() {
 send_remote_when_ready() {  # $1 = comando
   local cmd="$1" waited=0 attempt
   sleep "$DELAY"
-  is_logged_in || { slog "remote: Claude sem login — nao enviei $cmd"; return 0; }
+  is_logged_in || { slog "remote: Claude is not logged in — did not send $cmd"; return 0; }
   until tui_ready; do
     sleep 3; waited=$((waited + 3))
-    [ "$waited" -ge 120 ] && { slog "remote: TUI nao ficou pronta em 120s — envio mesmo assim"; break; }
+    [ "$waited" -ge 120 ] && { slog "remote: TUI not ready after 120s — sending anyway"; break; }
   done
   for attempt in 1 2 3; do
-    remote_up && { slog "remote: ja ativo"; dismiss_dialog; return 0; }
+    remote_up && { slog "remote: already on"; dismiss_dialog; return 0; }
     tmux send-keys -t "=$SESS:" -l "$cmd"
     sleep 0.8
     tmux send-keys -t "=$SESS:" C-m
     # ate 12s: confirma o dialogo novo (se aparecer) e espera o link
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
       sleep 1
-      if confirm_open; then slog "remote: confirmando 'Enable Remote Control'"; tmux send-keys -t "=$SESS:" Enter; fi
+      if confirm_open; then slog "remote: confirming 'Enable Remote Control'"; tmux send-keys -t "=$SESS:" Enter; fi
       remote_up && break
     done
-    if remote_up; then slog "remote: ativo (tentativa $attempt)"; dismiss_dialog; return 0; fi
+    if remote_up; then slog "remote: on (attempt $attempt)"; dismiss_dialog; return 0; fi
     tmux send-keys -t "=$SESS:" C-u 2>/dev/null || true   # linha ficou digitada? limpa e tenta de novo
     sleep 5
   done
-  slog "remote: nao confirmei apos $attempt tentativas (use 'Religar remote' no painel)"
+  slog "remote: not confirmed after $attempt attempts (use 'Restart remote' in the panel)"
 }
 
 # ---------- volta automatica da versao do Claude Code ----------
@@ -122,13 +122,13 @@ rollback_claude() {
   tried="$RUN_DIR/claude-rollback-tried-$cur"
   [ -e "$tried" ] && return 1
   : > "$tried"
-  slog "rollback: Claude $cur em crash-loop — voltando para $good (ultima saudavel)"
+  slog "rollback: Claude $cur in a crash-loop — going back to $good (last healthy)"
   if ( flock 8; timeout 300 sudo -n npm install -g --include=optional "@anthropic-ai/claude-code@$good" ) \
        8>"$RUN_DIR/claude-rollback.lock" >>"$LOG_DIR/sessions.log" 2>&1 && [ "$(claude_ver)" = "$good" ]; then
-    alert warn claude-update "$PROJ_NAME" "Claude $cur caía em loop — voltei automaticamente para $good."
+    alert warn claude-update "$PROJ_NAME" "Claude $cur kept crashing — automatically went back to $good."
     return 0
   fi
-  alert error claude-update "$PROJ_NAME" "Claude $cur caía em loop e a volta para $good falhou — veja Logs → Sessões."
+  alert error claude-update "$PROJ_NAME" "Claude $cur kept crashing and going back to $good failed — see Logs → Sessions."
   return 1
 }
 
@@ -154,20 +154,20 @@ FAILS=0  # consecutivos; zera quando o Claude roda tempo suficiente (ver backoff
 while true; do
   load_proj_config "$PROJ_NAME"
   if [ "$CFG_ENABLED" != "true" ] || [ "$CFG_AUTOSTART" != "true" ]; then
-    drop_to_shell "[dev-box] Claude DESLIGADO para \"$PROJ_NAME\" no painel — shell livre. Rode  claude  quando quiser."
+    drop_to_shell "[dev-box] Claude is OFF for \"$PROJ_NAME\" in the panel — free shell. Run  claude  whenever you want."
   fi
 
   # Pausado (inatividade ou "Pausar" no painel): nao reabre ate o painel tirar o flag ou alguem
   # apertar Enter aqui. A conversa fica salva -- com sessao fixa/continuar, volta onde parou.
   if [ -e "$PAUSE_FLAG" ]; then
     rm -f "$RUN_FLAG"
-    slog "pausado ($(head -c 20 "$PAUSE_FLAG" 2>/dev/null)) — aguardando retomar"
-    gray "[Claude pausado ($(head -c 20 "$PAUSE_FLAG" 2>/dev/null)) — Enter aqui ou 'Retomar' no painel]"
+    slog "paused ($(head -c 20 "$PAUSE_FLAG" 2>/dev/null)) — waiting to resume"
+    gray "[Claude paused ($(head -c 20 "$PAUSE_FLAG" 2>/dev/null)) — press Enter here or 'Resume' in the panel]"
     while [ -e "$PAUSE_FLAG" ]; do
       if read -r -t 5 _; then rm -f "$PAUSE_FLAG"; fi
     done
     FAILS=0
-    slog "retomado"
+    slog "resumed"
   fi
 
   # aceita o "trust this folder" sozinho (roda sempre, mesmo sem remote): sem isso nada mais
@@ -191,7 +191,7 @@ while true; do
     # formato esperado (history.js): ^[A-Za-z0-9_-]{6,80}$ — fora disso, ignora em vez de
     # tentar um --resume com id quebrado
     [[ "$RESUME_ID" =~ ^[A-Za-z0-9_-]{6,80}$ ]] || {
-      [ -n "$RESUME_ID" ] && slog "resume: flag com formato invalido, ignorando ($RESUME_ID)"
+      [ -n "$RESUME_ID" ] && slog "resume: flag has an invalid format, ignoring ($RESUME_ID)"
       RESUME_ID=""
     }
   fi
@@ -205,22 +205,22 @@ while true; do
     if [ -n "$CFG_PINNED" ] && [ -f "$CDIR/$CFG_PINNED.jsonl" ]; then
       RESUME_ID="$CFG_PINNED"
     else
-      slog "sessao fixa: conversa '${CFG_PINNED:-?}' nao encontrada — abrindo uma nova"
+      slog "pinned session: conversation '${CFG_PINNED:-?}' not found — opening a new one"
     fi
   elif [ -z "$RESUME_ID" ] && [ "$CFG_SESSMODE" = "continue" ]; then
     if compgen -G "$CDIR/*.jsonl" >/dev/null; then CONTINUE=1
-    else slog "continuar: nenhuma conversa anterior nesta pasta — abrindo uma nova"; fi
+    else slog "continue: no previous conversation in this folder — opening a new one"; fi
   fi
 
   : > "$RUN_FLAG"
-  slog "claude iniciado${RESUME_ID:+ (resume $RESUME_ID)}${CONTINUE:+ (continue)}"
+  slog "claude started${RESUME_ID:+ (resume $RESUME_ID)}${CONTINUE:+ (continue)}"
   T0=$(date +%s)
   # retomando conversa, a "primeira linha" NAO e reenviada (repetiria o pedido a cada reinicio)
   if [ -n "$RESUME_ID" ]; then
-    gray "[continuando a conversa $RESUME_ID]"
+    gray "[continuing conversation $RESUME_ID]"
     claude --resume "$RESUME_ID"
   elif [ -n "$CONTINUE" ]; then
-    gray "[continuando a ultima conversa desta pasta]"
+    gray "[continuing the last conversation in this folder]"
     claude --continue
   elif [ -n "$CFG_INITLINE" ]; then
     # interativo, ja executando a primeira linha; "-..." viraria flag do CLI -> espaco na frente
@@ -233,7 +233,7 @@ while true; do
   RAN_FOR=$(( $(date +%s) - T0 ))
   # exit code in the log: 0 = normal exit (/exit, Ctrl-D); 137 = SIGKILL (OOM/kill); 134 = abort
   # (e.g. V8 heap out of memory); 129/143 = HUP/TERM. Without it a dropped session leaves no clue.
-  slog "claude saiu (codigo $rc, rodou ${RAN_FOR}s)"
+  slog "claude exited (code $rc, ran ${RAN_FOR}s)"
   rm -f "$RUN_FLAG"
   # o envio do remote/trust pertence a ESTE Claude: se ele ja saiu, nao pode digitar no proximo
   if [ -n "$REMOTE_PID" ]; then kill "$REMOTE_PID" 2>/dev/null; wait "$REMOTE_PID" 2>/dev/null; REMOTE_PID=""; fi
@@ -248,14 +248,14 @@ while true; do
     FAILS=0
   fi
   if [ "$FAILS" -ge "$MAX_FAST_FAILS" ]; then
-    slog "crash-loop: claude saiu $FAILS vezes seguidas rapido demais — parando de reabrir sozinho"
-    alert error crash-loop "$PROJ_NAME" "Claude caiu $FAILS vezes seguidas (último código $rc) — parei de reabrir. Veja Logs → Sessões."
-    drop_to_shell "[dev-box] Claude saiu $FAILS vezes seguidas rapido demais — parei de reabrir pra nao sobrecarregar a VM. Shell livre; rode  claude  quando quiser (ou 'Reiniciar' no painel pra tentar de novo do zero)."
+    slog "crash-loop: claude exited $FAILS times in a row too fast — no longer restarting it"
+    alert error crash-loop "$PROJ_NAME" "Claude crashed $FAILS times in a row (last code $rc) — stopped restarting it. See Logs → Sessions."
+    drop_to_shell "[dev-box] Claude exited $FAILS times in a row too fast — stopped restarting it so the VM is not overloaded. Free shell; run  claude  whenever you want (or 'Restart' in the panel to start over)."
   fi
   WAIT="$(backoff_sleep "$FAILS")"
-  gray "[claude saiu — reabrindo em ${WAIT}s | Ctrl-C = ficar no shell]"
+  gray "[claude exited — restarting in ${WAIT}s | Ctrl-C = stay in the shell]"
   # Ctrl-C aqui interrompe o sleep -> cai no shell (em vez de reabrir)
   if ! (trap 'exit 130' INT; sleep "$WAIT"); then
-    drop_to_shell "[dev-box] supervisor pausado — shell livre. Para voltar: 'Reiniciar' no painel."
+    drop_to_shell "[dev-box] supervisor paused — free shell. To come back: 'Restart' in the panel."
   fi
 done

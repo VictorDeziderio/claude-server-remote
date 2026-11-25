@@ -5,7 +5,7 @@
 # so o resultado (dist/ + deps de runtime) entra na imagem final. Versoes PINADAS (ARG) para
 # builds reproduziveis — suba-as de proposito, nao por acidente.
 #
-# Monte um Volume do EasyPanel em /root para o trabalho + login do Claude (~/.claude)
+# Monte um volume em /root para o trabalho + login do Claude (~/.claude)
 # nao sumirem no redeploy.
 
 # Claude Code: "latest" (default) instala a versao MAIS RECENTE do npm em cada build — o ADD do
@@ -153,7 +153,7 @@ RUN set -e; V="${CLAUDE_CODE_VERSION}"; \
 # ============================================================================
 # Runtime: ENV + scripts (o que muda no dia a dia)
 # ============================================================================
-# Variaveis de runtime (sobrescreva no Environment do EasyPanel)
+# Variaveis de runtime (sobrescreva com docker run -e / compose)
 ENV \
     # Multi-tmux: cada projeto tem sua sessao "claude-<nome>" e seu remote-control.
     # PROJECT_FOLDER = nome do projeto default (criado se o container subir sem nenhum).
@@ -172,7 +172,7 @@ ENV \
     # AUTH: painel via PANEL_LOGIN+PANEL_PASSWORD (+ 2FA opcional ativado no painel).
     # PANEL_PASSWORD e GH_TOKEN NAO tem ENV aqui de proposito: sem senha o painel RECUSA subir
     # (fail-closed em panel/server/auth.js). Lugar certo: /root/.devbox-secrets.env no volume
-    # (KEY=valor; ver start.sh) -- no Environment do EasyPanel eles vazam no log de build.
+    # (KEY=valor; ver start.sh) -- em plataformas que repassam o Environment como --build-arg eles vazam no log de build.
     PANEL_LOGIN=admin \
     PANEL_SESSION_DAYS=30
 
@@ -207,6 +207,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
 
 # Gateway (Caddy) em primeiro plano + sessoes tmux por projeto persistentes.
 # Acesse a sessao do Claude pelo terminal do painel (/terminal/<projeto>) ou pelo Console
-# do EasyPanel: `tmux attach -t claude-<projeto>`.
+# (docker exec): `tmux attach -t claude-<projeto>`.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/usr/local/bin/start.sh"]

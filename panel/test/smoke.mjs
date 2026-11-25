@@ -648,7 +648,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
       spawnSync('tmux', ['kill-session', '-t', '=claude-demo'], { env, stdio: 'ignore' }); watchdog(); ok('watchdog recria projeto ligado', has())
       r = await j('POST', '/api/config', { name: 'demo', key: 'autoStartClaude', value: false }); ok('Claude OFF aplica na hora', r.data.ok && has(), r.data.msg)
       await new Promise((s) => setTimeout(s, 600))
-      r = await j('GET', '/api/term/capture?name=demo'); ok('Claude OFF: sessao so com shell', r.data.ok && /Claude DESLIGADO/.test(r.data.content) && !/SMOKE-READY/.test(r.data.content), r.data.content?.slice(0, 200))
+      r = await j('GET', '/api/term/capture?name=demo'); ok('Claude OFF: sessao so com shell', r.data.ok && /Claude is OFF|Claude OFF/.test(r.data.content) && !/SMOKE-READY/.test(r.data.content), r.data.content?.slice(0, 200))
       r = await j('POST', '/api/restart', { name: 'demo' }); ok('restart com Claude OFF', r.data.ok && /shell only/.test(r.data.msg), r.data.msg)
       // mensagens do servidor no idioma de quem pede (cookie cr_lang > Accept-Language > ingles)
       r = await j('POST', '/api/restart', { name: 'demo' }, { headers: { cookie: cookie + '; cr_lang=pt-BR' } }); ok('i18n: cookie cr_lang=pt-BR -> mensagem em portugues', /só shell/.test(r.data.msg), r.data.msg)

@@ -40,7 +40,7 @@ log() {
 # so pula esta passada (ela volta no proximo intervalo/clique) em vez de empilhar.
 exec 9>"$LOG_DIR/backup.lock"
 if ! flock -n 9; then
-  log "skip: outro backup.sh ja em execucao"
+  log "skip: another backup.sh is already running"
   exit 0
 fi
 
@@ -49,7 +49,7 @@ fi
 . "${DEVBOX_LIB:-/usr/local/lib/devbox/lib.sh}" 2>/dev/null || alert() { :; }
 # memoria da VM no limite (guarda do start.sh): tar/git agora so piorariam -- pula esta passada
 if [ -e "${RUN_DIR:-$H/.claude/run}/lowmem" ]; then
-  log "skip: memoria alta (lowmem) — backup adiado"
+  log "skip: memory is high (lowmem) — backup postponed"
   exit 0
 fi
 
@@ -69,7 +69,7 @@ backup_config() {
     # rotacao: mantem os N mais recentes
     ls -1t "$CFG_BACKUP_DIR"/config-*.tgz 2>/dev/null | tail -n +"$((CFG_KEEP + 1))" | xargs -r rm -f
   else
-    log "WARN  config: falha ao gerar o tarball"
+    log "WARN  config: could not create the tarball"
     return 1
   fi
 }
@@ -81,7 +81,7 @@ backup_repo() {
 
   # precisa de remote 'origin' p/ ter pra onde fazer push
   if ! git -C "$dir" remote get-url origin >/dev/null 2>&1; then
-    log "skip  $name: sem remote 'origin' (configure: git remote add origin <url>)"
+    log "skip  $name: no 'origin' remote (set it up: git remote add origin <url>)"
     return 0
   fi
 
@@ -115,10 +115,10 @@ backup_repo() {
   # timeout: push numa rede travada (sem erro, sem avancar) ficaria pendurado pra sempre e
   # o loop automatico (start.sh) nunca mais chamaria backup.sh de novo (achado @qa).
   if timeout 120 git -C "$dir" push >/dev/null 2>&1; then
-    log "ok    $name: snapshot enviado"
+    log "ok    $name: snapshot pushed"
   else
-    log "WARN  $name: commit local feito, push falhou (remote/credencial/branch?)"
-    alert warn backup "$name" "Backup de \"$name\": commit local feito, mas o push falhou (remote/credencial/rede?)."
+    log "WARN  $name: local commit done, push failed (remote/credentials/branch?)"
+    alert warn backup "$name" "Backup of \"$name\": local commit done, but the push failed (remote/credentials/network?)."
   fi
 }
 
@@ -127,7 +127,7 @@ if [ "${1:-}" = "--config" ]; then
 elif [ "$#" -ge 1 ]; then
   backup_repo "$1"
 else
-  [ -d "$PROJECTS_DIR" ] || { log "pasta $PROJECTS_DIR inexistente, nada a fazer"; exit 0; }
+  [ -d "$PROJECTS_DIR" ] || { log "folder $PROJECTS_DIR does not exist, nothing to do"; exit 0; }
   shopt -s nullglob
   for d in "$PROJECTS_DIR"/*/; do
     [ -d "$d" ] && backup_repo "${d%/}"

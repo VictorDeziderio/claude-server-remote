@@ -50,7 +50,7 @@ JSON
 [ -f "$PANEL_CONFIG" ] || cp /usr/local/share/claude/panel.json "$PANEL_CONFIG" 2>/dev/null || true
 
 # ownership: so o que NAO e do ubuntu. Varrer o volume INTEIRO no boot passava de 2 min (milhoes de
-# arquivos: node_modules de worktrees) e o healthcheck do EasyPanel matava o container novo em loop
+# arquivos: node_modules de worktrees) e o healthcheck da plataforma matava o container novo em loop
 # (2026-10-10). Bloqueia o boot so o raso (o que o boot e as sessoes usam: ~/.claude, configs, pastas
 # dos projetos); o resto corre em segundo plano com prioridade minima.
 fix_owner() { find "$@" -xdev \( ! -user "$U" -o ! -group "$U" \) ! -path "$SECRETS_FILE" -exec chown -h "$U:$U" {} + 2>/dev/null || true; }
@@ -58,7 +58,7 @@ fix_owner "$H" -maxdepth 2
 fix_owner "$H/.claude" -maxdepth 3
 ( renice -n 19 -p "$BASHPID" >/dev/null 2>&1; ionice -c3 -p "$BASHPID" 2>/dev/null; fix_owner "$H" ) &
 
-# Segredos do volume: o EasyPanel passa TODO o Environment como --build-arg e o comando aparece
+# Segredos do volume: algumas plataformas (ex.: painéis tipo PaaS) passam TODO o Environment como --build-arg e o comando aparece
 # inteiro no log de build -- quem tira PANEL_PASSWORD/GH_TOKEN do Environment e os poe aqui
 # (KEY=valor, root 600) nao vaza mais nada no log. Vence o Environment. So chaves conhecidas;
 # o arquivo nunca e executado (sem `source`).
@@ -68,14 +68,14 @@ if [ -f "$SECRETS_FILE" ]; then
     k="${line%%=*}"; v="${line#*=}"
     case "$k" in PANEL_LOGIN|PANEL_PASSWORD|GH_TOKEN|ANTHROPIC_ADMIN_KEY) export "$k=$v" ;; esac
   done < "$SECRETS_FILE"
-  say "segredos: lidos de $SECRETS_FILE"
+  say "secrets: read from $SECRETS_FILE"
 fi
 
 # ---------------------------------------------------------------------------
 # 2) ferramentas
 # ---------------------------------------------------------------------------
 # Wrapper "claude": o Claude Code RECUSA rodar como root com bypassPermissions. Em
-# /usr/local/bin (precede /usr/bin no PATH): chamado como root (Console do EasyPanel),
+# /usr/local/bin (precede /usr/bin no PATH): chamado como root (docker exec / console da plataforma),
 # re-executa como ubuntu; senao chama o binario real.
 REAL_CLAUDE=/usr/bin/claude
 [ -x "$REAL_CLAUDE" ] || REAL_CLAUDE="$(command -v -a claude 2>/dev/null | grep -vx /usr/local/bin/claude | head -1 || true)"
@@ -98,9 +98,9 @@ if [ -n "${GH_TOKEN:-}" ]; then
   # ~/.config/gh (volume), vale para todo processo do ubuntu sem o token no ambiente.
   if printf '%s' "$GH_TOKEN" | as_user env -u GH_TOKEN gh auth login --with-token >/dev/null 2>&1 \
      && as_user env -u GH_TOKEN gh auth setup-git >/dev/null 2>&1; then
-    say "gh: autenticado via GH_TOKEN"
+    say "gh: logged in with GH_TOKEN"
   else
-    say "gh: falha no login via GH_TOKEN (token valido/escopo repo?)"
+    say "gh: login with GH_TOKEN failed (valid token / repo scope?)"
   fi
 fi
 # identidade git global (so define se ainda nao existir) — usada nos commits do backup
@@ -120,12 +120,12 @@ export -n PANEL_PASSWORD GH_TOKEN ANTHROPIC_ADMIN_KEY 2>/dev/null || true
 # ---------------------------------------------------------------------------
 # Projeto desligado no painel (panel.json -> enabled=false) NAO sobe no boot nem e recriado
 # pelo watchdog. Os ligados sobem, e se a sessao cair sem o container reiniciar, voltam em ~10s.
-ensure_sessions() { as_user bash /usr/local/bin/claude-session.sh --all || say "aviso: falha ao garantir as sessoes"; }
+ensure_sessions() { as_user bash /usr/local/bin/claude-session.sh --all || say "warning: could not make sure the sessions are up"; }
 ensure_sessions
 
 # Guarda de memoria: acima de MEM_HIGH_PCT% do limite do container cria RUN_DIR/lowmem (backup
 # pula, painel desacelera) e avisa no painel; abaixo de MEM_OK_PCT% libera. Le o cgroup (o limite
-# REAL do container no EasyPanel) e cai no /proc/meminfo se nao houver limite.
+# REAL do container) e cai no /proc/meminfo se nao houver limite.
 MEM_HIGH_PCT="${MEM_HIGH_PCT:-85}" MEM_OK_PCT="${MEM_OK_PCT:-75}"
 mem_pct() {
   local cur max
@@ -142,10 +142,10 @@ mem_guard() {
   local p; p="$(mem_pct)"
   if [ "$p" -ge "$MEM_HIGH_PCT" ] && [ ! -e "$RUN_DIR/lowmem" ]; then
     : > "$RUN_DIR/lowmem"
-    alert warn memory "" "Memória do container em ${p}% — backup adiado e painel desacelerado até baixar."
+    alert warn memory "" "Container memory at ${p}% — backup postponed and panel slowed down until it drops."
   elif [ "$p" -lt "$MEM_OK_PCT" ] && [ -e "$RUN_DIR/lowmem" ]; then
     rm -f "$RUN_DIR/lowmem"
-    alert info memory "" "Memória voltou ao normal (${p}%)."
+    alert info memory "" "Memory is back to normal (${p}%)."
   fi
 }
 ( while sleep 10; do
@@ -158,7 +158,7 @@ mem_guard() {
 # 4) backup automatico
 # ---------------------------------------------------------------------------
 if [ "${BACKUP_ENABLED:-true}" = "true" ]; then
-  say "backup: ligado (intervalo ${BACKUP_INTERVAL:-3600}s) | log: $LOGS/backup.log"
+  say "backup: on (every ${BACKUP_INTERVAL:-3600}s) | log: $LOGS/backup.log"
   # prioridade minima de CPU e disco: backup nunca disputa com o Claude/painel
   ( while sleep "${BACKUP_INTERVAL:-3600}"; do as_user nice -n 15 ionice -c3 bash /usr/local/bin/backup.sh >/dev/null 2>&1 || true; done ) &
   # snapshot da CONFIG (~/.claude + ~/.claude.json) 1x/dia -> /root/.claude-backups (rotaciona 7)
@@ -176,9 +176,9 @@ PANEL_PASSWORD="${PANEL_PASSWORD:-}"
 # Sem senha (ou com o default publico antigo) o PAINEL RECUSA SUBIR — fail-closed em
 # panel/server/auth.js. Aqui so um aviso claro no boot; o valor NUNCA vai para o log.
 if [ -z "$PANEL_PASSWORD" ]; then
-  say "[SEGURANCA] PANEL_PASSWORD vazio -> o painel NAO vai subir. Defina no Environment do EasyPanel."
+  say "[SECURITY] PANEL_PASSWORD is empty -> the panel will NOT start. Set it in the container environment (docker run -e / compose)."
 elif [ "$(printf '%s' "$PANEL_PASSWORD" | sha256sum | cut -c1-64)" = "98a2fc5119f2b61af6d90d9d7bb59813820e6cd43411eeb0a91484a769a0ccb9" ]; then
-  say "[SEGURANCA] PANEL_PASSWORD e o default PUBLICO que ja esteve no repo -> o painel NAO vai subir. Troque no Environment."
+  say "[SECURITY] PANEL_PASSWORD is an old PUBLIC default -> the panel will NOT start. Change it in the container environment."
 fi
 
 # respawn com backoff: roda um comando em loop (reabre se cair), como ubuntu, logando em
@@ -192,13 +192,13 @@ run_bg() {  # $1=label  $2=logfile  resto=comando
       ran=$(( $(date +%s) - t0 ))
       fails="$(backoff_next "$fails" "$ran")"
       delay="$(backoff_sleep "$fails")"
-      echo "[$label saiu (rodou ${ran}s) — reabrindo em ${delay}s]" >> "$log"
+      echo "[$label exited (ran ${ran}s) — restarting in ${delay}s]" >> "$log"
       sleep "$delay"
     done ) &
 }
 
 if [ "${PANEL_ENABLED:-true}" = "true" ]; then
-  say "painel Claude Remote (interno $PANEL_PORT, publicado em / pelo gateway) | projetos: $PROJECTS_DIR"
+  say "Claude Remote panel (internal $PANEL_PORT, served at / by the gateway) | projects: $PROJECTS_DIR"
   run_bg "painel" "$LOGS/panel.log" \
     env PANEL_BIND=127.0.0.1 PANEL_PORT="$PANEL_PORT" \
       PROJECTS_DIR="$PROJECTS_DIR" PANEL_CONFIG="$PANEL_CONFIG" PROJECT_FOLDER="$PROJECT_FOLDER" \
@@ -216,5 +216,5 @@ fi
 CADDYFILE="$H/.claude/Caddyfile"
 write_caddyfile "$CADDYFILE"   # (devbox-lib.sh: TRUSTED_PROXIES / PANEL_DOMAIN)
 chown "$U:$U" "$CADDYFILE" 2>/dev/null || true
-say "gateway on (:${GATEWAY_PORT}) | painel: / (login '${PANEL_LOGIN}')"
+say "gateway on (:${GATEWAY_PORT}) | panel: / (login '${PANEL_LOGIN}')"
 exec caddy run --config "$CADDYFILE" --adapter caddyfile

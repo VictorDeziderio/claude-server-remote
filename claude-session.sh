@@ -21,7 +21,7 @@ LOOP="${CLAUDE_LOOP:-/usr/local/bin/claude-loop.sh}"
 
 ensure_one() {  # $1 = projeto
   local name="$1" sess proj
-  valid_name "$name" || { echo "[session] nome invalido: $name" >&2; return 1; }
+  valid_name "$name" || { echo "[session] invalid name: $name" >&2; return 1; }
   sess="$(sess_name "$name")"
   proj="$PROJECTS_DIR/$name"
 
@@ -38,7 +38,7 @@ ensure_one() {  # $1 = projeto
   # aqui, e uma aba de terminal ainda aberta (ou o watchdog no meio da exclusao) ressuscitava
   # o projeto apagado (bug do projeto "codigo", 2026-11-24). Quem cria pasta: o painel
   # (createProject) e o ensure_all (projeto default).
-  [ -d "$proj" ] || { echo "[session] projeto '$name' nao existe (pasta ausente) — nada a subir" >&2; return 1; }
+  [ -d "$proj" ] || { echo "[session] project '$name' does not exist (missing folder) — nothing to start" >&2; return 1; }
 
   if [ "$CFG_AUTOSTART" = "true" ]; then
     # supervisor como COMANDO DIRETO da sessao (sem send-keys -> sem race com o shell carregando)
@@ -46,7 +46,7 @@ ensure_one() {  # $1 = projeto
       "exec bash $(printf '%q' "$LOOP") $(printf '%q' "$sess") $(printf '%q' "$name")"
   else
     tmux new-session -d -s "$sess" -c "$proj" \
-      "printf '\\033[90m[dev-box] projeto \"%s\": Claude DESLIGADO (painel). Rode  claude  quando quiser.\\033[0m\\n' $(printf '%q' "$name"); exec bash -l"
+      "printf '\\033[90m[dev-box] project \"%s\": Claude OFF (panel). Run  claude  whenever you want.\\033[0m\\n' $(printf '%q' "$name"); exec bash -l"
   fi
 }
 
@@ -59,17 +59,17 @@ ensure_all() {
     case "$n" in .*) continue ;; esac                  # ignora pastas ocultas
     any=1
     # a falha de UMA sessao nunca aborta as outras (nem o boot)
-    ensure_one "$n" || echo "[session] aviso: projeto '$n' falhou ao subir" >&2
+    ensure_one "$n" || echo "[session] warning: project '$n' failed to start" >&2
   done
   if [ "$any" = "0" ]; then                            # container sem projeto -> cria o default
     n="${PROJECT_FOLDER:-projects}"
     mkdir -p "$PROJECTS_DIR/$n"
-    ensure_one "$n" || echo "[session] aviso: projeto default '$n' falhou ao subir" >&2
+    ensure_one "$n" || echo "[session] warning: default project '$n' failed to start" >&2
   fi
 }
 
 case "${1:-}" in
-  "") echo "uso: claude-session.sh <projeto> | --all" >&2; exit 2 ;;
+  "") echo "usage: claude-session.sh <project> | --all" >&2; exit 2 ;;
   --all) ensure_all ;;
   *) ensure_one "$1" ;;
 esac

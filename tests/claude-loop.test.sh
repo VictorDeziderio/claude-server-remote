@@ -58,12 +58,12 @@ rm -f "$T/.claude/.credentials.json"
 start
 sleep 4
 screen | grep -q '/remote-control\|Remote Control'; ok "sem login nao digita /remote-control" "$([ $? -ne 0 ] && echo 0 || echo 1)"
-grep -q 'sem login' "$T/.claude/logs/sessions.log" 2>/dev/null; ok "registra o motivo em sessions.log" "$?"
+grep -q 'not logged in' "$T/.claude/logs/sessions.log" 2>/dev/null; ok "registra o motivo em sessions.log" "$?"
 
 echo "== Claude OFF no panel.json -> shell"
 echo '{"projects":{"p1":{"autoStartClaude":false}}}' > "$T/.claude/panel.json"
 start
-wait_for 'Claude DESLIGADO' 5; ok "sessao sobe so com o shell" "$?"
+wait_for 'Claude (is )?OFF' 5; ok "sessao sobe so com o shell" "$?"
 
 echo "== projeto desligado (enabled=false) -> sem sessao"
 echo '{"projects":{"p1":{"enabled":false}}}' > "$T/.claude/panel.json"
@@ -104,7 +104,7 @@ EOF
 chmod +x "$T/bin/claude"
 mkdir -p "$T/.claude/run"; echo manual > "$T/.claude/run/claude-p1.paused"
 start
-wait_for 'Claude pausado' 8; ok "mostra 'pausado' em vez de abrir o Claude" "$?" "$(screen | tail -4 | tr '\n' '|')"
+wait_for 'Claude paused' 8; ok "mostra 'pausado' em vez de abrir o Claude" "$?" "$(screen | tail -4 | tr '\n' '|')"
 screen | grep -q '? for shortcuts'; ok "Claude nao abriu enquanto pausado" "$([ $? -ne 0 ] && echo 0 || echo 1)"
 rm -f "$T/.claude/run/claude-p1.paused"
 wait_for '\? for shortcuts' 12; ok "tirou o flag -> Claude abre" "$?"
@@ -118,7 +118,7 @@ EOF
 chmod +x "$T/bin/claude"
 : > "$T/.claude/run/alerts.jsonl"
 MAX_FAST_FAILS=2 start
-wait_for 'rapido demais' 20; ok "cai no shell apos falhas rapidas seguidas" "$?" "$(screen | tail -4 | tr '\n' '|')"
+wait_for 'too fast' 20; ok "cai no shell apos falhas rapidas seguidas" "$?" "$(screen | tail -4 | tr '\n' '|')"
 grep -q '"kind":"crash-loop"' "$T/.claude/run/alerts.jsonl"; ok "grava alerta crash-loop" "$?"
 
 echo "== projeto apagado nao renasce (bug do projeto \"codigo\")"

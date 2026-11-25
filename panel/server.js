@@ -209,7 +209,7 @@ server.listen(cfg.PORT, cfg.BIND, () => {
   notify.start(); // Web Push: hooks, alerts, login, boot
 });
 
-// shutdown limpo (tini/EasyPanel mandam SIGTERM): fecha PTYs/SSE (os tmux continuam vivos)
+// shutdown limpo (tini/docker stop mandam SIGTERM): fecha PTYs/SSE (os tmux continuam vivos)
 for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => {
     log('info', 'encerrando', { sig });
