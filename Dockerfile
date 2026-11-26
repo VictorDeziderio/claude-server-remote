@@ -50,7 +50,7 @@ RUN npm run build \
 # ============================================================================
 # Stage 2: final image (Ubuntu 24.04 + toolchain + Claude Code + Playwright + tmux + Caddy)
 # ============================================================================
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 ARG CLAUDE_CODE_VERSION
 ARG PLAYWRIGHT_VERSION
 ARG PLAYWRIGHT_BROWSERS
