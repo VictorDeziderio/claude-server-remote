@@ -1,7 +1,7 @@
 'use strict';
 const { tr } = require('./i18n');
 // Backup: status per project (read from backup.log), "backup now" (runs backup.sh), and backup of the
-// CONFIG (~/.claude + ~/.claude.json): rotated local tarball (start.sh schedules it 1x/day) +
+// CONFIG (~/.claude + ~/.claude.json + ~/.claude-accounts): rotated local tarball (start.sh schedules it 1x/day) +
 // direct download from the panel (stream `tar czf -`).
 const fs = require('fs');
 const path = require('path');
@@ -86,8 +86,9 @@ function downloadConfig(res, file, full) {
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '-' + process.pid;
   const name = `config-${ts}${full ? '-full' : ''}.tgz`;
   const args = ['czf', '-', '-C', cfg.HOME, '--ignore-failed-read'];
-  if (!full) args.push('--exclude=.claude/projects', '--exclude=.claude/logs', '--exclude=.claude/run', '--exclude=.claude/todos', '--exclude=.claude/shell-snapshots');
-  args.push('.claude', '.claude.json');
+  if (!full) args.push('--exclude=.claude/projects', '--exclude=.claude/logs', '--exclude=.claude/run', '--exclude=.claude/todos', '--exclude=.claude/shell-snapshots', '--exclude=.claude-accounts/*/shell-snapshots');
+  // + the extra Claude accounts (server/accounts.js): tar keeps their shared entries as symlinks (not twice)
+  args.push('.claude', '.claude.json', '.claude-accounts');
   res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
   const tar = spawn('tar', args, { cwd: cfg.HOME });
   tar.stdout.pipe(res);

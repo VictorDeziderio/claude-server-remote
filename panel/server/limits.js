@@ -26,7 +26,7 @@ const { tr } = require('./i18n');
  *   USAGE_THRESHOLDS=80,95          % levels that fire threshold events / panel alerts
  *   USAGE_MIN_REFRESH_SECONDS=15    min gap between manual refreshes (POST /api/limits/refresh)
  *   USAGE_API_BASE_URL              default https://api.anthropic.com (tests point it at a fake)
- *   USAGE_CREDENTIALS_FILE          default ~/.claude/.credentials.json
+ *   USAGE_CREDENTIALS_FILE          default ~/.claude/.credentials.json (the "default" account)
  *   ANTHROPIC_ADMIN_KEY             Admin API key (sk-ant-admin...) -> API spend card
  *   ANTHROPIC_API_BUDGET_USD        monthly budget -> % + threshold alerts for API spend
  *
@@ -39,6 +39,11 @@ const { tr } = require('./i18n');
  *   Threshold crossings are also appended to RUN_DIR/alerts.jsonl (kind "usage"), so they show
  *   up in the panel's alert list like the other alerts.
  *   limits.snapshot() returns the last public snapshot (no secrets).
+ *
+ * Several Claude accounts (server/accounts.js): `claude` is the DEFAULT account (unchanged shape, so
+ * the dashboard widget / auto-resume / old caches keep working); every extra account gets the same
+ * object in `accounts[<id>]`, read from <its config dir>/.credentials.json (or its pasted
+ * long-lived token). Threshold events of an extra account carry `account` and its label.
  */
 const fs = require('fs');
 const path = require('path');
@@ -46,6 +51,7 @@ const crypto = require('crypto');
 const EventEmitter = require('events');
 const cfg = require('./config');
 const { log } = require('./util');
+const accounts = require('./accounts');
 
 const num = (v, def) => { const n = Number(v); return Number.isFinite(n) ? n : def; };
 const S = {
@@ -68,15 +74,18 @@ const bus = new EventEmitter();
 bus.setMaxListeners(50);
 const fp = (tok) => crypto.createHash('sha256').update(tok).digest('hex').slice(0, 16); // never store the token
 
+const blankClaude = () => ({ status: 'pending', message: 'Not checked yet', windows: [], extra: null, plan: '', fetchedAt: 0, stale: false });
 let state = {
-  claude: { status: 'pending', message: 'Not checked yet', windows: [], extra: null, plan: '', fetchedAt: 0, stale: false },
+  claude: blankClaude(),
+  accounts: {},             // extra account id -> same shape as `claude`
   api: { configured: !!adminKey(), status: adminKey() ? 'pending' : 'not_configured', message: '', currency: 'USD', today: null, month: null, monthStart: '', budget: S.budgetUsd || null, percent: null, fetchedAt: 0, stale: false,
     note: 'Anthropic has no public balance endpoint: this is spend from the Admin API cost report (UTC days, may lag ~5 min).' },
   updatedAt: 0,
   nextPollAt: 0,
 };
 let alerted = {};          // `${source}:${id}:${resetsAt}` -> highest threshold already fired
-let rejectedToken = '';    // fingerprint of a token that got 401 (not retried)
+let rejectedToken = '';    // fingerprint of a token that got 401 (not retried) — default account
+let rejectedTokens = {};   // same, per extra account
 let failures = 0;
 let timer = null;
 let inflight = null;
@@ -87,6 +96,10 @@ function loadCache() {
   try {
     const c = JSON.parse(fs.readFileSync(S.cacheFile, 'utf8'));
     if (c && c.claude) state.claude = { ...state.claude, ...c.claude, stale: true };
+    if (c && c.accounts && typeof c.accounts === 'object') {
+      for (const [id, v] of Object.entries(c.accounts)) if (accounts.ID_RX.test(id) && v) state.accounts[id] = { ...blankClaude(), ...v, stale: true };
+    }
+    if (c && c.rejectedTokens && typeof c.rejectedTokens === 'object') rejectedTokens = c.rejectedTokens;
     if (c && c.api && adminKey()) state.api = { ...state.api, ...c.api, configured: true, stale: true };
     if (c && c.alerted && typeof c.alerted === 'object') alerted = c.alerted;
     if (c && typeof c.rejectedToken === 'string') rejectedToken = c.rejectedToken;
@@ -97,7 +110,7 @@ function saveCache() {
   try {
     fs.mkdirSync(path.dirname(S.cacheFile), { recursive: true });
     const tmp = S.cacheFile + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ claude: state.claude, api: state.api, updatedAt: state.updatedAt, alerted, rejectedToken }), { mode: 0o600 });
+    fs.writeFileSync(tmp, JSON.stringify({ claude: state.claude, accounts: state.accounts, api: state.api, updatedAt: state.updatedAt, alerted, rejectedToken, rejectedTokens }), { mode: 0o600 });
     fs.renameSync(tmp, S.cacheFile);
   } catch (e) { log('error', 'limits cache', { err: e.message }); }
 }
@@ -115,14 +128,19 @@ async function getJson(url, headers) {
 }
 
 // ---------- Claude subscription ----------
-function readToken() {
+// token of an account: its OAuth credentials file, else its pasted long-lived token (source 'token'),
+// else (default account only) CLAUDE_CODE_OAUTH_TOKEN from the environment
+function readToken(id = accounts.DEFAULT) {
+  const isDef = accounts.isDefault(id);
   let j = null;
-  try { j = JSON.parse(fs.readFileSync(S.credFile, 'utf8')); } catch { /* missing / unreadable */ }
+  try { j = JSON.parse(fs.readFileSync(isDef ? S.credFile : accounts.credFileOf(id), 'utf8')); } catch { /* missing / unreadable */ }
   const o = j && j.claudeAiOauth;
   if (o && typeof o.accessToken === 'string' && o.accessToken) {
-    return { token: o.accessToken, expiresAt: num(o.expiresAt, 0), plan: String(o.subscriptionType || '') };
+    return { token: o.accessToken, expiresAt: num(o.expiresAt, 0), plan: String(o.subscriptionType || ''), source: 'oauth' };
   }
-  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) return { token: process.env.CLAUDE_CODE_OAUTH_TOKEN, expiresAt: 0, plan: '' };
+  const pasted = accounts.readToken(id);
+  if (pasted) return { token: pasted, expiresAt: 0, plan: '', source: 'token' };
+  if (isDef && process.env.CLAUDE_CODE_OAUTH_TOKEN) return { token: process.env.CLAUDE_CODE_OAUTH_TOKEN, expiresAt: 0, plan: '', source: 'env' };
   return null;
 }
 
@@ -182,9 +200,12 @@ function parseClaude(d) {
   return { windows, extra };
 }
 
-async function pollClaude() {
-  const c = state.claude;
-  const cred = readToken();
+async function pollClaude(id = accounts.DEFAULT) {
+  const isDef = accounts.isDefault(id);
+  const c = isDef ? state.claude : (state.accounts[id] || (state.accounts[id] = blankClaude()));
+  const rejected = isDef ? rejectedToken : rejectedTokens[id] || '';
+  const reject = (f) => { if (isDef) rejectedToken = f; else rejectedTokens[id] = f; };
+  const cred = readToken(id);
   if (!cred) return Object.assign(c, { status: 'not_logged_in', message: 'Claude is not logged in on this server (or uses an API key, which has no plan limits).', windows: [], extra: null, plan: '', stale: false });
   c.plan = cred.plan;
   const f = fp(cred.token);
@@ -192,13 +213,16 @@ async function pollClaude() {
     // the CLI refreshes it on its next request; we never do. Re-read on the next poll.
     return Object.assign(c, { status: 'expired', message: 'The Claude login token has expired. It renews when Claude Code runs; if it stays like this, reconnect Claude.', stale: c.windows.length > 0 });
   }
-  if (f === rejectedToken) return Object.assign(c, { status: 'auth_error', message: 'Claude rejected the login token. Reconnect Claude.', stale: c.windows.length > 0 });
+  // a long-lived token (setup-token) may not be allowed to read the usage: not a login problem
+  const noUsage = () => Object.assign(c, { status: 'no_usage', message: 'Usage limits are not available for a long-lived token (setup-token).', windows: [], extra: null, stale: false });
+  if (f === rejected) return cred.source === 'token' ? noUsage() : Object.assign(c, { status: 'auth_error', message: 'Claude rejected the login token. Reconnect Claude.', stale: c.windows.length > 0 });
   const r = await getJson(`${S.base}/api/oauth/usage?skip_spend=1`, {
     Authorization: `Bearer ${cred.token}`, 'anthropic-beta': 'oauth-2025-04-20', 'Content-Type': 'application/json',
   });
   if (r.status === 401 || r.status === 403) {
-    rejectedToken = f;
-    log('warn', 'limits: claude usage auth error', { status: r.status });
+    reject(f);
+    log('warn', 'limits: claude usage auth error', { status: r.status, account: id });
+    if (cred.source === 'token') return noUsage();
     return Object.assign(c, { status: 'auth_error', message: 'Claude rejected the login token. Reconnect Claude.', stale: c.windows.length > 0 });
   }
   if (r.status !== 200 || !r.data) {
@@ -261,6 +285,12 @@ function checkThresholds() {
   const items = [];
   if (state.claude.status === 'ok') for (const w of state.claude.windows) items.push({ source: 'claude', ...w });
   if (state.claude.status === 'ok' && state.claude.extra && state.claude.extra.percent !== null) items.push({ source: 'claude', id: 'extra_usage', label: 'Extra usage', percent: state.claude.extra.percent, resetsAt: null });
+  // extra accounts: own keys (account/window) and the account label in front of the window label
+  for (const [acct, c] of Object.entries(state.accounts)) {
+    if (c.status !== 'ok') continue;
+    const name = accounts.labelOf(acct);
+    for (const w of c.windows) items.push({ source: 'claude', ...w, id: `${acct}/${w.id}`, label: `${name} · ${w.label}`, account: acct });
+  }
   if (state.api.status === 'ok' && state.api.percent !== null) items.push({ source: 'api', id: 'month', label: 'API spend this month', percent: state.api.percent, resetsAt: state.api.monthStart });
   const now = Date.now();
   // forget periods that already reset (keeps the file small). Claude keys carry the reset time,
@@ -278,7 +308,7 @@ function checkThresholds() {
     if ((alerted[key] || 0) >= top) continue;
     alerted[key] = top;
     const ev = { source: it.source, id: it.id, label: it.label, percent: it.percent, threshold: top, resetsAt: it.resetsAt || null,
-      level: top === S.thresholds[S.thresholds.length - 1] ? 'error' : 'warn', t: now };
+      level: top === S.thresholds[S.thresholds.length - 1] ? 'error' : 'warn', t: now, ...(it.account ? { account: it.account } : {}) };
     try {
       fs.mkdirSync(path.dirname(S.alertsFile), { recursive: true });
       const when = ev.resetsAt && ev.source === 'claude' ? ` (resets ${new Date(ev.resetsAt).toISOString().slice(0, 16).replace('T', ' ')} UTC)` : '';
@@ -298,7 +328,8 @@ function emit(name, payload) {
 // ---------- loop ----------
 function snapshot() {
   return { ok: true, enabled: S.enabled, intervalSec: S.intervalMs / 1000, thresholds: S.thresholds.slice(), updatedAt: state.updatedAt, nextPollAt: state.nextPollAt,
-    claude: { ...state.claude, windows: state.claude.windows.map((w) => ({ ...w })) }, api: { ...state.api } };
+    claude: { ...state.claude, windows: state.claude.windows.map((w) => ({ ...w })) }, api: { ...state.api },
+    accounts: Object.fromEntries(Object.entries(state.accounts).map(([id, c]) => [id, { ...c, windows: c.windows.map((w) => ({ ...w })), label: accounts.labelOf(id) }])) };
 }
 
 async function pollOnce() {
@@ -312,7 +343,18 @@ async function pollOnce() {
       errMs = Math.max(errMs, (e.retryAfter || 0) * 1000, 1);
     }
   };
-  await run(pollClaude, 'claude');
+  await run(() => pollClaude(), 'claude');
+  // extra accounts (removed ones leave the state); a failure of one does not stop the others
+  const ids = accounts.list().filter((a) => !a.isDefault).map((a) => a.id);
+  for (const id of Object.keys(state.accounts)) if (!ids.includes(id)) { delete state.accounts[id]; delete rejectedTokens[id]; }
+  for (const id of ids) {
+    try { await pollClaude(id); } catch (e) {
+      const msg = e.name === 'AbortError' ? 'Request timed out' : e.message;
+      log('warn', 'limits poll failed', { part: 'claude', account: id, err: msg });
+      Object.assign(state.accounts[id], { status: 'error', message: `Could not refresh: ${msg}. Showing the last known values.`, stale: true });
+      errMs = Math.max(errMs, (e.retryAfter || 0) * 1000, 1);
+    }
+  }
   await run(pollApi, 'api');
   state.updatedAt = Date.now();
   failures = errMs ? failures + 1 : 0;

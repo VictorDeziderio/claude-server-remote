@@ -26,7 +26,13 @@ const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-ui-'))
 fs.mkdirSync(path.join(ROOT, 'projects', 'demo'), { recursive: true })
 const PORT = 7900 + Math.floor(Math.random() * 90), BASE = `http://127.0.0.1:${PORT}`
 const PASS = 'ui-test-only-password'
-const env = { ...process.env, HOME: ROOT, PANEL_PORT: String(PORT), PANEL_PASSWORD: PASS, PANEL_LOGIN: 'admin', PROJECTS_DIR: path.join(ROOT, 'projects'), PANEL_CONFIG: path.join(ROOT, 'panel.json'), USAGE_MONITOR: '0', AUTO_RESUME: '0', DEPLOY_WEBHOOK_URL: 'http://127.0.0.1:9/never-called' }
+// isolated tmux socket + no-op session script + fake `claude`: choosing an account restarts the
+// project's session and logging an account in starts `claude` — nothing real may run or be touched
+const UIBIN = path.join(ROOT, 'bin')
+fs.mkdirSync(UIBIN)
+fs.writeFileSync(path.join(UIBIN, 'claude'), '#!/usr/bin/env bash\n[ "$1" = "--version" ] && { echo "9.9.9 (Claude Code)"; exit 0; }\necho " Choose the text style that looks best"; sleep 600\n', { mode: 0o755 })
+fs.writeFileSync(path.join(ROOT, 'session.sh'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 })
+const env = { ...process.env, PATH: UIBIN + path.delimiter + process.env.PATH, TMUX_TMPDIR: ROOT, SESSION_SCRIPT: path.join(ROOT, 'session.sh'), HOME: ROOT, PANEL_PORT: String(PORT), PANEL_PASSWORD: PASS, PANEL_LOGIN: 'admin', PROJECTS_DIR: path.join(ROOT, 'projects'), PANEL_CONFIG: path.join(ROOT, 'panel.json'), USAGE_MONITOR: '0', AUTO_RESUME: '0', DEPLOY_WEBHOOK_URL: 'http://127.0.0.1:9/never-called' }
 delete env.TMUX; delete env.TMUX_PANE
 const srv = spawn(process.execPath, ['server.js'], { cwd: PANEL, env, stdio: ['ignore', 'pipe', 'pipe'] })
 let logs = ''; srv.stdout.on('data', (d) => { logs += d }); srv.stderr.on('data', (d) => { logs += d })
@@ -260,6 +266,49 @@ try {
   await modal.waitFor()
   const mb = await modal.boundingBox()
   ok('mobile: modal fits inside the screen', mb && mb.x >= 0 && mb.x + mb.width <= 375 && mb.y >= 0 && mb.y + mb.height <= 640, JSON.stringify(mb))
+
+  // ---- several Claude accounts: add one on /account, choose it in Configure, the card shows it
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto(BASE + '/account')
+  await page.locator('[data-testid="account-new-label"]').fill('Work')
+  await page.getByRole('button', { name: /add account/i }).click()
+  const loginModal = page.getByRole('dialog', { name: /log in: work/i })
+  ok('add account -> its login opens right away', await loginModal.waitFor({ timeout: 8000 }).then(() => true).catch(() => false))
+  await loginModal.getByRole('button', { name: /close/i }).first().click()
+  await page.locator('[data-testid="account-row"]').nth(1).waitFor({ timeout: 5000 }).catch(() => {})
+  const rows = await page.locator('[data-testid="account-row"]').count()
+  const newId = await page.locator('[data-testid="account-row"]').nth(1).getAttribute('data-account').catch(() => '')
+  ok('account page lists the default + the new account', rows === 2 && /^work-[0-9a-f]{4}$/.test(newId || ''), `${rows} ${newId}`)
+  await page.goto(BASE + '/dashboard')
+  await page.locator('button[title^="configure"]:visible').first().click()
+  const dr = page.locator('[data-slot="drawer"]')
+  await dr.waitFor({ timeout: 5000 })
+  const sel = dr.locator('[data-testid="project-account"]')
+  ok('Configure has the account select with both accounts', (await sel.locator('option').count()) === 2)
+  await sel.selectOption(newId)
+  const conf = page.getByRole('dialog', { name: /switch claude account/i })
+  ok('changing the account asks first (restarts the session)', await conf.waitFor({ timeout: 5000 }).then(() => true).catch(() => false))
+  await conf.getByRole('button', { name: /switch and restart/i }).click()
+  await page.waitForFunction(() => document.querySelector('[data-testid="project-account"]')?.value?.startsWith('work-'), null, { timeout: 8000 }).catch(() => {})
+  ok('select shows the chosen account', ((await sel.inputValue().catch(() => '')) || '') === newId)
+  ok('panel.json has the project account', (JSON.parse(fs.readFileSync(path.join(ROOT, 'panel.json'), 'utf8')).projects.demo || {}).account === newId)
+  await page.keyboard.press('Escape')
+  const badge = page.locator('[data-testid="account-badge"]').first()
+  ok('project card shows the account label', await badge.waitFor({ timeout: 6000 }).then(async () => /Work/.test(await badge.innerText())).catch(() => false))
+  // phone (iPhone 390x844): no horizontal overflow on the dashboard and on /account
+  await page.setViewportSize({ width: 390, height: 844 })
+  const overflowX = () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+  await page.waitForTimeout(400)
+  const od = await overflowX()
+  ok(`phone: dashboard with the account badge has no horizontal overflow (${od}px)`, od <= 0 && await badge.isVisible(), String(od))
+  await page.goto(BASE + '/account'); await page.locator('[data-testid="account-row"]').nth(1).waitFor({ timeout: 5000 }).catch(() => {})
+  await page.waitForTimeout(400)
+  const oa = await overflowX()
+  ok(`phone: account page has no horizontal overflow (${oa}px)`, oa <= 0, String(oa))
+  await page.goto(BASE + '/dashboard'); await page.locator('button[title^="configure"]:visible').first().click()
+  await page.locator('[data-slot="drawer"] [data-testid="project-account"]').waitFor({ timeout: 5000 })
+  const sb = await page.locator('[data-slot="drawer"] [data-testid="project-account"]').boundingBox()
+  ok('phone: the account select fits the drawer', sb && sb.x >= 0 && sb.x + sb.width <= 390, JSON.stringify(sb))
 } catch (e) {
   ok('ui test ran to the end', false, e.message + '\n' + logs.slice(-600))
 } finally {

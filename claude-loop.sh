@@ -7,6 +7,7 @@
 #   - autoRemote=true -> once the TUI is ready, sends /remote-control <name> (if logged in)
 #   - initLine        -> goes as the initial prompt (`claude "<line>"`)
 #   - <session>.resume -> `claude --resume <id>` (History -> "Continue" in the panel)
+#   - account         -> CLAUDE_CONFIG_DIR of the project's Claude account (not for "default")
 # Ctrl-C in the 3s window between one Claude and the next also drops to the shell.
 #
 # Flag ~/.claude/run/<session>.running exists while Claude runs (the panel reads this flag).
@@ -81,7 +82,7 @@ accept_trust_prompt() {
 send_remote_when_ready() {  # $1 = comando
   local cmd="$1" waited=0 attempt
   sleep "$DELAY"
-  is_logged_in || { slog "remote: Claude is not logged in — did not send $cmd"; return 0; }
+  is_logged_in "${ACCOUNT_DIR:-}" || { slog "remote: Claude is not logged in — did not send $cmd"; return 0; }
   until tui_ready; do
     sleep 3; waited=$((waited + 3))
     [ "$waited" -ge 120 ] && { slog "remote: TUI not ready after 120s — sending anyway"; break; }
@@ -170,6 +171,26 @@ while true; do
     slog "resumed"
   fi
 
+  # Claude account of the project (panel -> Configure -> Account), reread on every start like the rest
+  # of the config. Not default -> CLAUDE_CONFIG_DIR = its own dir (only the login differs: the history,
+  # settings, skills... are symlinks to ~/.claude, see account_prepare). A pasted long-lived token
+  # (ACCOUNT_TOKEN_FILE) goes as CLAUDE_CODE_OAUTH_TOKEN; never printed or logged.
+  ACCOUNT_DIR="$(account_dir "$CFG_ACCOUNT")"
+  if [ -n "$ACCOUNT_DIR" ]; then
+    account_prepare "$ACCOUNT_DIR"
+    export CLAUDE_CONFIG_DIR="$ACCOUNT_DIR"
+  else
+    [ "$CFG_ACCOUNT" = "default" ] || slog "account: '$CFG_ACCOUNT' does not exist — using the default account"
+    unset CLAUDE_CONFIG_DIR
+  fi
+  TOKEN_FILE="${ACCOUNT_DIR:-$DEVBOX_HOME/.claude}/$ACCOUNT_TOKEN_FILE"
+  if [ -s "$TOKEN_FILE" ]; then
+    CLAUDE_CODE_OAUTH_TOKEN="$(head -n1 "$TOKEN_FILE" | tr -d '[:space:]')"; export CLAUDE_CODE_OAUTH_TOKEN
+  elif [ -n "${LOOP_SET_TOKEN:-}" ]; then
+    unset CLAUDE_CODE_OAUTH_TOKEN   # removed in the panel since the last start
+  fi
+  [ -s "$TOKEN_FILE" ] && LOOP_SET_TOKEN=1 || LOOP_SET_TOKEN=""
+
   # accepts "trust this folder" by itself (always runs, even without remote): without it nothing else
   # in this session moves on -- the TUI never gets ready, and the /remote-control below cannot run
   accept_trust_prompt &
@@ -213,7 +234,7 @@ while true; do
   fi
 
   : > "$RUN_FLAG"
-  slog "claude started${RESUME_ID:+ (resume $RESUME_ID)}${CONTINUE:+ (continue)}"
+  slog "claude started${RESUME_ID:+ (resume $RESUME_ID)}${CONTINUE:+ (continue)}${ACCOUNT_DIR:+ (account $CFG_ACCOUNT)}"
   T0=$(date +%s)
   # resuming a conversation, the "first line" is NOT sent again (it would repeat the request on every restart)
   if [ -n "$RESUME_ID" ]; then

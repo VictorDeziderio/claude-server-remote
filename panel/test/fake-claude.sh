@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 [ "$1" = "--version" ] && { echo "9.9.9 (Claude Code)"; exit 0; }
 PICKS="$HOME/.fake-claude-picks"
+# like the real one: the config dir (credentials, .claude.json) is CLAUDE_CONFIG_DIR when set, else ~/.claude
+CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 cls() { printf '\033[H\033[2J'; }
 key() { local k k2; IFS= read -rsn1 k; if [ "$k" = $'\e' ]; then IFS= read -rsn2 -t 0.2 k2; k="ESC$k2"; fi; KEY="$k"; }
 wait_enter() { while :; do key; [ -z "$KEY" ] && return; done; }
@@ -30,8 +32,8 @@ do_login() {
     [ "$code" = "good-code" ] && break
     echo " OAuth error: Invalid code"; sleep 600; exit 1
   done
-  mkdir -p "$HOME/.claude"; echo '{"ok":1}' > "$HOME/.claude/.credentials.json"
-  cls; echo " Login successful. Press Enter to continue"; wait_enter; echo "login-success" >> "$PICKS"
+  mkdir -p "$CFG"; echo '{"ok":1}' > "$CFG/.credentials.json"
+  cls; echo " Login successful. Press Enter to continue"; wait_enter; echo "login-success cfg=$CFG" >> "$PICKS"
 }
 repl() {
   while :; do
@@ -40,7 +42,7 @@ repl() {
     read -r line; [ "$line" = "/login" ] && { echo "repl=/login" >> "$PICKS"; do_login; }
   done
 }
-if [ -s "$HOME/.claude/.credentials.json" ]; then repl; fi
+if [ -s "$CFG/.credentials.json" ]; then repl; fi
 CUR=0 menu theme " Let's get started.\n Choose the text style that looks best with your terminal\n To change this later, run /theme" \
   "✔ Auto (match terminal)" "Dark mode" "Light mode"
 do_login

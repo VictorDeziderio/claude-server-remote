@@ -41,5 +41,17 @@ HOME="$H" VOLUME_BACKUP_DIR="" DEVBOX_LIB=/nonexistent bash "$DIR/backup.sh" --v
 ok "not configured -> does nothing, no error" $?
 grep -q "ok    (volume):" "$H/.claude/logs/backup.log"; ok "result goes to backup.log (shown in the panel)" $?
 
+# --config: the extra Claude accounts go in; their shared symlinks stay links (history is not copied twice)
+mkdir -p "$H/.claude-accounts/work" "$H/.claude/projects/-p"
+echo '{"x":1}' > "$H/.claude-accounts/work/.credentials.json"; echo conv > "$H/.claude/projects/-p/s.jsonl"
+ln -s "$H/.claude/projects" "$H/.claude-accounts/work/projects"
+HOME="$H" DEVBOX_LIB=/nonexistent bash "$DIR/backup.sh" --config >/dev/null 2>&1; ok "config backup succeeds" $?
+tgz="$(ls -1t "$H/.claude-backups"/config-*.tgz 2>/dev/null | head -1)"
+list="$(tar tvzf "$tgz" 2>/dev/null)"
+ok "config backup has the account credentials" "$(grep -q '\.claude-accounts/work/\.credentials\.json' <<<"$list" && echo 0 || echo 1)"
+ok "shared dir of the account is stored as a symlink, not its content" "$(grep -qE '^l.*\.claude-accounts/work/projects -> ' <<<"$list" && ! grep -q '\.claude-accounts/work/projects/' <<<"$list" && echo 0 || echo 1)"
+rm -rf "$H/.claude-accounts"; rm -f "$H/.claude-backups"/config-*.tgz
+HOME="$H" DEVBOX_LIB=/nonexistent bash "$DIR/backup.sh" --config >/dev/null 2>&1; ok "config backup without any extra account still succeeds" $?
+
 echo "$passes PASS, $fails FAIL"
 [ "$fails" = 0 ]

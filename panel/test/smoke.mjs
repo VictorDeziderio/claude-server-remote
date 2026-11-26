@@ -748,6 +748,98 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
       r = await j('POST', '/api/claude/login/code', { code: 'good-code' })
       ls = await waitPhase(['success', 'error', 'attention'], 40000)
       ok('troca de conta: sucesso (sem pedir /login de novo)', ls.phase === 'success' && (picks().match(/repl=\/login/g) || []).length === 1, JSON.stringify({ phase: ls.phase, msg: ls.msg, picks: picks() }))
+      // ---- several Claude accounts (server/accounts.js): created, logged in with its OWN config dir,
+      // chosen per project (session restarted with CLAUDE_CONFIG_DIR), history shared by symlink
+      {
+        const ACC = path.join(ROOT, '.claude-accounts')
+        const defCreds = path.join(ROOT, '.claude', '.credentials.json')
+        const defCredsBefore = fs.readFileSync(defCreds, 'utf8')
+        fs.writeFileSync(path.join(ROOT, '.claude', 'settings.json'), '{"theme":"dark"}\n')
+        // default .claude.json with an account + onboarding/trust flags + an account-tied cache
+        fs.writeFileSync(path.join(ROOT, '.claude.json'), JSON.stringify({ hasCompletedOnboarding: true, projects: { [ROOT]: { hasTrustDialogAccepted: true } }, oauthAccount: { emailAddress: 'main@example.invalid' }, cachedUsageUtilization: { x: 1 }, mcpServers: { m: {} } }))
+        r = await j('GET', '/api/accounts')
+        ok('accounts: only the default one at first', r.data.ok && r.data.accounts.length === 1 && r.data.accounts[0].id === 'default' && r.data.accounts[0].isDefault && r.data.accounts[0].projects.includes('demo'), JSON.stringify(r.data))
+        r = await j('POST', '/api/accounts/create', { label: '' }); ok('accounts: empty name refused', r.data.ok === false)
+        r = await j('POST', '/api/accounts/create', { label: 'Work Açaí' })
+        const id = r.data.id, AD = path.join(ACC, id || 'x')
+        ok('accounts: created with an id from the name', r.data.ok && /^work-acai-[0-9a-f]{4}$/.test(id || ''), JSON.stringify(r.data))
+        ok('accounts: own config dir 0700', fs.existsSync(AD) && (fs.statSync(AD).mode & 0o777) === 0o700)
+        ok('accounts: registry file is 0600', (fs.statSync(path.join(ROOT, '.claude', '.panel-accounts.json')).mode & 0o777) === 0o600)
+        const seeded = JSON.parse(fs.readFileSync(path.join(AD, '.claude.json'), 'utf8'))
+        ok('accounts: .claude.json seeded from the default one minus the account identity/caches', seeded.hasCompletedOnboarding === true && seeded.projects[ROOT].hasTrustDialogAccepted && seeded.mcpServers && !seeded.oauthAccount && !seeded.cachedUsageUtilization, JSON.stringify(seeded))
+        ok('accounts: projects/ (history) is a symlink to ~/.claude/projects', fs.lstatSync(path.join(AD, 'projects')).isSymbolicLink() && fs.realpathSync(path.join(AD, 'projects')) === fs.realpathSync(path.join(ROOT, '.claude', 'projects')))
+        ok('accounts: settings.json + skills/ shared by symlink', fs.lstatSync(path.join(AD, 'settings.json')).isSymbolicLink() && fs.lstatSync(path.join(AD, 'skills')).isSymbolicLink() && fs.existsSync(path.join(ROOT, '.claude', 'skills')))
+        ok('accounts: credentials are NOT shared', !fs.existsSync(path.join(AD, '.credentials.json')))
+        r = await j('GET', '/api/accounts')
+        const acc = () => r.data.accounts.find((a) => a.id === id) || {}
+        ok('accounts: listed, logged out, no project', acc().label === 'Work Açaí' && acc().logged === false && acc().projects.length === 0, JSON.stringify(acc()))
+
+        // login of THIS account: the login session runs with its CLAUDE_CONFIG_DIR
+        fs.writeFileSync(path.join(ROOT, '.fake-claude-picks'), '')
+        r = await j('POST', '/api/accounts/login', { id: 'nope' }); ok('accounts: login of an unknown account refused', r.data.ok === false)
+        r = await j('POST', '/api/accounts/login', { id }); ok('accounts: login start', r.data.ok && r.data.phase === 'starting', JSON.stringify(r.data))
+        ls = await waitPhase(['url', 'error', 'attention'], 40000)
+        ok('accounts: login reaches the link (first-run screens of a fresh config dir)', ls.phase === 'url' && ls.account === id, JSON.stringify({ phase: ls.phase, screen: ls.screen?.slice(-300) }))
+        r = await j('POST', '/api/claude/login/code', { code: 'good-code' })
+        ls = await waitPhase(['success', 'error', 'attention'], 60000)
+        ok('accounts: login success', ls.phase === 'success' && ls.logged === true, JSON.stringify({ phase: ls.phase, msg: ls.msg, picks: picks() }))
+        ok('accounts: credentials written in the ACCOUNT dir', fs.existsSync(path.join(AD, '.credentials.json')) && picks().includes('cfg=' + AD), picks())
+        ok('accounts: default credentials untouched', fs.readFileSync(defCreds, 'utf8') === defCredsBefore)
+        r = await j('GET', '/api/accounts'); ok('accounts: now logged in', acc().logged === true && acc().method === 'oauth', JSON.stringify(acc()))
+
+        // usage per account: its own credentials file -> its own windows (token never leaves)
+        const ACC_TOKEN = 'acct-oauth-token-SECRET-777'
+        fs.writeFileSync(path.join(AD, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: ACC_TOKEN, expiresAt: Date.now() + 3600e3, subscriptionType: 'pro' } }))
+        fake.usageReqs.length = 0
+        r = await j('POST', '/api/limits/refresh', {})
+        const la = (r.data.accounts || {})[id] || {}
+        ok('accounts: limits polled per account (own token, own windows)', la.status === 'ok' && la.plan === 'pro' && la.windows.some((w) => w.id === 'five_hour') && la.label === 'Work Açaí' && fake.usageReqs.some((q) => q.auth === 'Bearer ' + ACC_TOKEN), JSON.stringify(la).slice(0, 300))
+        ok('accounts: default account limits still from its own file', r.data.claude.status === 'ok' && fake.usageReqs.some((q) => q.auth === 'Bearer ' + FAKE_TOKEN))
+        ok('accounts: no account token in the limits answer / cache', !JSON.stringify(r.data).includes(ACC_TOKEN) && !fs.readFileSync(path.join(ROOT, '.claude', 'run', 'usage-limits.json'), 'utf8').includes(ACC_TOKEN))
+
+        // long-lived token (claude setup-token) pasted per account
+        const LONG_TOK = 'sk-ant-oat01-' + 'Q'.repeat(60) + '-SECRET'
+        r = await j('POST', '/api/accounts/token', { id, token: 'not a token!' }); ok('accounts: malformed token refused', r.data.ok === false)
+        r = await j('POST', '/api/accounts/token', { id, token: LONG_TOK })
+        const tf = path.join(AD, '.oauth-token')
+        ok('accounts: token saved 0600 in the account dir', r.data.ok && fs.readFileSync(tf, 'utf8').trim() === LONG_TOK && (fs.statSync(tf).mode & 0o777) === 0o600 && !JSON.stringify(r.data).includes(LONG_TOK), JSON.stringify(r.data))
+        r = await j('GET', '/api/accounts'); ok('accounts: hasToken shown, token never sent back', acc().hasToken === true && !JSON.stringify(r.data).includes(LONG_TOK))
+
+        // the project runs with the chosen account: session recreated with CLAUDE_CONFIG_DIR
+        r = await j('POST', '/api/project/account', { name: 'demo', account: 'nope' }); ok('accounts: unknown account refused for a project', r.data.ok === false)
+        r = await j('POST', '/api/project/account', { name: 'demo', account: id })
+        ok('accounts: project switched (session restarted)', r.data.ok && /restarted/.test(r.data.msg), r.data.msg)
+        ok('accounts: panel.json keeps the account of the project', JSON.parse(fs.readFileSync(path.join(ROOT, '.claude', 'panel.json'), 'utf8')).projects.demo.account === id)
+        const envOut = spawnSync('tmux', ['show-environment', '-t', '=claude-demo', 'CLAUDE_CONFIG_DIR'], { env, encoding: 'utf8' }).stdout.trim()
+        ok('accounts: tmux session of the project has CLAUDE_CONFIG_DIR of the account', envOut === 'CLAUDE_CONFIG_DIR=' + AD, envOut)
+        await new Promise((s) => setTimeout(s, 2500))
+        r = await j('GET', '/api/state')
+        const dp = r.data.projects.find((x) => x.name === 'demo') || {}
+        ok('accounts: state has the project account + the accounts list', dp.account === id && r.data.accounts.some((a) => a.id === id && a.logged), JSON.stringify({ account: dp.account, accounts: r.data.accounts }))
+        r = await j('POST', '/api/project/account', { name: 'demo', account: id }); ok('accounts: same account again -> no restart, ok', r.data.ok && /already/.test(r.data.msg), r.data.msg)
+        r = await j('POST', '/api/accounts/remove', { id }); ok('accounts: remove refused while a project uses it', r.data.ok === false && /demo/.test(r.data.msg), r.data.msg)
+        r = await j('POST', '/api/accounts/remove', { id: 'default' }); ok('accounts: the default account cannot be removed', r.data.ok === false)
+        r = await j('POST', '/api/accounts/rename', { id: 'default', label: 'Personal' }); ok('accounts: rename the default one', r.data.ok)
+        r = await j('POST', '/api/accounts/rename', { id, label: 'Company' }); ok('accounts: rename an extra one', r.data.ok)
+        r = await j('GET', '/api/accounts'); ok('accounts: new labels listed', r.data.accounts[0].label === 'Personal' && acc().label === 'Company' && acc().projects.join() === 'demo')
+
+        // back to default: session without CLAUDE_CONFIG_DIR
+        r = await j('POST', '/api/project/account', { name: 'demo', account: 'default' }); ok('accounts: back to the default account', r.data.ok, r.data.msg)
+        ok('accounts: panel.json without account for the default one', !('account' in JSON.parse(fs.readFileSync(path.join(ROOT, '.claude', 'panel.json'), 'utf8')).projects.demo))
+        const envDef = spawnSync('tmux', ['show-environment', '-t', '=claude-demo', 'CLAUDE_CONFIG_DIR'], { env, encoding: 'utf8' })
+        ok('accounts: default account -> no CLAUDE_CONFIG_DIR in the session', !/^CLAUDE_CONFIG_DIR=/.test(envDef.stdout || ''), envDef.stdout + envDef.stderr)
+
+        // logout of one account leaves the others alone; remove keeps the shared history
+        r = await j('POST', '/api/accounts/logout', { id })
+        ok('accounts: logout removes only this account credentials + token', r.data.ok && !fs.existsSync(path.join(AD, '.credentials.json')) && !fs.existsSync(tf) && fs.readFileSync(defCreds, 'utf8') === defCredsBefore)
+        r = await j('POST', '/api/accounts/remove', { id })
+        ok('accounts: removed (dir gone)', r.data.ok && !fs.existsSync(AD), r.data.msg)
+        ok('accounts: removing it kept the shared history in ~/.claude/projects', fs.existsSync(path.join(encDir, 'abc123def456.jsonl')) && fs.existsSync(path.join(ROOT, '.claude', 'settings.json')))
+        const aud = fs.readFileSync(path.join(ROOT, '.claude', 'logs', 'audit.log'), 'utf8')
+        ok('accounts: actions audited, the token never', /"action":"accounts\.create"/.test(aud) && /"action":"accounts\.token"/.test(aud) && /"action":"project\.account"/.test(aud) && !aud.includes(LONG_TOK) && !aud.includes('not a token'))
+        ok('accounts: server log has no token', !logs.includes(LONG_TOK) && !logs.includes(ACC_TOKEN))
+        fs.rmSync(path.join(ROOT, '.claude.json'), { force: true })
+      }
       r = await j('POST', '/api/claude/login/cancel', {}); ok('login cancel', r.data.ok)
       const auditTxt = fs.readFileSync(path.join(ROOT, '.claude', 'logs', 'audit.log'), 'utf8')
       ok('audit nao grava o codigo de login', /login\.code/.test(auditTxt) && !/good-code/.test(auditTxt))

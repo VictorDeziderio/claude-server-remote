@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { UserRound, LogOut, LogIn, Check, ExternalLink, SquareTerminal, ShieldCheck, ShieldOff, Smartphone, Monitor, Trash2, Tag, ArrowUpCircle, CheckCircle2, AlertTriangle, RefreshCw, Loader2, Copy, Link2 } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { LogOut, LogIn, Check, ExternalLink, ShieldCheck, ShieldOff, Smartphone, Monitor, Trash2, Tag, ArrowUpCircle, CheckCircle2, AlertTriangle, RefreshCw, Loader2, Copy, Link2 } from 'lucide-react'
 import QRCode from 'qrcode'
 import { copyText } from '../lib/clipboard.js'
 import { Btn, Modal, Card, Dot, inputCls, Skeleton, InlineConfirm } from '../components/ui.jsx'
+import { AccountsCard, accountLabel } from '../components/Accounts.jsx'
 import { fmtAgo, fmtDate } from '../lib/format.js'
 import * as api from '../api.js'
 import { UsageDetails } from '../components/UsageLimits.jsx'
@@ -11,80 +12,35 @@ import { t } from '../lib/i18n.js'
 import { TR } from '../lib/i18n-rich.jsx'
 
 export default function Account({ data, onFlash, refresh }) {
-  const login = data.login || { logged: false, account: '', org: '', method: '' }
-  // /account?login=1 (the Dashboard's "logged out — click to log in" link) opens the login at once
+  // /account?login=1 (the Dashboard's "logged out — click to log in" link) opens the default account's login at once
   const [params, setParams] = useSearchParams()
-  const [showLogin, setShowLogin] = useState(() => params.get('login') === '1')
+  const [loginFor, setLoginFor] = useState(() => (params.get('login') === '1' ? 'default' : null)) // account id being logged in
+  const [reloadKey, setReloadKey] = useState(0)
   useEffect(() => {
     if (params.get('login')) setParams({}, { replace: true })
   }, [params, setParams])
-  const [busy, setBusy] = useState(false)
-  const [confirmLogout, setConfirmLogout] = useState(false)
-
-  const doLogout = async () => {
-    setBusy(true)
-    const r = await api.claudeLogout()
-    setBusy(false)
-    setConfirmLogout(false)
-    onFlash?.(r)
-    refresh?.()
-  }
+  const loginAccount = (data.accounts || []).find((a) => a.id === loginFor)
 
   return (
     <div className="space-y-6">
-      <Card>
-        <div className="flex items-start gap-4">
-          <div className="grid h-14 w-14 shrink-0 place-items-center rounded-lg bg-accent ring-1 ring-primary/30">
-            <UserRound className="h-7 w-7 text-primary" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <Dot on={login.logged} />
-              <span className={`min-w-0 truncate text-sm text-foreground ${login.logged && login.account ? 'font-mono' : ''}`}>{login.logged ? login.account || t('acc.connected') : t('acc.none')}</span>
-            </div>
-            {login.org && <div className="mt-1.5 text-sm text-muted-foreground">{t('acc.org', { org: login.org })}</div>}
-            <div className="mt-1.5 font-mono text-xs text-muted-foreground">
-              {t('acc.method')} {login.method || '—'} · {data.version || '?'}
-            </div>
-          </div>
-        </div>
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          {login.logged ? (
-            confirmLogout ? (
-              <InlineConfirm text={t('acc.logoutConfirm')} onYes={doLogout} onNo={() => setConfirmLogout(false)} busy={busy} />
-            ) : (
-              <>
-                <Btn variant="danger" onClick={() => setConfirmLogout(true)} className="px-4 py-2 text-sm">
-                  <LogOut className="h-4 w-4" /> {t('acc.logout')}
-                </Btn>
-                <Btn onClick={() => setShowLogin(true)} className="px-4 py-2 text-sm">
-                  <LogIn className="h-4 w-4" /> {t('acc.switch')}
-                </Btn>
-              </>
-            )
-          ) : (
-            <Btn variant="accent" onClick={() => setShowLogin(true)} className="px-4 py-2 text-sm">
-              <LogIn className="h-4 w-4" /> {t('acc.connect')}
-            </Btn>
-          )}
-          <Link to="/terminal/shell" className="inline-flex items-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm font-medium text-foreground transition hover:bg-accent">
-            <SquareTerminal className="h-4 w-4" /> {t('acc.openTerminal')}
-          </Link>
-        </div>
+      <AccountsCard version={data.version} onFlash={onFlash} onLogin={setLoginFor} reloadKey={reloadKey}>
         <p className="mt-3 text-xs text-muted-foreground">
           <TR k="acc.oauthInfo" />
         </p>
-      </Card>
+      </AccountsCard>
 
       <UsageDetails />
       <ClaudeVersionCard onFlash={onFlash} refresh={refresh} />
       <TwoFactorCard onFlash={onFlash} />
       <SessionsCard onFlash={onFlash} />
 
-      {showLogin && (
+      {loginFor && (
         <LoginModal
+          account={loginFor}
+          label={loginAccount ? accountLabel(loginAccount) : ''}
           onClose={() => {
-            setShowLogin(false)
+            setLoginFor(null)
+            setReloadKey((k) => k + 1)
             refresh?.()
           }}
           onFlash={onFlash}
@@ -448,7 +404,7 @@ const LOGIN_KEYS = [
   ['2', '2'],
 ]
 
-function LoginModal({ onClose, onFlash }) {
+function LoginModal({ account, label, onClose, onFlash }) {
   const [st, setSt] = useState({ phase: 'idle', url: '', msg: '', screen: '' })
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
@@ -458,10 +414,10 @@ function LoginModal({ onClose, onFlash }) {
   const begin = useCallback(async () => {
     setBusy(true)
     setCode('')
-    const r = await api.loginStart().catch((e) => ({ ok: false, phase: 'error', msg: e.message }))
+    const r = await api.loginStart(account).catch((e) => ({ ok: false, phase: 'error', msg: e.message }))
     setBusy(false)
     setSt(r)
-  }, [])
+  }, [account])
   useEffect(() => {
     begin()
   }, [begin])
@@ -509,7 +465,7 @@ function LoginModal({ onClose, onFlash }) {
   const idx = stepIndex(phase)
   const detail = working ? (SCREEN_TEXT[st.step] ? t(SCREEN_TEXT[st.step]) : '') : ''
   return (
-    <Modal title={t('login.modalTitle')} icon={LogIn} onClose={close} wide dismissible={false}>
+    <Modal title={label ? t('acct.loginTitle', { label }) : t('login.modalTitle')} icon={LogIn} onClose={close} wide dismissible={false}>
       <ol className="mb-4 flex items-center gap-2 text-xs">
         {STEPS.map((label, i) => (
           <li key={label} className="flex flex-1 items-center gap-2">

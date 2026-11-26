@@ -62,7 +62,16 @@ const D = {
   saveTurns: (obj) => { try { fs.mkdirSync(path.dirname(TURNS_FILE), { recursive: true }); fs.writeFileSync(TURNS_FILE, JSON.stringify(obj)); } catch (e) { log('error', 'autoresume: save turns', { err: e.message }); } },
   loadTurns: () => { try { return JSON.parse(fs.readFileSync(TURNS_FILE, 'utf8')) || {}; } catch { return {}; } },
   sessionMode: (project) => { try { return require('./projects').projConfig(project).sessionMode; } catch { return 'new'; } },
+  account: (project) => { try { return require('./projects').projConfig(project).account || 'default'; } catch { return 'default'; } },
 };
+
+// plan windows of the Claude account the project uses (server/accounts.js): the default account is
+// `claude` in the limits snapshot, the others are in `accounts[<id>]`
+function windowsOf(snap, project) {
+  const acct = project ? D.account(project) : 'default';
+  const c = !snap ? null : acct === 'default' ? snap.claude : (snap.accounts || {})[acct];
+  return c && Array.isArray(c.windows) ? c.windows : [];
+}
 
 let pending = {}; // project -> { since, at, tries, sentAt, why }
 let turns = {};   // project -> start time of the turn in progress (from the hooks)
@@ -71,12 +80,11 @@ let busy = false;
 
 const save = () => D.save(pending);
 
-// When does the limit end? The latest reset among the plan windows at 100% (all of them must
+// When does the limit end (for the account of `project`)? The latest reset among the plan windows at 100% (all of them must
 // be free). None at 100% (the hit came from another window, or the poller is off): the earliest
 // future reset among windows >= 90%; otherwise a fixed fallback.
-function resumeAt(now = D.now()) {
-  const snap = D.limits();
-  const wins = (snap && snap.claude && Array.isArray(snap.claude.windows) ? snap.claude.windows : [])
+function resumeAt(now = D.now(), project = '') {
+  const wins = windowsOf(D.limits(), project)
     .map((w) => ({ p: Number(w.percent), r: Date.parse(w.resetsAt || '') }))
     .filter((w) => Number.isFinite(w.p) && Number.isFinite(w.r) && w.r > now);
   const full = wins.filter((w) => w.p >= 100).map((w) => w.r);
@@ -94,7 +102,7 @@ function onHook(h, project, t = D.now()) {
   const p = pending[project];
   if (h.ev === 'StopFailure' && h.err === 'rate_limit') {
     if (!D.enabled()) return null;
-    const { at, why } = resumeAt(t);
+    const { at, why } = resumeAt(t, project);
     if (p && p.gaveUp) return null; // stays given up until the person types or a turn ends well
     pending[project] = { since: p ? p.since : t, at, why, tries: p ? p.tries : 0, sentAt: 0 };
     save();
@@ -131,8 +139,8 @@ async function tick() {
       // the window may still be full (limits polled late): ask again right before typing
       await D.refreshLimits();
       const t2 = D.now();
-      const stillFull = ((D.limits() || {}).claude?.windows || []).some((w) => Number(w.percent) >= 100 && Date.parse(w.resetsAt || '') > t2);
-      if (stillFull) { p.at = resumeAt(t2).at; changed = true; continue; }
+      const stillFull = windowsOf(D.limits(), project).some((w) => Number(w.percent) >= 100 && Date.parse(w.resetsAt || '') > t2);
+      if (stillFull) { p.at = resumeAt(t2, project).at; changed = true; continue; }
       const ok = await D.type(sess, S.text);
       p.tries += 1; p.sentAt = D.now(); p.at = p.sentAt + S.fallbackMs; changed = true;
       log('info', 'autoresume: sent', { project, ok, tries: p.tries });

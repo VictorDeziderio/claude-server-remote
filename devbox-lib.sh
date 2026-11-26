@@ -42,7 +42,7 @@ proj_config() {  # $1 = project
       try { c = JSON.parse(raw) || {}; } catch { c = {}; corrupt = true; }
     } catch { /* missing file: normal, falls back to the defaults below */ }
     if (corrupt) {
-      process.stdout.write("enabled=false\nautoStartClaude=false\nautoRemote=false\ninitLine=\nsessionMode=new\npinnedSession=\n");
+      process.stdout.write("enabled=false\nautoStartClaude=false\nautoRemote=false\ninitLine=\nsessionMode=new\npinnedSession=\naccount=default\n");
     } else {
       const d = c.defaults || {}, p = (c.projects && c.projects[proj]) || {};
       const pick = (k) => (k in p ? p[k] !== false : (k in d ? d[k] !== false : true));
@@ -50,19 +50,22 @@ proj_config() {  # $1 = project
       // sessionMode: new (default) | continue (latest conversation of the folder) | pinned (pinnedSession)
       const sm = ["new", "continue", "pinned"].includes(p.sessionMode) ? p.sessionMode : "new";
       const ps = typeof p.pinnedSession === "string" && /^[A-Za-z0-9_-]{6,80}$/.test(p.pinnedSession) ? p.pinnedSession : "";
+      // Claude account of the project (panel -> Configure -> Account); same id rule as valid_account
+      const ac = typeof p.account === "string" && /^[a-z0-9][a-z0-9-]{0,39}$/.test(p.account) ? p.account : "default";
       process.stdout.write(
         "enabled=" + pick("enabled") + "\nautoStartClaude=" + pick("autoStartClaude") +
         "\nautoRemote=" + pick("autoRemote") + "\ninitLine=" + Buffer.from(il).toString("base64") +
-        "\nsessionMode=" + sm + "\npinnedSession=" + ps + "\n");
+        "\nsessionMode=" + sm + "\npinnedSession=" + ps + "\naccount=" + ac + "\n");
     }
   ' "$PANEL_CONFIG" "$1" 2>/dev/null \
-    || printf 'enabled=false\nautoStartClaude=false\nautoRemote=false\ninitLine=\nsessionMode=new\npinnedSession=\n'
+    || printf 'enabled=false\nautoStartClaude=false\nautoRemote=false\ninitLine=\nsessionMode=new\npinnedSession=\naccount=default\n'
 }
 
-# loads the project config into CFG_* variables (CFG_ENABLED, CFG_AUTOSTART, CFG_REMOTE, CFG_INITLINE)
+# loads the project config into CFG_* variables (CFG_ENABLED, CFG_AUTOSTART, CFG_REMOTE, CFG_INITLINE,
+# CFG_SESSMODE, CFG_PINNED, CFG_ACCOUNT)
 load_proj_config() {  # $1 = project
   local line k v
-  CFG_ENABLED=true CFG_AUTOSTART=true CFG_REMOTE=true CFG_INITLINE="" CFG_SESSMODE=new CFG_PINNED=""
+  CFG_ENABLED=true CFG_AUTOSTART=true CFG_REMOTE=true CFG_INITLINE="" CFG_SESSMODE=new CFG_PINNED="" CFG_ACCOUNT=default
   while IFS= read -r line; do
     k="${line%%=*}"; v="${line#*=}"
     case "$k" in
@@ -72,6 +75,7 @@ load_proj_config() {  # $1 = project
       initLine) CFG_INITLINE="$(printf '%s' "$v" | base64 -d 2>/dev/null || true)" ;;
       sessionMode) CFG_SESSMODE="$v" ;;
       pinnedSession) CFG_PINNED="$v" ;;
+      account) CFG_ACCOUNT="$v" ;;
     esac
   done < <(proj_config "$1")
 }
@@ -80,11 +84,58 @@ load_proj_config() {  # $1 = project
 # every character outside [A-Za-z0-9] becomes "-" (e.g. /root/projects/pilot -> -root-projects-pilot)
 conv_dir() { printf '%s/.claude/projects/%s' "$DEVBOX_HOME" "$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '-')"; }
 
-# true if Claude is already logged in (/login done)
+# ---------------------------------------------------------------------------
+# Claude accounts (chosen per project in the panel, switched by hand)
+# ---------------------------------------------------------------------------
+# "default" = the usual login (~/.claude + ~/.claude.json), Claude runs WITHOUT CLAUDE_CONFIG_DIR.
+# Any other account = its own config dir $ACCOUNTS_DIR/<id>, given to Claude as CLAUDE_CONFIG_DIR.
+# Claude Code then keeps there .credentials.json, .claude.json (oauthAccount, onboarding flags)
+# and looks there for projects/, settings.json, skills/... Only the login is per account: the
+# entries of ACCOUNT_SHARED are symlinks to the default ~/.claude ones, so the conversations
+# (history, --continue/--resume, chat, auto-resume), settings, skills and plugins stay the same
+# whatever account a project uses. Same rule in the panel (server/accounts.js calls account_prepare).
+ACCOUNTS_DIR="$DEVBOX_HOME/.claude-accounts"
+# dirs are created in ~/.claude when missing (so the link never dangles); files are linked only when they exist
+ACCOUNT_SHARED_DIRS="projects skills agents commands plugins hooks output-styles todos plans file-history session-env"
+ACCOUNT_SHARED_FILES="settings.json CLAUDE.md keybindings.json history.jsonl"
+# long-lived token (claude setup-token) pasted in the panel: exported as CLAUDE_CODE_OAUTH_TOKEN
+ACCOUNT_TOKEN_FILE=".oauth-token"
+
+valid_account() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,39}$ ]]; }
+
+# config dir of an account ("" for the default one, or for an account that no longer exists)
+account_dir() {  # $1 = account id
+  local id="${1:-default}"
+  [ "$id" = "default" ] && return 0
+  valid_account "$id" && [ -d "$ACCOUNTS_DIR/$id" ] && printf '%s' "$ACCOUNTS_DIR/$id"
+  return 0
+}
+
+# Idempotent: creates the missing shared symlinks inside an account dir. Never touches an entry that
+# is already a real file/dir (Claude may have created it before the link existed): nothing is lost.
+account_prepare() {  # $1 = account dir
+  local dir="$1" base="$DEVBOX_HOME/.claude" n
+  [ -n "$dir" ] || return 0
+  mkdir -p "$dir" && chmod 700 "$dir" 2>/dev/null
+  for n in $ACCOUNT_SHARED_DIRS; do
+    [ -e "$dir/$n" ] || [ -L "$dir/$n" ] && continue
+    mkdir -p "$base/$n" 2>/dev/null && ln -s "$base/$n" "$dir/$n"
+  done
+  for n in $ACCOUNT_SHARED_FILES; do
+    [ -e "$dir/$n" ] || [ -L "$dir/$n" ] && continue
+    [ -e "$base/$n" ] && ln -s "$base/$n" "$dir/$n"
+  done
+  return 0
+}
+
+# true if Claude is already logged in (/login done) — in the account dir $1 ("" = default)
 is_logged_in() {
+  local dir="${1:-}" cj
   [ -n "${ANTHROPIC_API_KEY:-}" ] && return 0
-  [ -s "$DEVBOX_HOME/.claude/.credentials.json" ] && return 0
-  grep -qE '"oauthAccount"|"accessToken"|"apiKey"|"primaryApiKey"' "$DEVBOX_HOME/.claude.json" 2>/dev/null
+  if [ -n "$dir" ]; then cj="$dir/.claude.json"; else dir="$DEVBOX_HOME/.claude"; cj="$DEVBOX_HOME/.claude.json"; fi
+  [ -s "$dir/.credentials.json" ] && return 0
+  [ -s "$dir/$ACCOUNT_TOKEN_FILE" ] && return 0
+  grep -qE '"oauthAccount"|"accessToken"|"apiKey"|"primaryApiKey"' "$cj" 2>/dev/null
 }
 
 # remote-control command of the project (REMOTE_CONTROL_NAME forces one fixed name for all)

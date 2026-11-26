@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Cpu, Radio, RefreshCw, Activity, Plus, Power, Wifi, WifiOff, Save, UserRound, Tag, SquareTerminal, FolderOpen, Trash2, Settings2, History, DatabaseBackup, Pencil, HardDrive, MemoryStick, Gauge, Clock, ArrowUpCircle, CheckCircle2, ExternalLink, BarChart3, Pause, Play, ListTree, Pin, MessageSquare, Copy, Check } from 'lucide-react'
 import { Dot, Btn, Chip, Modal, Drawer, ActivityBadge, inputCls, Skeleton, useConfirm, StatCard } from '../components/ui.jsx'
+import { AccountBadge, ProjectAccountSection } from '../components/Accounts.jsx'
 import { useHealth } from '../hooks/useHealth.js'
 import { fmtInt, fmtTok, fmtSize, fmtUsd, fmtUptime, fmtIso } from '../lib/format.js'
 import * as api from '../api.js'
@@ -259,6 +260,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
                         {p.name}
                       </Link>
                       {!on ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground border">{t('dash.off')}</span> : p.claudeRunning ? <ActivityBadge state={act} since={p.activitySince} /> : <ActivityBadge state="off" />}
+                      <AccountBadge p={p} accounts={data.accounts} />
                       {p.paused && <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-600 dark:text-amber-300" title={t('dash.pausedTitle')}>{t('dash.paused')}</span>}
                       {p.autoResumeAt > 0 && <span className="rounded-full border border-sky-500/30 bg-sky-500/15 px-2 py-0.5 text-[11px] text-sky-600 dark:text-sky-300" title={t('dash.autoResumeTitle')}>{t('dash.autoResume', { time: new Date(p.autoResumeAt).toLocaleString(getLang(), { dateStyle: 'short', timeStyle: 'short' }) })}</span>}
                     </div>
@@ -341,7 +343,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
         })}
       </section>
 
-      {drawerProj && <ProjectDrawer p={drawerProj} data={data} busy={busy} run={run} onClose={() => setDrawer(null)} onFlash={onFlash} />}
+      {drawerProj && <ProjectDrawer p={drawerProj} data={data} busy={busy} run={run} onClose={() => setDrawer(null)} onFlash={onFlash} refresh={refresh} />}
 
       {/* Modal: new project */}
       {showNew && (
@@ -525,7 +527,7 @@ function Section({ title, icon: Icon, children, danger }) {
 }
 
 // "Configure project" drawer: first line, remote, rename, history, backup, delete
-function ProjectDrawer({ p, data, busy, run, onClose, onFlash }) {
+function ProjectDrawer({ p, data, busy, run, onClose, onFlash, refresh }) {
   const [initLine, setInitLine] = useState(p.initLine || '')
   const [newName, setNewName] = useState(p.name)
   const [renaming, setRenaming] = useState(false)
@@ -587,6 +589,8 @@ function ProjectDrawer({ p, data, busy, run, onClose, onFlash }) {
             </p>
           )}
         </Section>
+
+        <ProjectAccountSection p={p} accounts={data.accounts} onFlash={onFlash} refresh={refresh} />
 
         <Section title={t('dash.remoteControl')} icon={Radio}>
           <div className="flex flex-wrap items-center gap-2">

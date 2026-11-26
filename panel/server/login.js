@@ -23,10 +23,15 @@ const { tr } = require('./i18n');
  * an exit ("No, exit", "Cancel"...) tries Enter up to UNKNOWN_MAX_ENTERS times per screen.
  *
  * A new Claude Code changed a text? Adjust only the SCREENS table (and the fake `claude` of the smoke test).
+ *
+ * Accounts (server/accounts.js): start(account) logs THAT account in — the login session runs with
+ * its CLAUDE_CONFIG_DIR (nothing for "default"), so the credentials land in its own config dir.
+ * One login at a time (one cr-login session).
  */
 const cfg = require('./config');
 const { sh, paneOf, log } = require('./util');
 const { loginInfo } = require('./claude');
+const accounts = require('./accounts');
 
 const SESS = 'cr-login';
 const PANE = paneOf(SESS);
@@ -108,7 +113,7 @@ let timer = null;
 function idle() {
   return {
     phase: 'idle', step: '', url: '', msg: '', screen: '', startedAt: 0, lastActAt: 0,
-    wasLogged: false, loggedIn: false, sentLogin: false, sentLoginAt: 0, codeAt: 0,
+    account: accounts.DEFAULT, wasLogged: false, loggedIn: false, sentLogin: false, sentLoginAt: 0, codeAt: 0,
     sig: '', sigSince: 0, unknownEnters: {}, lastAction: '', sameCount: 0,
   };
 }
@@ -147,8 +152,13 @@ function attention(screen, why) {
 async function finish(msg) {
   st.phase = 'success'; st.msg = msg || 'login complete'; st.url = '';
   stopTimer();
-  log('info', 'login do Claude concluido');
-  setTimeout(async () => { await sh('tmux', ['kill-session', '-t', '=' + SESS]); await restartStuckProjects(); }, 1500);
+  log('info', 'login do Claude concluido', { account: st.account });
+  // a NEW login started in these 1.5s (e.g. the next account right away) owns cr-login now: not killed
+  const gen = st.startedAt, account = st.account;
+  setTimeout(async () => {
+    if (st.startedAt === gen) await sh('tmux', ['kill-session', '-t', '=' + SESS]);
+    await restartStuckProjects(account);
+  }, 1500);
 }
 
 async function fail(msg) {
@@ -161,7 +171,7 @@ async function tick() {
   if (!['starting', 'url', 'code-sent', 'finishing', 'attention'].includes(st.phase)) return;
   if (Date.now() - st.startedAt > MAX_MS) { await cancel('timed out (15 min) — start again'); return; }
   if (!(await hasSess())) {
-    if (st.loggedIn || (st.codeAt && loginInfo().logged)) return finish();
+    if (st.loggedIn || (st.codeAt && loginInfo(st.account).logged)) return finish();
     stopTimer();
     st.phase = 'error'; st.msg = 'Claude Code closed before the login finished';
     return;
@@ -169,7 +179,7 @@ async function tick() {
   const screen = await capture();
   st.screen = lastLines(screen, 40);
   // new credential saved = login ok, even if the "Login successful" screen went by too fast
-  if (!st.loggedIn && st.codeAt && !st.wasLogged && loginInfo().logged) st.loggedIn = true;
+  if (!st.loggedIn && st.codeAt && !st.wasLogged && loginInfo(st.account).logged) st.loggedIn = true;
   if (st.codeAt && !st.loggedIn && ERROR_RX.test(lastLines(screen, 8))) {
     return fail('Claude rejected the code — generate a new link and try again');
   }
@@ -218,18 +228,23 @@ async function tick() {
 
 function stopTimer() { if (timer) { clearInterval(timer); timer = null; } }
 
-async function start() {
+async function start(accountIn) {
+  const account = accountIn || accounts.DEFAULT;
+  if (!accounts.exists(account)) return { ok: false, msg: tr('srv.acct.none'), phase: 'error' };
   stopTimer();
   await sh('tmux', ['kill-session', '-t', '=' + SESS]);
-  const r = await sh('tmux', ['new-session', '-d', '-s', SESS, '-x', '500', '-y', '50', '-c', cfg.HOME, 'claude']);
+  await accounts.prepare(account);
+  // -e: the account's config dir for this session only (a tmux server may already be running with another env)
+  const env = Object.entries(accounts.envOf(account)).flatMap(([k, v]) => ['-e', `${k}=${v}`]);
+  const r = await sh('tmux', ['new-session', '-d', ...env, '-s', SESS, '-x', '500', '-y', '50', '-c', cfg.HOME, 'claude']);
   if (!r.ok) { st = { ...idle(), phase: 'error', msg: tr('srv.loginStartFailed') + r.stderr.trim() }; return status(); }
   // FIXED width: with no client attached the window never shrinks
   await sh('tmux', ['set-option', '-t', '=' + SESS, 'window-size', 'manual']);
   await sh('tmux', ['set-option', '-t', '=' + SESS, 'status', 'off']);
-  st = { ...idle(), phase: 'starting', startedAt: Date.now(), wasLogged: loginInfo().logged };
+  st = { ...idle(), phase: 'starting', startedAt: Date.now(), account, wasLogged: loginInfo(account).logged };
   timer = setInterval(() => { tick().catch((e) => log('error', 'login tick', { err: e.message })); }, 1000);
   timer.unref();
-  log('info', 'login do Claude iniciado');
+  log('info', 'login do Claude iniciado', { account });
   return status();
 }
 
@@ -264,16 +279,17 @@ async function cancel(msg) {
 function status() {
   // the raw screen only matters when the owner needs to act
   const screen = st.phase === 'attention' || st.phase === 'error' ? st.screen : '';
-  return { ok: true, phase: st.phase, step: st.step, url: st.url, msg: st.msg, screen, logged: loginInfo().logged };
+  return { ok: true, phase: st.phase, step: st.step, url: st.url, msg: st.msg, screen, account: st.account, logged: loginInfo(st.account).logged };
 }
 
 // Projects whose Claude started BEFORE the login are stuck on the first-run/login screens: restarts only
-// those (the ones that were already working are not touched).
+// those of the account that just logged in (the ones that were already working are not touched).
 const STUCK_IDS = new Set(['theme', 'login-method', 'api-key']);
-async function restartStuckProjects() {
+async function restartStuckProjects(account) {
   try {
     const projects = require('./projects'); // lazy: avoids a require cycle
     for (const name of projects.listProjects()) {
+      if ((projects.projConfig(name).account || accounts.DEFAULT) !== account) continue;
       const sess = require('./util').sessionName(name);
       const r = await sh('tmux', ['capture-pane', '-t', paneOf(sess), '-p', '-J']);
       if (!r.ok) continue;

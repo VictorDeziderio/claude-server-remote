@@ -40,12 +40,19 @@ ensure_one() {  # $1 = project
   # (createProject) and ensure_all (default project).
   [ -d "$proj" ] || { echo "[session] project '$name' does not exist (missing folder) — nothing to start" >&2; return 1; }
 
+  # Claude account of the project: its config dir goes into the tmux SESSION environment, so every
+  # window/shell of the session (also the "Claude OFF" shell and a `claude` typed by hand) uses it.
+  # claude-loop.sh sets it again on each start (authoritative). Default account -> nothing set.
+  local adir envargs=()
+  adir="$(account_dir "$CFG_ACCOUNT")"
+  if [ -n "$adir" ]; then account_prepare "$adir"; envargs=(-e "CLAUDE_CONFIG_DIR=$adir"); fi
+
   if [ "$CFG_AUTOSTART" = "true" ]; then
     # supervisor as the session's DIRECT COMMAND (no send-keys -> no race with the shell loading)
-    tmux new-session -d -s "$sess" -c "$proj" \
+    tmux new-session -d "${envargs[@]}" -s "$sess" -c "$proj" \
       "exec bash $(printf '%q' "$LOOP") $(printf '%q' "$sess") $(printf '%q' "$name")"
   else
-    tmux new-session -d -s "$sess" -c "$proj" \
+    tmux new-session -d "${envargs[@]}" -s "$sess" -c "$proj" \
       "printf '\\033[90m[dev-box] project \"%s\": Claude OFF (panel). Run  claude  whenever you want.\\033[0m\\n' $(printf '%q' "$name"); exec bash -l"
   fi
 }

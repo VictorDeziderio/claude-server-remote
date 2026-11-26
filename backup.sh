@@ -7,7 +7,9 @@
 # Usage:
 #   backup.sh            -> one pass over ALL projects in $PROJECTS_DIR
 #   backup.sh /path      -> backup of that repo only
-#   backup.sh --config   -> tarball of the CONFIG (~/.claude without history/logs + ~/.claude.json)
+#   backup.sh --config   -> tarball of the CONFIG (~/.claude without history/logs + ~/.claude.json
+#                           + ~/.claude-accounts: the extra Claude logins; their shared entries are
+#                           symlinks to ~/.claude and tar stores them as links, never twice)
 #                           in $H/.claude-backups/config-<date>.tgz (keeps the 7 newest).
 #                           Download it in the panel (Backup) — if the volume goes away, login/config go with it.
 #   backup.sh --volume   -> incremental copy of the whole home (/root, the volume) into
@@ -71,7 +73,8 @@ backup_config() {
   if tar czf "$out" -C "$H" --ignore-failed-read \
        --exclude=.claude/projects --exclude=.claude/logs --exclude=.claude/run \
        --exclude=.claude/todos --exclude=.claude/shell-snapshots \
-       .claude .claude.json 2>/dev/null; then
+       --exclude='.claude-accounts/*/shell-snapshots' \
+       .claude .claude.json .claude-accounts 2>/dev/null; then
     chmod 600 "$out"
     log "ok    config: $(basename "$out") ($(du -h "$out" | cut -f1))"
     # rotation: keeps the N newest

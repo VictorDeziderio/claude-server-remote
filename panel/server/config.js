@@ -24,6 +24,11 @@ const cfg = {
   CHAT_KEYS_FILE: path.join(CLAUDE_DIR, '.panel-chat-keys.json'),     // chat link keys (sha256 only), server/chat.js
   AUDIT_LOG: path.join(CLAUDE_DIR, 'logs', 'audit.log'),
   CONFIG_BACKUP_DIR: path.join(HOME, '.claude-backups'),
+  // extra Claude accounts (server/accounts.js): one config dir each, used as CLAUDE_CONFIG_DIR.
+  // Same path as ACCOUNTS_DIR in devbox-lib.sh. The registry (ids + labels) is a panel state file.
+  ACCOUNTS_DIR: path.join(HOME, '.claude-accounts'),
+  ACCOUNTS_FILE: path.join(CLAUDE_DIR, '.panel-accounts.json'),
+  DEVBOX_LIB: process.env.DEVBOX_LIB || '/usr/local/lib/devbox/lib.sh',
   SESSION_SCRIPT: process.env.SESSION_SCRIPT || '/usr/local/bin/claude-session.sh',
   BACKUP_SCRIPT: process.env.BACKUP_SCRIPT || '/usr/local/bin/backup.sh',
   REMOTE_CONTROL_NAME: process.env.REMOTE_CONTROL_NAME || '',  // empty -> remote uses the project name

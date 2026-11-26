@@ -37,6 +37,7 @@ const limits = require('./server/limits');
 const notify = require('./server/notify');
 const i18n = require('./server/i18n');
 const chat = require('./server/chat');
+const accounts = require('./server/accounts');
 const { tr } = i18n;
 const { serveStatic } = require('./server/static');
 
@@ -81,6 +82,7 @@ const GET = {
   '/api/totp/status': async () => ({ ok: true, ...totp.status() }),
   '/api/claude/login/status': async () => claudeLogin.status(),
   '/api/usage': async () => ({ ok: true, usage: usage.usageSummary() }), // found by @perf: moved out of buildState (2s tick), served on demand
+  '/api/accounts': async () => ({ ok: true, accounts: accounts.summary().map((a) => ({ ...a, projects: accounts.projectsUsing(a.id), hasToken: accounts.hasToken(a.id) })) }),
   '/api/limits': async () => limits.snapshot(), // Claude plan (5h/week) + API spend; poller cache, no network
   '/api/alerts': async () => { alerts.poll(); return { ok: true, alerts: alerts.list100() }; }, // on demand (when the page opens), not the 2s tick
 };
@@ -101,9 +103,9 @@ const POST = {
   '/api/term/send': (b) => term.termSend(b.name, b.text, b.key),
   '/api/term/exit': (b) => term.termExit(b.name),
   '/api/term/window': (b) => term.windowAction(b.name, b.action, b.index),
-  '/api/claude/logout': () => claude.claudeLogout(),
+  '/api/claude/logout': (b) => claude.claudeLogout(b.id),
   '/api/claude/update': () => claudeUpdate.updateNow(),
-  '/api/claude/login/start': () => claudeLogin.start(),
+  '/api/claude/login/start': (b) => claudeLogin.start(b.id),
   '/api/claude/login/code': (b) => claudeLogin.sendCode(b.code),
   '/api/claude/login/key': (b) => claudeLogin.sendKey(b.key),
   '/api/claude/login/cancel': () => claudeLogin.cancel(),
@@ -128,6 +130,14 @@ const POST = {
   '/api/limits/refresh': () => limits.refresh(),
   '/api/update': (b) => update.request(b.mode),
   '/api/disk/clean': (b) => disk.cleanWorktrees(b.name, b.worktrees, b.days),
+  // Claude accounts (server/accounts.js); the token body field is never audited nor echoed
+  '/api/accounts/create': (b) => accounts.create(b.label),
+  '/api/accounts/rename': (b) => accounts.rename(b.id, b.label),
+  '/api/accounts/remove': (b) => accounts.remove(b.id),
+  '/api/accounts/login': (b) => claudeLogin.start(b.id),
+  '/api/accounts/logout': (b) => claude.claudeLogout(b.id),
+  '/api/accounts/token': (b) => accounts.setToken(b.id, b.token),
+  '/api/project/account': (b) => projects.setAccount(b.name, b.account),
 };
 // Web Push / notifications tab (routes live in server/notify.js)
 Object.assign(GET, notify.routes.GET);
@@ -140,7 +150,9 @@ const AUDITED = new Set(['/api/create', '/api/rename', '/api/delete', '/api/conf
   '/api/fs/save', '/api/fs/create', '/api/fs/delete', '/api/fs/rename', '/api/term/exit', '/api/term/window', '/api/claude/logout',
   '/api/claude/update', '/api/claude/login/start', '/api/claude/login/code', '/api/claude/login/cancel', '/api/history/resume', '/api/backup/run', '/api/backup/config', '/api/settings/defaults', '/api/settings',
   '/api/sessions/revoke', '/api/sessions/revoke-others', '/api/totp/enable', '/api/totp/disable',
-  '/api/session-mode', '/api/pause', '/api/unpause', '/api/alerts/clear', '/api/disk/clean', '/api/update', ...notify.routes.AUDITED]);
+  '/api/session-mode', '/api/pause', '/api/unpause', '/api/alerts/clear', '/api/disk/clean', '/api/update',
+  '/api/accounts/create', '/api/accounts/rename', '/api/accounts/remove', '/api/accounts/login', '/api/accounts/logout', '/api/accounts/token', '/api/project/account',
+  ...notify.routes.AUDITED]);
 
 async function handle(req, res) {
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);

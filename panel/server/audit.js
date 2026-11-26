@@ -15,11 +15,11 @@ function audit(action, extra) {
   }
 }
 
-// safe summary of an action's body (no file content/passwords)
+// safe summary of an action's body (no file content/passwords/tokens: only the keys listed here)
 function summarize(body) {
   if (!body || typeof body !== 'object') return {};
   const out = {};
-  for (const k of ['name', 'newName', 'key', 'value', 'on', 'path', 'newPath', 'kind', 'id', 'file', 'window']) {
+  for (const k of ['name', 'newName', 'key', 'value', 'on', 'path', 'newPath', 'kind', 'id', 'file', 'window', 'label', 'account']) {
     if (k in body) out[k] = typeof body[k] === 'string' ? body[k].slice(0, 200) : body[k];
   }
   if (typeof body.text === 'string') out.textLen = body.text.length;

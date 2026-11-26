@@ -121,6 +121,57 @@ MAX_FAST_FAILS=2 start
 wait_for 'too fast' 20; ok "cai no shell apos falhas rapidas seguidas" "$?" "$(screen | tail -4 | tr '\n' '|')"
 grep -q '"kind":"crash-loop"' "$T/.claude/run/alerts.jsonl"; ok "grava alerta crash-loop" "$?"
 
+echo "== conta do Claude por projeto: CLAUDE_CONFIG_DIR da conta, historico compartilhado"
+# fake claude that shows which config dir / token it got and whether it sees the shared history
+cat > "$T/bin/claude" <<'EOF'
+#!/usr/bin/env bash
+[ "${1:-}" = "--version" ] && { echo "9.9.9 (Claude Code)"; exit 0; }
+c="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+echo "CFG=${CLAUDE_CONFIG_DIR:-none} TOK=${CLAUDE_CODE_OAUTH_TOKEN:-none} ARGS=${*:-none}"
+echo "HIST=$(ls "$c/projects/$(printf '%s' "$PWD" | tr -c 'A-Za-z0-9' '-')" 2>/dev/null | tr '\n' ',')"
+echo "? for shortcuts"; cat
+EOF
+chmod +x "$T/bin/claude"
+rm -f "$T/.claude/run/"*.paused "$T/.claude/panel.json"
+AD="$T/.claude-accounts/work-1a2b"
+mkdir -p "$AD" "$T/.claude/skills"
+echo '{"theme":"dark"}' > "$T/.claude/settings.json"
+# a conversation made with the DEFAULT account, in the folder of p1
+CD="$T/.claude/projects/$(printf '%s' "$T/projects/p1" | tr -c 'A-Za-z0-9' '-')"
+mkdir -p "$CD"; echo '{}' > "$CD/conv-default-111.jsonl"
+echo '{"projects":{"p1":{"account":"work-1a2b","sessionMode":"continue","autoRemote":false}}}' > "$T/.claude/panel.json"
+start
+wait_for "CFG=$AD " 12; ok "Claude starts with CLAUDE_CONFIG_DIR of the project's account" "$?" "$(screen | tail -5 | tr '\n' '|')"
+screen | grep -q 'HIST=conv-default-111.jsonl'; ok "the account sees the conversation made with the default account (shared history)" "$?" "$(screen | tail -5 | tr '\n' '|')"
+screen | grep -q 'ARGS=--continue'; ok "sessionMode continue -> --continue the same conversation on the new account" "$?"
+[ -L "$AD/projects" ] && [ "$(readlink -f "$AD/projects")" = "$(readlink -f "$T/.claude/projects")" ]; ok "projects/ of the account is a symlink to ~/.claude/projects" "$?"
+[ -L "$AD/settings.json" ] && [ -L "$AD/skills" ] && [ -L "$AD/plugins" ]; ok "settings.json, skills/, plugins/ shared by symlink" "$?"
+[ ! -e "$AD/.credentials.json" ]; ok "credentials are not shared" "$?"
+[ "$(tmux show-environment -t '=claude-p1' CLAUDE_CONFIG_DIR 2>/dev/null)" = "CLAUDE_CONFIG_DIR=$AD" ]; ok "tmux session environment has the account dir (shells/windows too)" "$?"
+grep -q '(account work-1a2b)' "$T/.claude/logs/sessions.log"; ok "sessions.log says which account started" "$?"
+
+echo "== conta: token de longa duracao exportado; Claude ja logado na conta"
+printf 'sk-ant-oat01-TESTTOKEN\n' > "$AD/.oauth-token"; chmod 600 "$AD/.oauth-token"
+start
+wait_for 'TOK=sk-ant-oat01-TESTTOKEN ' 12; ok "pasted token goes as CLAUDE_CODE_OAUTH_TOKEN" "$?" "$(screen | tail -5 | tr '\n' '|')"
+grep -q 'TESTTOKEN' "$T/.claude/logs/sessions.log"; ok "token never in sessions.log" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+( . "$HERE/devbox-lib.sh"; is_logged_in "$AD" ); ok "is_logged_in(account dir) true with the token" "$?"
+rm -f "$AD/.oauth-token" "$T/.claude/.credentials.json"
+( . "$HERE/devbox-lib.sh"; is_logged_in "$AD" ); ok "is_logged_in(account dir) false without login" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+echo '{"ok":1}' > "$AD/.credentials.json"
+( . "$HERE/devbox-lib.sh"; is_logged_in "$AD" && ! is_logged_in "" ); ok "login of the account does not count as the default one (and vice versa)" "$?"
+
+echo "== conta removida -> usa a conta padrao (sem CLAUDE_CONFIG_DIR)"
+echo '{"projects":{"p1":{"account":"gone-0000","autoRemote":false}}}' > "$T/.claude/panel.json"
+start
+wait_for 'CFG=none ' 12; ok "unknown account -> default (no CLAUDE_CONFIG_DIR)" "$?" "$(screen | tail -5 | tr '\n' '|')"
+grep -q "account: 'gone-0000' does not exist" "$T/.claude/logs/sessions.log"; ok "logs the missing account" "$?"
+echo '{"projects":{"p1":{"account":"../../etc","autoRemote":false}}}' > "$T/.claude/panel.json"
+start
+wait_for 'CFG=none ' 12; ok "invalid account id in panel.json -> default" "$?"
+rm -rf "$T/.claude-accounts" "$T/.claude/panel.json" "$CD"
+echo '{"ok":1}' > "$T/.claude/.credentials.json"
+
 echo "== projeto apagado nao renasce (bug do projeto \"codigo\")"
 tmux kill-server >/dev/null 2>&1
 bash "$HERE/claude-session.sh" fantasma </dev/null >/dev/null 2>&1

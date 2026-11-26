@@ -9,6 +9,7 @@ const { sh, validName, sessionName, paneOf, truthy, log, typeLine } = require('.
 const { listProjects } = require('./projects-list');
 const { loginInfo, claudeVersion } = require('./claude');
 const events = require('./events');
+const accounts = require('./accounts');
 const history = require('./history'); // safe at the top: history.js only requires ./projects LAZILY (inside a function)
 
 const remoteCmdFor = (name) => '/remote-control ' + (cfg.REMOTE_CONTROL_NAME || name);
@@ -54,6 +55,8 @@ function configFrom(c, name) {
     pinnedSession: typeof p.pinnedSession === 'string' ? p.pinnedSession : '',
     // 0 = off; per-project override, otherwise the panel.json default, otherwise 0
     idlePauseHours: numOr(p.idlePauseHours, numOr(d.idlePauseHours, 0)),
+    // Claude account (server/accounts.js) — same rule as devbox-lib.sh (proj_config)
+    account: typeof p.account === 'string' && accounts.ID_RX.test(p.account) ? p.account : accounts.DEFAULT,
   };
 }
 function projConfig(name) { return configFrom(loadConfig(), name); }
@@ -194,7 +197,7 @@ async function sendRemote(name) {
   if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
   const sess = sessionName(name);
   if (!(await sessionUp(sess))) return { ok: false, msg: tr('srv.tmuxDown') };
-  if (!loginInfo().logged) return { ok: false, msg: tr('srv.notLogged') };
+  if (!loginInfo(projConfig(name).account).logged) return { ok: false, msg: tr('srv.notLogged') };
   // without Claude running, the text would land in the session's bash (or in a vim)
   if (!claudeRunningFlag(sess)) return { ok: false, msg: tr('srv.claudeNotRunning') };
   const cmd = remoteCmdFor(name);
@@ -274,6 +277,23 @@ async function setSessionMode(name, mode, id) {
   events.poke();
   return { ok: true, msg: tr('srv.sessionMode', { name, mode }) + (mode === 'pinned' ? ` (${pinnedSession.slice(0, 8)}…)` : '') };
 }
+// Claude account of the project (chosen by hand, never switched automatically). Saving it restarts the
+// session when the project is on — the running task is interrupted (the UI asks first); with
+// sessionMode continue/pinned the same conversation comes back, now on the other account.
+async function setAccount(name, account) {
+  if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
+  if (!projectExists(name)) return { ok: false, msg: tr('srv.noProject') };
+  const id = String(account || accounts.DEFAULT);
+  if (!accounts.exists(id)) return { ok: false, msg: tr('srv.acct.none') };
+  const c = projConfig(name);
+  const label = accounts.labelOf(id);
+  if (c.account === id) return { ok: true, msg: tr('srv.acct.same', { name, label }) };
+  if (!setProjConfig(name, { account: accounts.isDefault(id) ? undefined : id })) return { ok: false, msg: tr('srv.saveConfigFailed') };
+  if (c.enabled) await recreateSession(name);
+  events.poke();
+  return { ok: true, msg: tr(c.enabled ? 'srv.acct.switched' : 'srv.acct.switchedOff', { name, label }) };
+}
+
 // manual pause: always writes the flag; only sends /exit if Claude is idle at the prompt
 // (does not interrupt work in progress) — claude-loop.sh does not reopen while the flag exists
 async function pauseProject(name) {
@@ -323,6 +343,7 @@ async function buildState() {
       sessionMode: c.sessionMode,
       pinnedSession: c.pinnedSession,
       idlePauseHours: c.idlePauseHours,
+      account: c.account,
       paused: pausedFlag(sess),
       autoResumeAt: (require('./autoresume').list().find((x) => x.project === name) || {}).at || 0,
       remoteCmd: remoteCmdFor(name),
@@ -334,6 +355,7 @@ async function buildState() {
     panelVersion: cfg.PANEL_VERSION,
     buildTime: cfg.BUILD_TIME,
     login: loginInfo(),
+    accounts: accounts.summary(),
     version: await claudeVersion(),
     remoteNameForced: cfg.REMOTE_CONTROL_NAME,
     shellSession: cfg.SHELL_SESSION,
@@ -345,6 +367,6 @@ async function buildState() {
 module.exports = {
   listProjects, projConfig, loadConfig, saveConfig, sessionUp, ensureSession, killSession, recreateSession,
   createProject, restartProject, renameProject, deleteProject, sendRemote, setConfig, setPower, setInitLine,
-  setSessionMode, pauseProject, unpauseProject, claudeRunningFlag, pausedFlag,
+  setSessionMode, setAccount, pauseProject, unpauseProject, claudeRunningFlag, pausedFlag,
   buildState,
 };

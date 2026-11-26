@@ -163,6 +163,22 @@ const item = (p = 'demo') => AR.list().find((x) => x.project === p);
   AR._reset(); AR.start(); AR.stop() // panel restarts: loads the saved entries
   ok('a usage-limit entry already waiting is kept (not replaced by restart)', item() && item().why === 'reset' && item().at === keepAt, JSON.stringify(item()))
 
+  out('== per Claude account: the windows of the account the project uses');
+  reset();
+  {
+    const keepLimits = D.limits, keepAccount = D.account;
+    const workWins = [{ id: 'five_hour', percent: 100, resetsAt: iso(now + 4 * H) }];
+    windows = [{ id: 'five_hour', percent: 100, resetsAt: iso(now + 1 * H) }];
+    D.limits = () => ({ claude: { windows }, accounts: { work: { windows: workWins } } });
+    D.account = (p) => (p === 'onwork' ? 'work' : 'default');
+    const rw = hit('onwork'), rd = hit('demo');
+    ok('project on another account -> reset of THAT account', rw && rw.at === now + 4 * H + S.marginMs, JSON.stringify(rw));
+    ok('project on the default account -> default windows', rd && rd.at === now + 1 * H + S.marginMs, JSON.stringify(rd));
+    D.account = () => 'gone';
+    ok('account without limits data -> fallback delay', AR.resumeAt(now, 'x').why === 'fallback');
+    D.limits = keepLimits; D.account = keepAccount;
+  }
+
   fs.rmSync(TMP, { recursive: true, force: true });
   out(`${passes} PASS, ${fails} FAIL${fails ? '' : ' — TUDO OK'}`);
   process.exit(fails ? 1 : 0);
