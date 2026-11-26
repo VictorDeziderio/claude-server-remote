@@ -47,6 +47,7 @@ function load() {
   return store;
 }
 function save() {
+  if (require('./restore').frozen()) return; // a config restore just wrote the file: the old state must not overwrite it
   try {
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
     const tmp = FILE + '.' + process.pid + '.tmp';
@@ -99,13 +100,35 @@ function personOf(plain) {
   return p;
 }
 // -> {person} | {status, msg}
+// A valid key always passes: the limiter only slows down WRONG keys (behind a proxy that hides the
+// client IP every caller shares one IP, and a flood of bad keys must not lock the owner out).
 function authOf(req) {
+  const p = personOf(bearerOf(req));
+  if (p) return { person: p };
   const ip = auth.clientIp(req);
   const wait = limiter.limited(ip);
   if (wait) return { status: 429, msg: tr('srv.tooManyTries', { s: wait }) };
-  const p = personOf(bearerOf(req));
-  if (!p) { limiter.fail(ip); return { status: 401, msg: tr('srv.notAuthed') }; }
-  return { person: p };
+  limiter.fail(ip);
+  return { status: 401, msg: tr('srv.notAuthed') };
+}
+const isPersonKey = (plain) => { const h = plain && plain.length <= 128 ? sha(plain) : ''; return !!h && live().some((x) => x.hash === h); };
+// a project of this server was renamed: the saved links of every person follow it
+function onRename(oldName, newName) {
+  let changed = false;
+  for (const p of live()) {
+    for (const l of p.links) {
+      let u;
+      try { u = new URL(l.url); } catch { continue; }
+      if (u.pathname !== `/remote/${encodeURIComponent(oldName)}`) continue;
+      // only links of THIS server: the key of the link is a key of this server
+      const k = u.searchParams.get('key') || '';
+      if (!isPersonKey(k) && !chat().isChatKey(k)) continue;
+      u.pathname = `/remote/${encodeURIComponent(newName)}`;
+      l.url = u.toString();
+      changed = true;
+    }
+  }
+  if (changed) save();
 }
 // for server/chat.js: a hub key opens the chat of any project of this server
 function chatKeyOf(plain, project) {
@@ -244,8 +267,8 @@ function handlePage(req, res, u) {
   if (u.pathname === '/remote/manifest.webmanifest') {
     const key = u.searchParams.get('key') || '';
     const ip = auth.clientIp(req);
-    const p = !limiter.limited(ip) && personOf(key);
-    if (!p) { limiter.fail(ip); res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('not found'); }
+    const p = personOf(key);
+    if (!p) { if (!limiter.limited(ip)) limiter.fail(ip); res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('not found'); }
     res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8', 'Cache-Control': 'no-store' });
     return res.end(JSON.stringify({
       name: 'Claude Remote', short_name: 'Claude Remote', start_url: `/remote?key=${encodeURIComponent(key)}`, scope: '/remote',
@@ -272,4 +295,4 @@ const routes = {
   AUDITED: [],
 };
 
-module.exports = { routes, handleApi, handlePage, cors, chatKeyOf, cleanUrl, _reset: () => { store = null; } };
+module.exports = { routes, handleApi, handlePage, cors, chatKeyOf, isPersonKey, onRename, cleanUrl, _reset: () => { store = null; } };

@@ -256,8 +256,10 @@ try {
     let last
     for (let i = 0; i < 8; i++) last = await c('wrong-key-' + i, 'GET', '/chat-api/me', undefined, ip)
     ok('bad key -> 401', last.status === 401 || last.status === 429)
-    r = await c(OWNER, 'GET', '/chat-api/me', undefined, ip); ok('rate limit: after 8 bad keys even a good key waits (429)', r.status === 429, String(r.status))
-    r = await c(OWNER, 'GET', '/chat-api/me'); ok('rate limit is per IP', r.status === 200)
+    r = await c('wrong-key-x', 'GET', '/chat-api/me', undefined, ip); ok('rate limit: after 8 bad keys the next bad key waits (429)', r.status === 429, String(r.status))
+    r = await c('wrong-key-y', 'GET', '/chat-api/me'); ok('rate limit is per IP', r.status === 401, String(r.status))
+    // behind a proxy that hides client IPs everyone shares one IP: bad keys must not lock the owner out
+    r = await c(OWNER, 'GET', '/chat-api/me', undefined, ip); ok('rate limit: a valid key still passes from the limited IP', r.status === 200, String(r.status))
   }
   for (const gone of ['/chat-api/conversations', '/chat-api/conversations?before=x']) {
     r = await c(OWNER, 'GET', gone); ok(`no conversation list any more (${gone} -> 404)`, r.status === 404)

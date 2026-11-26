@@ -74,6 +74,7 @@ function load() {
   return store;
 }
 function save() {
+  if (require('./restore').frozen()) return; // a config restore just wrote the file: the old state must not overwrite it
   try {
     fs.mkdirSync(path.dirname(KEYS_FILE), { recursive: true });
     const tmp = KEYS_FILE + '.' + process.pid + '.tmp';
@@ -123,6 +124,7 @@ function revokeKey(b, req) {
 }
 // project renamed / deleted (server/projects.js): keys and chat devices follow / are removed
 function onRename(oldName, newName) {
+  require('./hub').onRename(oldName, newName);
   const s = load();
   closeWatcher(oldName);
   for (const k of s.keys) if (k.project === oldName) k.project = newName;
@@ -148,17 +150,25 @@ const bearerOf = (req, u) => {
 };
 // -> {key} | {status, msg}. `project`: the project named by the link (/remote/<project>); a key of
 // the remote hub (server/hub.js) opens the chat of that project, a chat key only its own.
+// A valid key always passes: the limiter only slows down WRONG keys (behind a proxy that hides the
+// client IP every caller shares one IP, and a flood of bad keys must not lock the owner out).
 function keyFor(req, plain, project) {
-  const ip = auth.clientIp(req);
-  const wait = limiter.limited(ip);
-  if (wait) return { status: 429, msg: tr('srv.tooManyTries', { s: wait }) };
   const h = plain && plain.length <= 128 ? sha(plain) : '';
   const k = h && load().keys.find((x) => x.hash === h && !x.revokedAt);
-  if (!k) {
-    const hk = project ? require('./hub').chatKeyOf(plain, project) : null;
+  if (!k && h) {
+    const hub = require('./hub');
+    const hk = project ? hub.chatKeyOf(plain, project) : null;
     if (hk) return { key: hk };
+    // a real hub key on a project that is gone (renamed, deleted): not a guess, never counted
+    if (hub.isPersonKey(plain)) return { status: 404, msg: tr('srv.noProject') };
   }
-  if (!k || !fs.existsSync(projectDir(k.project))) { limiter.fail(ip); return { status: 401, msg: tr('srv.notAuthed') }; }
+  const ip = auth.clientIp(req);
+  if (!k || !fs.existsSync(projectDir(k.project))) {
+    const wait = limiter.limited(ip);
+    if (wait) return { status: 429, msg: tr('srv.tooManyTries', { s: wait }) };
+    limiter.fail(ip);
+    return { status: 401, msg: tr('srv.notAuthed') };
+  }
   // lastUsedAt written at most once a minute (no disk write per request)
   if (!k.lastUsedAt || Date.now() - Date.parse(k.lastUsedAt) > 60000) { k.lastUsedAt = new Date().toISOString(); save(); }
   return { key: k };
@@ -765,4 +775,5 @@ const routes = {
   POST: { '/api/chat/keys/create': (b, req) => createKey(b, req), '/api/chat/keys/revoke': (b, req) => revokeKey(b, req) },
 };
 
-module.exports = { routes, handleApi, handlePage, redactUrl, onRename, onDelete, onHubRevoke, stopAll, start: startChat, parseLines, splitAttachments, currentConv, ingestHook };
+const isChatKey = (plain) => { const h = plain && plain.length <= 128 ? sha(plain) : ''; return !!h && load().keys.some((x) => x.hash === h && !x.revokedAt); };
+module.exports = { isChatKey, routes, handleApi, handlePage, redactUrl, onRename, onDelete, onHubRevoke, stopAll, start: startChat, parseLines, splitAttachments, currentConv, ingestHook };

@@ -48,6 +48,15 @@ Your projects and your Claude login live in a volume, so nothing is lost on rebu
   Photos and files; Media / Files / Links of the conversation; push notifications when Claude finishes
   or asks something (on iPhone, from the app added to the Home Screen). Every key has full power on
   its project. Configure → *Chat link* creates and revokes keys; the link is `/remote/<project>?key=<key>`.
+- **Remote hub:** one link per person (`/remote?key=<key>`, made in Settings → *Remote hub*) that
+  opens the chat of every project of the server, the Claude accounts (plans, limits, which account
+  each project uses, switch by hand), usage with a report by dates, and the server (CPU, memory, disk,
+  Claude version). Each person keeps a list of links (project chats or hubs of other servers, read
+  live from those servers), saved on the server so it follows them to any device. Sidebar on a
+  computer, tab bar as an iPhone home-screen app. Every hub person is an owner: give links only to
+  people you trust with a shell.
+- **File viewer:** images, PDF, video and audio open in the page with previous / next among the files
+  of the folder (buttons, ← →, swipe), download and "open in a new tab".
 - **Command palette** (Ctrl/⌘ + K): jump to any page, project terminal or files from the keyboard.
 - **Light/dark theme** (shadcn/ui on Tailwind v4) and **multiple languages** (English and Português; adding one is copying a JSON file).
 - **Any Docker host:** amd64 and arm64, plain `docker compose`, optional automatic HTTPS.
@@ -114,6 +123,20 @@ the container; see the session mode note above about what continues by itself.
 
 ### Restoring
 
+The easy way is the panel itself: **Backup → Import / restore**. Send a `.tgz` (a config tarball
+downloaded from a panel, or a tarball with ONE project folder inside) or pick a config backup of the
+server or a project of a volume copy, then press *Restore*:
+
+- the **config** is merged over `/root` after a fresh config backup of the current state (the way
+  back). The panel login, the hub people, chat keys and push devices are kept as they are (an old
+  backup never brings back a revoked key). The panel restarts by itself; the projects keep running;
+- a **project** is restored as a new one (OFF: turn it on by hand) or over one that is off (the old
+  folder goes to `/root/.claude-backups/replaced/`, never deleted). A project from a volume copy does
+  not bring its Claude history (that lives in `~/.claude/projects`) nor `node_modules`.
+
+For a volume copy to show up there, `VOLUME_BACKUP_DIR` must be mounted in the container (see the
+commented example in `docker-compose.yml`). By hand:
+
 - **Config only** (Claude login, panel settings, sessions): download a config tarball in **Backup**
   (or take one from `/root/.claude-backups/config-*.tgz`), then on the new volume:
   `docker compose cp config-XXXX.tgz claude:/tmp/ && docker compose exec claude tar xzf /tmp/config-XXXX.tgz -C /root && docker compose restart claude`.
@@ -160,6 +183,8 @@ All variables have defaults; only `PANEL_PASSWORD` is required. Full list with c
 | `USAGE_POLL_INTERVAL` / `USAGE_THRESHOLDS` | `300` / `80,95` | plan usage checks and alert levels |
 | `AUTO_RESUME` / `AUTO_RESUME_TEXT` | `1` / `continue` | continue by itself after the usage limit |
 | `CLAUDE_AUTO_UPDATE` / `CLAUDE_UPDATE_HOURS` | `1` / `6` | automatic Claude Code update and how often it checks |
+| `HUB_NAME` | hostname | name of this server on the remote hub |
+| `RESTORE_MAX_MB` | `4096` | biggest backup that can be sent in Backup → Import / restore |
 | `DEPLOY_WEBHOOK_URL` | — | your hosting's deploy hook: Settings → **Update the panel** ("when idle" waits for running tasks) |
 | `MAX_FAST_FAILS` / `MAX_BACKOFF_S` | `6` / `60` | crash-loop protection of the supervisor |
 

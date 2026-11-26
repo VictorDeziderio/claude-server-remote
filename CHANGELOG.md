@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+**Security**
+- Wrong chat/hub keys are rate limited per IP, but a valid key is never blocked (behind a proxy that
+  hides client IPs, a flood of bad keys locked everyone out). `SECURITY.md` describes the threat model.
+
 **New**
 - Remote hub: one link per person (`/remote?key=…`, made in Settings → Remote hub) that opens the
   chat of every project of the server, the Claude accounts (plans, limits, which account each

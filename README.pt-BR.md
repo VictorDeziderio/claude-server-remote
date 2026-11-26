@@ -47,6 +47,15 @@ notificações push. Os projetos e o login do Claude ficam num volume, então na
   rodando. Fotos e arquivos; Mídia / Arquivos / Links da conversa; notificações quando o Claude termina ou
   pergunta algo (no iPhone, pelo app adicionado à Tela de Início). Toda key tem poder total no projeto.
   Configurar → *Link de chat* cria e revoga as keys; o link é `/remote/<projeto>?key=<key>`.
+- **Central remota:** um link por pessoa (`/remote?key=<key>`, criado em Configurações → *Central
+  remota*) que abre o chat de todos os projetos do servidor, as contas do Claude (planos, limites, qual
+  conta cada projeto usa, troca manual), o uso com relatório por datas e o servidor (CPU, memória,
+  disco, versão do Claude). Cada pessoa tem uma lista de links (chats de projeto ou centrais de outros
+  servidores, lidos ao vivo nesses servidores), guardada no servidor e por isso presente em qualquer
+  aparelho. Menu lateral no computador, barra de abas como app na tela de início do iPhone. Toda pessoa
+  da central é dona: só dê links para quem você confiaria um terminal.
+- **Visualizador de arquivos:** imagens, PDF, vídeo e áudio abrem na página, com anterior / próximo
+  entre os arquivos da pasta (botões, ← →, deslizar o dedo), baixar e "abrir em nova aba".
 - **Paleta de comandos** (Ctrl/⌘ + K): vai para qualquer página, terminal ou arquivos de um projeto pelo teclado.
 - **Tema claro/escuro** (shadcn/ui com Tailwind v4) e **vários idiomas** (inglês e português; um idioma novo é só copiar um arquivo JSON).
 - **Qualquer Docker:** amd64 e arm64, `docker compose` simples, HTTPS automático opcional.
@@ -114,6 +123,21 @@ junto com o container; veja acima o que continua sozinho conforme o modo de sess
 
 ### Restaurar
 
+O jeito fácil é pelo próprio painel: **Backup → Importar / restaurar**. Envie um `.tgz` (um pacote de
+configuração baixado de um painel, ou um pacote com UMA pasta de projeto dentro) ou escolha um backup de
+configuração do servidor ou um projeto de uma cópia do volume, e aperte *Restaurar*:
+
+- a **configuração** é juntada sobre `/root` depois de um backup novo da configuração atual (o caminho de
+  volta). O login do painel, as pessoas da central, as keys de chat e os aparelhos de notificação ficam
+  como estão (um backup antigo nunca traz de volta uma key revogada). O painel reinicia sozinho; os
+  projetos continuam rodando;
+- um **projeto** volta como projeto novo (DESLIGADO: ligue à mão) ou por cima de um que esteja desligado
+  (a pasta antiga vai para `/root/.claude-backups/replaced/`, nunca é apagada). Um projeto vindo de uma
+  cópia do volume não traz o histórico do Claude (que fica em `~/.claude/projects`) nem `node_modules`.
+
+Para a cópia do volume aparecer ali, `VOLUME_BACKUP_DIR` precisa estar montado no container (veja o
+exemplo comentado no `docker-compose.yml`). À mão:
+
 - **Só a configuração** (login do Claude, configurações do painel, sessões): baixe um pacote de configuração
   em **Backup** (ou pegue um de `/root/.claude-backups/config-*.tgz`) e, no volume novo:
   `docker compose cp config-XXXX.tgz claude:/tmp/ && docker compose exec claude tar xzf /tmp/config-XXXX.tgz -C /root && docker compose restart claude`.
@@ -160,6 +184,8 @@ Todas as variáveis têm valor padrão; só `PANEL_PASSWORD` é obrigatória. Li
 | `USAGE_POLL_INTERVAL` / `USAGE_THRESHOLDS` | `300` / `80,95` | checagem do uso do plano e níveis de alerta |
 | `AUTO_RESUME` / `AUTO_RESUME_TEXT` | `1` / `continue` | continuar sozinho depois do limite de uso |
 | `CLAUDE_AUTO_UPDATE` / `CLAUDE_UPDATE_HOURS` | `1` / `6` | atualização automática do Claude Code e de quanto em quanto tempo confere |
+| `HUB_NAME` | hostname | nome deste servidor na central remota |
+| `RESTORE_MAX_MB` | `4096` | maior backup que pode ser enviado em Backup → Importar / restaurar |
 | `DEPLOY_WEBHOOK_URL` | — | endereço de deploy da sua hospedagem: Configurações → **Atualizar o painel** ("quando parado" espera as tarefas) |
 | `MAX_FAST_FAILS` / `MAX_BACKOFF_S` | `6` / `60` | proteção contra reinícios em loop |
 

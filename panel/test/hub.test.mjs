@@ -130,13 +130,13 @@ try {
 
   // ---- the hub key opens the chats of this server ----
   r = await b(A.BASE, KEY, 'GET', '/chat-api/me')
-  ok('chat: a hub key without a project is refused', r.status === 401)
+  ok('chat: a hub key without a project is refused', r.status === 404 && !r.data.ok)
   r = await b(A.BASE, KEY, 'GET', '/chat-api/me', undefined, { 'x-chat-project': 'beta' })
   ok('chat: the hub key opens project beta', r.data.ok && r.data.project === 'beta', JSON.stringify(r.data))
   r = await b(A.BASE, KEY, 'GET', '/chat-api/state', undefined, { 'x-chat-project': 'alpha' })
   ok('chat: state of alpha with the hub key', r.data.ok && r.data.claude === 'off', JSON.stringify(r.data))
   r = await b(A.BASE, KEY, 'GET', '/chat-api/me', undefined, { 'x-chat-project': 'nope' })
-  ok('chat: a project that does not exist is refused', r.status === 401)
+  ok('chat: a project that does not exist is refused (404, not counted as a guess)', r.status === 404 && !r.data.ok)
   r = await b(A.BASE, KEYB, 'GET', '/chat-api/me', undefined, { 'x-chat-project': 'alpha' })
   ok('chat: the hub key of another server is refused here', r.status === 401)
   r = await fetch(`${A.BASE}/remote/alpha/manifest.webmanifest?key=${KEY}`)
@@ -145,6 +145,26 @@ try {
   ok('hub manifest with the key', r.status === 200 && /\/remote\?key=/.test((await r.json()).start_url))
   r = await fetch(`${A.BASE}/remote/manifest.webmanifest?key=bad`)
   ok('hub manifest refused with a bad key', r.status === 404)
+
+  // ---- a renamed project: saved links follow it, the old name never locks the IP out ----
+  r = await b(A.BASE, KEY, 'POST', '/hub-api/links/add', { label: 'beta here', url: `${A.BASE}/remote/beta?key=${KEY}` })
+  ok('links: a chat link of this server added', r.data.ok)
+  r = await A.j('POST', '/api/rename', { name: 'beta', newName: 'beta2' })
+  ok('rename beta -> beta2', r.data.ok, JSON.stringify(r.data))
+  r = await b(A.BASE, KEY, 'GET', '/hub-api/links')
+  ok('rename: the saved link follows the project', r.data.links.some((l) => l.url === `${A.BASE}/remote/beta2?key=${KEY}`) && !r.data.links.some((l) => /\/remote\/beta\?/.test(l.url)), JSON.stringify(r.data.links))
+  ok('rename: links of another server are left alone', r.data.links.some((l) => l.url === HUBB))
+  let codes = []
+  for (let i = 0; i < 12; i++) codes.push((await b(A.BASE, KEY, 'GET', '/chat-api/state', undefined, { 'x-chat-project': 'beta' })).status)
+  ok('rename: the old name answers 404 (not a guess)', codes.every((c) => c === 404), codes.join())
+  r = await b(A.BASE, KEY, 'GET', '/chat-api/me', undefined, { 'x-chat-project': 'beta2' })
+  ok('rename: no lockout afterwards, the new name works', r.data.ok && r.data.project === 'beta2', JSON.stringify(r.data))
+  for (let i = 0; i < 10; i++) await b(A.BASE, 'x'.repeat(43), 'GET', '/hub-api/me')
+  r = await b(A.BASE, 'x'.repeat(43), 'GET', '/hub-api/me')
+  ok('wrong keys are limited (429)', r.status === 429)
+  r = await b(A.BASE, KEY, 'GET', '/hub-api/me')
+  ok('a valid key still passes while the IP is limited', r.data.ok)
+  await A.j('POST', '/api/rename', { name: 'beta2', newName: 'beta' })
 
   // ---- CORS (the hub of another server reads these) ----
   r = await fetch(`${A.BASE}/hub-api/projects`, { method: 'OPTIONS', headers: { origin: 'https://other.example', 'access-control-request-method': 'GET', 'access-control-request-headers': 'authorization' } })
@@ -179,7 +199,7 @@ try {
         await page.getByTestId('hub-remote-project').first().waitFor({ timeout: 10000 }).catch(() => {})
         ok(`${name}: the saved hub of server B lists its projects (cross-server)`, (await page.getByTestId('hub-remote-project').count()) === 1 && /gamma/.test(await page.getByTestId('hub-remote').innerText()))
         await page.getByTestId('hub-saved-chat').first().waitFor({ timeout: 10000 }).catch(() => {})
-        ok(`${name}: the saved chat link of server B shows`, (await page.getByTestId('hub-saved-chat').count()) === 1)
+        ok(`${name}: the saved chat links show (server B and this one)`, (await page.getByTestId('hub-saved-chat').count()) === 2 && /gamma/.test(await page.getByTestId('hub-saved').innerText()))
         const navs = name === 'desktop' ? 'hub-nav-' : 'hub-tab-'
         ok(`${name}: the right menu is visible`, await page.getByTestId(navs + 'projects').isVisible())
         await sleep(400)
@@ -193,7 +213,7 @@ try {
         ok(`${name}: accounts section shows an account`, await page.goto(`${A.BASE}/remote?key=${KEY}#/accounts`).then(() => page.getByTestId('hub-account').first().waitFor({ timeout: 8000 })).then(() => true).catch(() => false))
         await page.goto(`${A.BASE}/remote#/links`) // no key in the URL: the one saved on this device
         await page.getByTestId('hub-link').first().waitFor({ timeout: 8000 }).catch(() => {})
-        ok(`${name}: /remote without ?key= opens with the key saved on this device`, (await page.getByTestId('hub-link').count()) === 2)
+        ok(`${name}: /remote without ?key= opens with the key saved on this device`, (await page.getByTestId('hub-link').count()) === 3)
         if (name === 'desktop') {
           await page.getByTestId('hub-link-url').fill('https://example.com/nope')
           await page.getByTestId('hub-link-add').click()
@@ -222,7 +242,7 @@ try {
     ok('revoke the person', r.data.ok)
   }
   r = await b(A.BASE, KEY, 'GET', '/hub-api/me')
-  ok('revoked: the hub key stops at once', r.status === 401)
+  ok('revoked: the hub key stops at once', r.status === 401 || r.status === 429) // 429: this IP sent wrong keys above
   r = await b(A.BASE, KEY, 'GET', '/chat-api/me', undefined, { 'x-chat-project': 'alpha' })
   ok('revoked: the chats opened with it stop too', r.status === 401)
 

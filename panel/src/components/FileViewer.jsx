@@ -3,7 +3,7 @@
 // swipe on a phone), Esc closes, and the file can still be downloaded or opened in a new tab.
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, ChevronLeft, ChevronRight, Download, ExternalLink } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Download, ExternalLink, Loader2 } from 'lucide-react'
 import * as api from '../api.js'
 import { t } from '../lib/i18n.js'
 import { fmtSize } from '../lib/format.js'
@@ -23,14 +23,32 @@ export const viewKind = (name) => {
 export function FileViewer({ items, index, onIndex, onClose }) {
   const item = items[index]
   const touch = useRef(null)
+  const box = useRef(null)
+  const closeBtn = useRef(null)
   const [failed, setFailed] = useState(false)
-  useEffect(() => setFailed(false), [index])
+  const [loaded, setLoaded] = useState(false)
+  useEffect(() => { setFailed(false); setLoaded(false) }, [index])
   const go = (d) => { const n = index + d; if (n >= 0 && n < items.length) onIndex(n) }
+  // focus: on Close while open, back to where it was when closed
+  useEffect(() => {
+    const before = document.activeElement
+    closeBtn.current?.focus()
+    return () => { if (before && before.focus && document.contains(before)) before.focus() }
+  }, [])
   useEffect(() => {
     const onKey = (e) => {
+      const tag = (e.target && e.target.tagName) || ''
       if (e.key === 'Escape') onClose()
-      else if (e.key === 'ArrowLeft') go(-1)
-      else if (e.key === 'ArrowRight') go(1)
+      // ← → on a player seek it (its own keys), elsewhere they step through the files
+      else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !['VIDEO', 'AUDIO', 'INPUT'].includes(tag)) go(e.key === 'ArrowLeft' ? -1 : 1)
+      else if (e.key === 'Tab' && box.current) {
+        // Tab stays inside the viewer (the page behind is hidden)
+        const f = [...box.current.querySelectorAll('button:not([disabled]), a[href], video, audio, iframe')]
+        if (!f.length) return
+        const i = f.indexOf(document.activeElement)
+        if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus() }
+        else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus() }
+      }
     }
     window.addEventListener('keydown', onKey)
     const prev = document.body.style.overflow
@@ -54,21 +72,34 @@ export function FileViewer({ items, index, onIndex, onClose }) {
   const btn = 'inline-flex size-10 shrink-0 items-center justify-center rounded-full text-white/90 hover:bg-white/15 disabled:opacity-30'
   // on <body>, above everything of the panel (its phone tab bar included)
   return createPortal(
-    <div role="dialog" aria-modal="true" aria-label={item.name} data-testid="file-viewer" className="fixed inset-0 z-[100] flex flex-col bg-black text-white" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+    <div ref={box} role="dialog" aria-modal="true" aria-label={item.name} data-testid="file-viewer" className="fixed inset-0 z-[100] flex flex-col bg-black text-white" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <div className="flex h-14 shrink-0 items-center gap-1 px-2">
-        <button type="button" onClick={onClose} className={btn} aria-label={t('viewer.close')} title={t('viewer.close')} data-testid="viewer-close"><X className="size-5" /></button>
+        <button ref={closeBtn} type="button" onClick={onClose} className={btn} aria-label={t('viewer.close')} title={t('viewer.close')} data-testid="viewer-close"><X className="size-5" /></button>
         <div className="min-w-0 flex-1 px-1">
           <div className="truncate text-sm font-medium" data-testid="viewer-name">{item.name}</div>
           <div className="text-xs text-white/60">{t('viewer.position', { i: index + 1, n: items.length })}{item.size ? ` · ${fmtSize(item.size)}` : ''}</div>
         </div>
+        {kind === 'pdf' && (
+          // a PDF uses the whole area (and scrolls by touch on a phone): its arrows go up here
+          <>
+            <button type="button" onClick={() => go(-1)} disabled={index === 0} className={btn} aria-label={t('viewer.prev')} title={t('viewer.prev')} data-testid="viewer-prev"><ChevronLeft className="size-6" /></button>
+            <button type="button" onClick={() => go(1)} disabled={index === items.length - 1} className={btn} aria-label={t('viewer.next')} title={t('viewer.next')} data-testid="viewer-next"><ChevronRight className="size-6" /></button>
+          </>
+        )}
         <a href={src} target="_blank" rel="noreferrer" className={btn} aria-label={t('viewer.newTab')} title={t('viewer.newTab')}><ExternalLink className="size-5" /></a>
         <a href={api.fsDownloadUrl(item.path)} className={btn} aria-label={t('files.download')} title={t('files.download')}><Download className="size-5" /></a>
       </div>
       <div className="relative flex min-h-0 flex-1 items-center justify-center" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {failed ? (
-          <div className="px-6 text-center text-sm text-white/70">{t('viewer.cannotShow')}</div>
+          <div className="flex flex-col items-center gap-4 px-6 text-center text-sm text-white/70">
+            <span>{t('viewer.cannotShow')}</span>
+            <span className="flex flex-wrap justify-center gap-2">
+              <a href={api.fsDownloadUrl(item.path)} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 font-medium text-black"><Download className="size-4" /> {t('files.download')}</a>
+              <a href={src} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/30 px-5"><ExternalLink className="size-4" /> {t('viewer.newTab')}</a>
+            </span>
+          </div>
         ) : kind === 'image' ? (
-          <img key={src} src={src} alt={item.name} onError={() => setFailed(true)} data-testid="viewer-image" className="max-h-full max-w-full select-none object-contain" draggable={false} />
+          <img key={src} src={src} alt={item.name} onLoad={() => setLoaded(true)} onError={() => setFailed(true)} data-testid="viewer-image" className="max-h-full max-w-full select-none object-contain" draggable={false} />
         ) : kind === 'pdf' ? (
           <iframe key={src} src={src} title={item.name} data-testid="viewer-pdf" className="h-full w-full max-w-5xl border-0 bg-white" />
         ) : kind === 'video' ? (
@@ -76,8 +107,11 @@ export function FileViewer({ items, index, onIndex, onClose }) {
         ) : (
           <audio key={src} src={src} controls onError={() => setFailed(true)} data-testid="viewer-audio" className="w-full max-w-md" />
         )}
+        {kind === 'image' && !loaded && !failed && <Loader2 aria-hidden className="pointer-events-none absolute size-8 animate-spin text-white/60" />}
+        {kind !== 'pdf' && <>
         <button type="button" onClick={() => go(-1)} disabled={index === 0} className={`absolute left-2 top-1/2 -translate-y-1/2 bg-black/40 ${btn} size-12`} aria-label={t('viewer.prev')} title={t('viewer.prev')} data-testid="viewer-prev"><ChevronLeft className="size-7" /></button>
         <button type="button" onClick={() => go(1)} disabled={index === items.length - 1} className={`absolute right-2 top-1/2 -translate-y-1/2 bg-black/40 ${btn} size-12`} aria-label={t('viewer.next')} title={t('viewer.next')} data-testid="viewer-next"><ChevronRight className="size-7" /></button>
+        </>}
       </div>
     </div>,
     document.body,

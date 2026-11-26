@@ -55,7 +55,7 @@ export function HubPeopleCard({ onFlash }) {
             <div className="flex flex-wrap items-center gap-2">
               <input ref={freshInput} readOnly value={fresh.url} onFocus={(e) => e.target.select()} data-testid="hub-person-url" className={`min-w-0 flex-1 font-mono text-xs ${inputCls}`} />
               <Btn onClick={copy}>{copied === 'ok' ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {copied === 'ok' ? t('chatlink.copied') : t('chatlink.copy')}</Btn>
-              <a href={fresh.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline"><ExternalLink className="h-3.5 w-3.5" /> {t('chatlink.open')}</a>
+              <a href={fresh.url} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center gap-1 px-1 text-primary hover:underline"><ExternalLink className="h-3.5 w-3.5" /> {t('chatlink.open')}</a>
             </div>
           </div>
         )}
@@ -65,9 +65,9 @@ export function HubPeopleCard({ onFlash }) {
           <ul className="divide-y rounded-lg border">
             {list.people.map((p) => (
               <li key={p.id} className="flex items-center justify-between gap-2 px-3 py-2" data-testid="hub-person">
-                <span className="min-w-0 truncate">
-                  <b>{p.label}</b>
-                  <span className="text-xs text-muted-foreground"> · {t('chatlink.created', { date: fmtIso(p.createdAt) })} · {p.lastUsedAt ? t('chatlink.lastUsed', { date: fmtIso(p.lastUsedAt) }) : t('chatlink.never')} · {t('hub.admin.links', { n: p.links })}</span>
+                <span className="min-w-0">
+                  <b className="block truncate">{p.label}</b>
+                  <span className="block text-xs text-muted-foreground">{p.lastUsedAt ? t('chatlink.lastUsed', { date: fmtIso(p.lastUsedAt) }) : t('chatlink.never')} · {t('hub.admin.links', { n: p.links })} · {t('chatlink.created', { date: fmtIso(p.createdAt) })}</span>
                 </span>
                 <Btn variant="ghost" onClick={() => revoke(p)}><Trash2 className="h-3.5 w-3.5" /> {t('hub.admin.revoke')}</Btn>
               </li>

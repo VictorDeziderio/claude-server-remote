@@ -24,10 +24,14 @@ api=$(docker exec "$NAME" curl -s -o /dev/null -w '%{http_code}' http://127.0.0.
 ok "API asks for login (got $api)" "$([ "$api" = 401 ] && echo 0 || echo 1)"
 docker exec "$NAME" test -f /usr/local/bin/panel/src/locales/en.json
 ok "locale files are in the image" $?
+hub=$(docker exec "$NAME" curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/remote 2>/dev/null || echo 000)
+ok "remote hub page is built and served (got $hub)" "$([ "$hub" = 200 ] && echo 0 || echo 1)"
+hubapi=$(docker exec "$NAME" curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/hub-api/me 2>/dev/null || echo 000)
+ok "hub API asks for a key (got $hubapi)" "$([ "$hubapi" = 401 ] && echo 0 || echo 1)"
 docker exec "$NAME" sh -c 'tail -50 /root/.claude/logs/panel.log 2>/dev/null' | grep -q 'MODULE_NOT_FOUND\|exited (ran'
 ok "panel did not crash-loop" "$([ $? = 0 ] && echo 1 || echo 0)"
 if [ "$fails" != 0 ]; then
   echo "--- panel.log"; docker exec "$NAME" sh -c 'tail -40 /root/.claude/logs/panel.log' 2>/dev/null
 fi
-echo "$((4 - fails)) PASS, $fails FAIL"
+echo "$((6 - fails)) PASS, $fails FAIL"
 [ "$fails" = 0 ]

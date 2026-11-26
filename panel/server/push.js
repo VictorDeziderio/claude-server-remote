@@ -33,6 +33,7 @@ const B64URL = /^[A-Za-z0-9_-]+={0,2}$/;
 let state = null;
 
 function save() {
+  if (require('./restore').frozen()) return; // a config restore just wrote the file: the old state must not overwrite it
   try {
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
     const tmp = FILE + '.tmp';

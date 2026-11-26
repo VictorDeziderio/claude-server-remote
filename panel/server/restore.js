@@ -11,12 +11,15 @@
  *
  * Config restore: first a fresh config backup of the CURRENT state (the way back), then the files
  * are merged over the home (nothing else is deleted). The panel's own login files stay as they are
- * (secret, sessions, 2FA: whoever restores is not logged out) and so do the run flags. The panel
+ * (secret, sessions, 2FA: whoever restores is not logged out), and so do the access lists (hub
+ * people, chat keys, push devices) and the run flags. The panel
  * then restarts by itself (start.sh brings it back up) to load the restored state; the tmux
  * sessions and the Claude in them keep running.
  *
  * Project restore: into a new folder, or over an existing project that is OFF (its folder is moved
- * aside to ~/.claude-backups/replaced/<name>-<date>, never deleted).
+ * aside to ~/.claude-backups/replaced/<name>-<date>, never deleted). The files are first unpacked /
+ * copied into a stage folder; only then is the old folder moved aside, and it is moved back if the
+ * last step fails. While a project is being restored it cannot be turned on (restoring(name)).
  *
  * Every archive is listed with tar before anything is written: absolute paths and '..' are refused,
  * and a config tarball may only hold the config paths above.
@@ -38,8 +41,11 @@ const MAX = (parseInt(process.env.RESTORE_MAX_MB || '4096', 10) || 4096) * 1024 
 const IMPORT_RX = /^import-[0-9TZ-]+-[0-9a-f]{6}\.tgz$/;
 const CONFIG_RX = /^config-[A-Za-z0-9_.-]+\.tgz$/;
 const SNAP_RX = /^20\d{6}-\d{6}$/; // backup.sh --volume: <YYYYMMDD-HHMMSS>/
-// panel login state and run flags are never restored (see the header)
-const KEEP = ['.claude/.panel-secret', '.claude/.panel-sessions.json', '.claude/.panel-totp.json', '.claude/run'];
+// never restored (see the header): the panel login state and run flags, and every ACCESS list of
+// the panel (hub people, chat keys, push devices): an old backup must not bring back a key that
+// was revoked since, and a backup from someone else must not bring in a key they know.
+const KEEP = ['.claude/.panel-secret', '.claude/.panel-sessions.json', '.claude/.panel-totp.json', '.claude/run',
+  '.claude/.panel-hub.json', '.claude/.panel-chat-keys.json', '.claude/.panel-push.json'];
 const stamp = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const rand = () => crypto.randomBytes(3).toString('hex');
 
@@ -75,14 +81,16 @@ function importsList() {
 }
 const volumeDir = () => process.env.VOLUME_BACKUP_DIR || '';
 // projects folder inside a volume copy (the copy is of the home: same relative path)
-const snapProjects = (snap) => path.join(volumeDir(), snap, path.relative(cfg.HOME, cfg.PROJECTS_DIR));
+// ('' when the projects folder is not inside the home: then the copy does not have it)
+const PROJ_REL = path.relative(cfg.HOME, cfg.PROJECTS_DIR);
+const snapProjects = (snap) => (PROJ_REL.startsWith('..') || path.isAbsolute(PROJ_REL) ? '' : path.join(volumeDir(), snap, PROJ_REL));
 function snapshots() {
   const d = volumeDir();
   if (!d) return [];
   try {
     return fs.readdirSync(d).filter((s) => SNAP_RX.test(s)).sort().reverse().slice(0, 30).map((s) => {
       let list = [];
-      try { list = fs.readdirSync(snapProjects(s), { withFileTypes: true }).filter((e) => e.isDirectory() && validName(e.name)).map((e) => e.name).sort(); } catch { /* none */ }
+      try { list = !snapProjects(s) ? [] : fs.readdirSync(snapProjects(s), { withFileTypes: true }).filter((e) => e.isDirectory() && validName(e.name)).map((e) => e.name).sort(); } catch { /* none */ }
       return { snapshot: s, projects: list };
     });
   } catch { return []; }
@@ -120,6 +128,8 @@ function removeImport(b) {
 
 // ---------------------------------------------------------------- restore
 let busy = false;
+let restoringName = '';
+const restoring = (name) => !!restoringName && restoringName === name;
 const once = async (fn) => {
   if (busy) return { ok: false, msg: tr('srv.restore.busy') };
   busy = true;
@@ -130,33 +140,47 @@ const extract = (file, dest, extra = []) => sh('tar', ['-xzf', file, '-C', dest,
 
 // the panel reloads everything it caches (keys, accounts, settings...) by restarting; start.sh
 // brings it back. PANEL_NO_SELF_RESTART=1 (tests) leaves it running.
+// From the moment a restored config is written until the restart, the panel must not write its
+// old in-memory state over it (hub people, chat keys, push devices: their save() checks this).
+let freeze = false;
+const frozen = () => freeze;
 function restartPanel() {
   if (process.env.PANEL_NO_SELF_RESTART === '1') return;
+  freeze = true;
   log('info', 'restore: restarting the panel to load the restored config');
   setTimeout(() => process.exit(0), 1500).unref();
 }
 
 function restoreConfig(b) {
   return once(async () => {
-    const file = fileOf(b && b.source, b && b.file);
-    if (!file || !fs.existsSync(file)) return { ok: false, msg: tr('srv.notFound') };
-    const info = await inspect(file);
+    const src = fileOf(b && b.source, b && b.file);
+    if (!src || !fs.existsSync(src)) return { ok: false, msg: tr('srv.notFound') };
+    const info = await inspect(src);
     if (!info.ok) return info;
     if (info.kind !== 'config') return { ok: false, msg: tr('srv.restore.notConfig') };
-    // the way back: the current config, saved before anything changes
-    const safety = await backup().runConfigBackup();
-    if (!safety.ok) return { ok: false, msg: tr('srv.restore.safetyFailed') + ' ' + (safety.msg || '') };
     const stage = stageDir();
     try {
-      const x = await extract(file, stage, KEEP.map((k) => `--exclude=${k}`));
+      // a copy of the chosen file first: the safety backup below rotates the config backups and
+      // may delete the oldest one, which can be the very file being restored
+      const file = path.join(stage, 'source.tgz');
+      fs.copyFileSync(src, file);
+      // the way back: a NEW config backup of the current state. backup.sh exits 0 when it skips
+      // (lock taken, low memory), so "ok" is not enough: a new file must have appeared.
+      const before = new Set(backup().listConfigBackups().map((x) => x.file));
+      const safety = await backup().runConfigBackup();
+      const fresh = (backup().listConfigBackups()).find((x) => !before.has(x.file));
+      if (!safety.ok || !fresh) return { ok: false, msg: tr('srv.restore.safetyFailed') + ' ' + (safety.msg || '') };
+      const out = path.join(stage, 'files');
+      fs.mkdirSync(out);
+      const x = await extract(file, out, KEEP.map((k) => `--exclude=${k}`));
       if (!x.ok) return { ok: false, msg: tr('srv.restore.extractFailed') + ' ' + x.stderr.trim().slice(-300) };
-      for (const k of KEEP) fs.rmSync(path.join(stage, k), { recursive: true, force: true });
+      for (const k of KEEP) fs.rmSync(path.join(out, k), { recursive: true, force: true });
       // merge over the home: existing files are replaced, nothing else is deleted
-      const c = await sh('cp', ['-a', stage + '/.', cfg.HOME + '/'], { timeout: 30 * 60 * 1000 });
+      const c = await sh('cp', ['-a', out + '/.', cfg.HOME + '/'], { timeout: 30 * 60 * 1000 });
       if (!c.ok) return { ok: false, msg: tr('srv.restore.copyFailed') + ' ' + c.stderr.trim().slice(-300) };
+      restartPanel();
+      return { ok: true, restart: process.env.PANEL_NO_SELF_RESTART !== '1', safety: fresh.file, msg: tr('srv.restore.configDone', { n: info.entries, safety: fresh.file }) };
     } finally { fs.rmSync(stage, { recursive: true, force: true }); }
-    restartPanel();
-    return { ok: true, restart: process.env.PANEL_NO_SELF_RESTART !== '1', safety: (safety.backups && safety.backups[0] && safety.backups[0].file) || '', msg: tr('srv.restore.configDone', { n: info.entries }) };
   });
 }
 
@@ -173,6 +197,7 @@ function restoreProject(b) {
     let from = '', top = '', file = '';
     if (b.source === 'volume') {
       if (!volumeDir() || !SNAP_RX.test(b.snapshot || '') || !validName(b.project)) return { ok: false, msg: tr('srv.badParams') };
+      if (!snapProjects(b.snapshot)) return { ok: false, msg: tr('srv.notFound') };
       from = path.join(snapProjects(b.snapshot), b.project);
       if (!fs.existsSync(from) || !fs.statSync(from).isDirectory()) return { ok: false, msg: tr('srv.notFound') };
       top = b.project;
@@ -187,30 +212,52 @@ function restoreProject(b) {
     const name = String(b.name || top).trim();
     if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
     const target = path.join(cfg.PROJECTS_DIR, name);
-    let replaced = '';
-    if (fs.existsSync(target)) {
-      if (!b.replace) return { ok: false, exists: true, msg: tr('srv.restore.exists', { name }) };
-      const p = projects().projConfig(name);
+    const exists = fs.existsSync(target);
+    if (exists && !b.replace) return { ok: false, exists: true, msg: tr('srv.restore.exists', { name }) };
+    const isOn = async () => {
       const st = await events().currentState();
       const live = st && st.projects && st.projects.find((x) => x.name === name);
-      if (p.enabled || (live && live.up)) return { ok: false, msg: tr('srv.restore.turnOff', { name }) };
-      replaced = await moveAside(name);
-      if (!replaced) return { ok: false, msg: tr('srv.restore.copyFailed') };
-    }
-    if (from) {
-      const c = await sh('cp', ['-a', from, target], { timeout: 60 * 60 * 1000 });
-      if (!c.ok) return { ok: false, msg: tr('srv.restore.copyFailed') + ' ' + c.stderr.trim().slice(-300) };
-    } else {
-      const stage = stageDir();
-      try {
+      return projects().projConfig(name).enabled || !!(live && live.up);
+    };
+    if (exists && await isOn()) return { ok: false, msg: tr('srv.restore.turnOff', { name }) };
+    restoringName = name;
+    const stage = stageDir();
+    try {
+      // 1) the new files, complete, in the stage folder (the project is untouched so far)
+      const ready = path.join(stage, 'project');
+      if (from) {
+        const c = await sh('cp', ['-a', from, ready], { timeout: 60 * 60 * 1000 });
+        if (!c.ok) return { ok: false, msg: tr('srv.restore.copyFailed') + ' ' + c.stderr.trim().slice(-300) };
+      } else {
         const x = await extract(file, stage);
         if (!x.ok) return { ok: false, msg: tr('srv.restore.extractFailed') + ' ' + x.stderr.trim().slice(-300) };
-        const m = await sh('mv', [path.join(stage, top), target], { timeout: 60 * 60 * 1000 });
-        if (!m.ok) return { ok: false, msg: tr('srv.restore.copyFailed') + ' ' + m.stderr.trim().slice(-300) };
-      } finally { fs.rmSync(stage, { recursive: true, force: true }); }
+        fs.renameSync(path.join(stage, top), ready);
+      }
+      // 2) the old folder aside (checked again: it may have been turned on meanwhile)
+      let replaced = '';
+      if (fs.existsSync(target)) {
+        if (await isOn()) return { ok: false, msg: tr('srv.restore.turnOff', { name }) };
+        replaced = await moveAside(name);
+        if (!replaced) return { ok: false, msg: tr('srv.restore.copyFailed') };
+      }
+      // 3) the new folder in place, OFF: a restored project never starts Claude by itself (an
+      // unknown project would get the defaults, on + Claude), it is turned on by hand.
+      // On failure the old folder goes back.
+      const conf = projects().loadConfig();
+      conf.projects = conf.projects || {};
+      conf.projects[name] = { ...(conf.projects[name] || {}), enabled: false };
+      projects().saveConfig(conf);
+      const m = await sh('mv', [ready, target], { timeout: 60 * 60 * 1000 });
+      if (!m.ok) {
+        if (replaced) await sh('mv', [replaced, target], { timeout: 60 * 60 * 1000 });
+        return { ok: false, msg: tr('srv.restore.copyFailed') + ' ' + m.stderr.trim().slice(-300) };
+      }
+      try { events().poke(); } catch { /* */ }
+      return { ok: true, name, replaced, msg: tr(replaced ? 'srv.restore.projectReplaced' : 'srv.restore.projectDone', { name, old: replaced }) };
+    } finally {
+      restoringName = '';
+      fs.rmSync(stage, { recursive: true, force: true });
     }
-    try { events().poke(); } catch { /* */ }
-    return { ok: true, name, replaced, msg: tr(replaced ? 'srv.restore.projectReplaced' : 'srv.restore.projectDone', { name, old: replaced }) };
   });
 }
 
@@ -224,4 +271,7 @@ const routes = {
   AUDITED: ['/api/backup/restore/config', '/api/backup/restore/project', '/api/backup/import/remove'],
 };
 
-module.exports = { routes, upload, inspect, sources };
+// stage folders left by a restore cut short (panel restart, crash): removed at boot
+try { for (const f of fs.readdirSync(DIR)) if (f.startsWith('stage-')) fs.rmSync(path.join(DIR, f), { recursive: true, force: true }); } catch { /* no dir yet */ }
+
+module.exports = { routes, upload, inspect, sources, restoring, frozen };

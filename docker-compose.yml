@@ -14,5 +14,7 @@ services:
       # - "443:443"
     volumes:
       - claude-home:/root   # projects + Claude login + panel config survive rebuilds
+      # - /mnt/backup/claude:/backup   # another disk for VOLUME_BACKUP_DIR=/backup (copies of the volume,
+      #                                  # restorable in Backup -> Import / restore)
 volumes:
   claude-home:

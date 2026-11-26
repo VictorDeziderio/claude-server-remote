@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   FolderKanban, UserRound, BarChart3, Server, Link2, KeyRound, RefreshCw, MessageSquare, ExternalLink,
-  Plus, Trash2, ArrowUp, ArrowDown, Pencil, Check, X, Cpu, MemoryStick, Globe, CircleAlert,
+  Plus, Trash2, ArrowUp, ArrowDown, Pencil, Check, X, Cpu, MemoryStick, Globe, CircleAlert, Clock,
 } from 'lucide-react'
 import { ApiError, api, chatHref, hubKey, isSelf, parseLink, remoteChatHref, remoteChatMe, remoteChatState, remoteProjects } from './api.js'
 import { t } from '../lib/i18n.js'
@@ -56,8 +56,9 @@ function Panel({ title, icon: Icon, right, children, testid }) {
   )
 }
 function Btn({ children, onClick, variant = 'outline', disabled, className, title, type = 'button', testid }) {
+  // icon-only buttons get their title as the accessible name
   const v = { outline: 'border bg-background hover:bg-accent', brand: 'bg-foreground text-background hover:bg-foreground/85', ghost: 'hover:bg-accent', danger: 'text-destructive hover:bg-destructive/10' }[variant]
-  return <button type={type} title={title} data-testid={testid} disabled={disabled} onClick={onClick} className={cx('inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-medium transition-colors disabled:opacity-50', v, className)}>{children}</button>
+  return <button type={type} title={title} aria-label={title} data-testid={testid} disabled={disabled} onClick={onClick} className={cx('inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-medium transition-colors disabled:opacity-50', v, className)}>{children}</button>
 }
 const ErrorLine = ({ error }) => (error ? <p className="flex items-center gap-1.5 text-sm text-destructive"><CircleAlert className="size-4" /> {error.status === 0 ? t('hub.offline') : error.message}</p> : null)
 function Bar({ percent }) {
@@ -113,7 +114,7 @@ function ThisServer({ accounts }) {
       right={<Btn variant="ghost" onClick={reload} title={t('hub.refresh')}>{loading ? <Spinner /> : <RefreshCw className="size-4" />}</Btn>}>
       <ErrorLine error={error} />
       {data && (data.projects.length === 0 ? <p className="text-sm text-muted-foreground">{t('hub.noProjects')}</p> : (
-        <ul className="-mx-2 grid gap-1 lg:grid-cols-2">
+        <ul className="-mx-2 grid grid-cols-1 gap-1 lg:grid-cols-2">
           {data.projects.map((p) => <ProjectRow key={p.name} testid="hub-project" name={p.name} state={hubState(p)} sub={(accounts || []).length > 1 ? label(p.account) : ''} href={chatHref(p.name)} />)}
         </ul>
       ))}
@@ -136,9 +137,9 @@ function SavedLink({ link }) {
       right={<Btn variant="ghost" onClick={reload} title={t('hub.refresh')}>{loading ? <Spinner /> : <RefreshCw className="size-4" />}</Btn>}>
       <p className="-mt-2 mb-2 truncate text-xs text-muted-foreground">{host}</p>
       <ErrorLine error={error} />
-      {error && <a href={link.url} className="text-sm text-primary underline">{t('hub.openThere')}</a>}
+      {error && <a href={link.url} className="inline-flex min-h-11 items-center text-sm text-primary underline">{t('hub.openThere')}</a>}
       {data && (
-        <ul className="-mx-2 grid gap-1 lg:grid-cols-2">
+        <ul className="-mx-2 grid grid-cols-1 gap-1 lg:grid-cols-2">
           {data.projects.map((p) => <ProjectRow key={p.name} testid="hub-remote-project" name={p.name} state={hubState(p)} href={remoteChatHref(l, p.name)} />)}
         </ul>
       )}
@@ -157,7 +158,7 @@ function ProjectsSection({ links, accounts }) {
       <ThisServer accounts={accounts} />
       {chats.length > 0 && (
         <Panel testid="hub-saved" title={t('hub.savedChats')} icon={Link2}>
-          <ul className="-mx-2 grid gap-1 lg:grid-cols-2">{chats.map((x) => <SavedLink key={x.id} link={x} />)}</ul>
+          <ul className="-mx-2 grid grid-cols-1 gap-1 lg:grid-cols-2">{chats.map((x) => <SavedLink key={x.id} link={x} />)}</ul>
         </Panel>
       )}
       {hubs.map((x) => <SavedLink key={x.id} link={x} />)}
@@ -188,6 +189,7 @@ function AccountsSection({ acc, onChanged }) {
   const projectsQ = useLoad(() => api.projects(), [])
   const [busy, setBusy] = useState('')
   const [msg, setMsg] = useState(null)
+  const [pending, setPending] = useState(null) // { name, account }: switch waiting for a yes
   const refresh = async () => { setBusy('limits'); await api.refreshLimits().catch(() => {}); setBusy(''); reload() }
   const switchTo = async (name, account) => {
     setBusy(name); setMsg(null)
@@ -219,10 +221,18 @@ function AccountsSection({ acc, onChanged }) {
             {(projectsQ.data?.projects || []).map((p) => (
               <li key={p.name} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <span className="min-w-0 truncate font-medium">{p.name}</span>
-                <select aria-label={t('hub.projectAccount')} data-testid="hub-account-select" value={p.account} disabled={busy === p.name}
-                  onChange={(e) => switchTo(p.name, e.target.value)} className="min-h-10 rounded-xl border bg-background px-2">
+                <select aria-label={t('hub.projectAccount')} data-testid="hub-account-select" value={pending?.name === p.name ? pending.account : p.account} disabled={busy === p.name}
+                  onChange={(e) => setPending(e.target.value === p.account ? null : { name: p.name, account: e.target.value })} className="min-h-11 rounded-xl border bg-background px-2">
                   {list.map((a) => <option key={a.id} value={a.id}>{accountLabel(a)}</option>)}
                 </select>
+                {pending?.name === p.name && (
+                  // switching restarts the project's Claude session: never on a stray tap
+                  <div className="flex w-full flex-wrap items-center justify-end gap-2 rounded-xl bg-amber-500/10 p-2 text-sm" data-testid="hub-account-confirm">
+                    <span className="min-w-0 flex-1">{t('hub.switchAsk', { name: p.name, label: accountLabel(list.find((a) => a.id === pending.account)) })}</span>
+                    <Btn onClick={() => setPending(null)}>{t('hub.cancel')}</Btn>
+                    <Btn variant="brand" onClick={() => { setPending(null); switchTo(p.name, pending.account) }} testid="hub-account-yes">{t('hub.switch')}</Btn>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -269,6 +279,7 @@ function UsageSection() {
           </div>
           <Panel title={t('hub.costPerDay')} icon={BarChart3}>
             <p className="-mt-2 mb-3 text-xs text-muted-foreground">{t('hub.costNote')}</p>
+            {!days.some((d) => d.cost) ? <p className="py-6 text-center text-sm text-muted-foreground">{t('hub.noUsage')}</p> : (
             <div className="flex h-32 items-end gap-[3px]" data-testid="hub-usage-chart">
               {days.map((d) => (
                 <div key={d.date} className="group relative flex h-full flex-1 items-end" title={`${d.date}: ${fmtUsd(d.cost || 0)}`}>
@@ -276,17 +287,23 @@ function UsageSection() {
                 </div>
               ))}
             </div>
-            {days.length > 0 && <div className="mt-1 flex justify-between text-[11px] text-muted-foreground"><span>{days[0].date}</span><span>{days[days.length - 1].date}</span></div>}
+            )}
+            {days.some((d) => d.cost) && <div className="mt-1 flex justify-between text-[11px] text-muted-foreground"><span>{days[0].date}</span><span>{days[days.length - 1].date}</span></div>}
           </Panel>
         </>
       )}
       <Panel title={t('hub.report')} icon={FolderKanban}>
-        <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-          <input type="date" value={from} max={to} onChange={(e) => e.target.value && setFrom(e.target.value)} aria-label={t('hub.from')} className="min-h-10 rounded-xl border bg-background px-2" />
-          <span className="text-muted-foreground">→</span>
-          <input type="date" value={to} min={from} onChange={(e) => e.target.value && setTo(e.target.value)} aria-label={t('hub.to')} className="min-h-10 rounded-xl border bg-background px-2" />
-          {rep.loading && <Spinner />}
-          {rep.data && <span className="ml-auto font-mono font-semibold">{fmtUsd(rep.data.usage.total.cost || 0)}</span>}
+        <div className="mb-3 grid grid-cols-2 gap-2 text-sm sm:flex sm:flex-wrap sm:items-end">
+          <label className="grid gap-1 text-xs text-muted-foreground">{t('hub.from')}
+            <input type="date" value={from} max={to} onChange={(e) => e.target.value && setFrom(e.target.value)} className="min-h-11 w-full rounded-xl border bg-background px-2 text-foreground" />
+          </label>
+          <label className="grid gap-1 text-xs text-muted-foreground">{t('hub.to')}
+            <input type="date" value={to} min={from} onChange={(e) => e.target.value && setTo(e.target.value)} className="min-h-11 w-full rounded-xl border bg-background px-2 text-foreground" />
+          </label>
+          <div className="col-span-2 flex min-h-11 items-center justify-between gap-2 sm:ml-auto">
+            {rep.loading ? <Spinner /> : <span />}
+            {rep.data && <span className="font-mono text-base font-semibold" data-testid="hub-report-total">{fmtUsd(rep.data.usage.total.cost || 0)}</span>}
+          </div>
         </div>
         <ErrorLine error={rep.error} />
         {rep.data && (byProject.length === 0 ? <p className="text-sm text-muted-foreground">{t('hub.noUsage')}</p> : (
@@ -316,6 +333,7 @@ function ServerSection() {
         <ErrorLine error={error} />
         <Btn className="ml-auto" onClick={reload}>{loading ? <Spinner /> : <RefreshCw className="size-4" />} {t('hub.refresh')}</Btn>
       </div>
+      {loading && !h && <div className="flex justify-center py-10"><Spinner /></div>}
       {h && (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -382,7 +400,7 @@ function LinksSection({ links, reload }) {
           <ul className="divide-y" data-testid="hub-links">
             {links.map((l, i) => (
               <li key={l.id} className="flex flex-wrap items-center gap-2 py-2" data-testid="hub-link">
-                <span className="min-w-0 flex-1">
+                <span className="min-w-[12rem] flex-1">
                   {editing?.id === l.id ? (
                     <form className="flex gap-1" onSubmit={async (e) => { e.preventDefault(); await run(api.editLink(l.id, editing.label)); setEditing(null) }}>
                       <input autoFocus value={editing.label} maxLength={60} onChange={(e) => setEditing({ ...editing, label: e.target.value })} className="min-h-10 min-w-0 flex-1 rounded-xl border bg-background px-2" />
@@ -391,14 +409,14 @@ function LinksSection({ links, reload }) {
                     </form>
                   ) : (
                     <>
-                      <span className="block truncate font-medium">{l.label || t(`hub.kind.${kindOf(l.url)}`)}</span>
-                      <span className="block truncate font-mono text-xs text-muted-foreground">{t(`hub.kind.${kindOf(l.url)}`)} · {(() => { try { return new URL(l.url).host } catch { return '' } })()}</span>
+                      <span className="block truncate font-medium">{l.label || parseLink(l.url)?.project || t(`hub.kind.${kindOf(l.url)}`)}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{t(`hub.kind.${kindOf(l.url)}`)} · <span className="font-mono">{(() => { try { return new URL(l.url).host } catch { return '' } })()}</span></span>
                     </>
                   )}
                 </span>
                 {editing?.id !== l.id && (
                   <span className="flex shrink-0 items-center">
-                    <a href={l.url} className="inline-flex size-10 items-center justify-center rounded-xl hover:bg-accent" title={t('hub.open')}><ExternalLink className="size-4" /></a>
+                    <a href={l.url} aria-label={t('hub.open')} className="inline-flex size-11 items-center justify-center rounded-xl hover:bg-accent" title={t('hub.open')}><ExternalLink className="size-4" /></a>
                     <Btn variant="ghost" onClick={() => setEditing({ id: l.id, label: l.label })} title={t('hub.rename')}><Pencil className="size-4" /></Btn>
                     <Btn variant="ghost" disabled={i === 0 || busy} onClick={() => run(api.moveLink(l.id, 'up'))} title={t('hub.up')}><ArrowUp className="size-4" /></Btn>
                     <Btn variant="ghost" disabled={i === links.length - 1 || busy} onClick={() => run(api.moveLink(l.id, 'down'))} title={t('hub.down')}><ArrowDown className="size-4" /></Btn>
@@ -415,7 +433,15 @@ function LinksSection({ links, reload }) {
 }
 
 // ---------------------------------------------------------------- shell
-function Blocked({ kind, onRetry }) {
+function Blocked({ kind, msg, onRetry }) {
+  if (kind === 'limited') return (
+    <div data-testid="hub-blocked" className="hub-top hub-bottom flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+      <span className="grid size-16 place-items-center rounded-full bg-muted text-muted-foreground"><Clock className="size-8" /></span>
+      <div className="text-base font-medium">{t('hub.limited')}</div>
+      <div className="text-sm text-muted-foreground">{msg}</div>
+      <button type="button" onClick={onRetry} className="mt-2 min-h-11 rounded-full border px-6 hover:bg-accent">{t('chat.retry')}</button>
+    </div>
+  )
   return (
     <div data-testid="hub-blocked" className="hub-top hub-bottom flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
       <span className="grid size-16 place-items-center rounded-full bg-muted text-muted-foreground"><KeyRound className="size-8" /></span>
@@ -429,14 +455,20 @@ function Blocked({ kind, onRetry }) {
 export default function App() {
   const [me, setMe] = useState(null)
   const [status, setStatus] = useState(hubKey() ? 'loading' : 'invalid')
+  const [blockMsg, setBlockMsg] = useState('')
   const [section, setSection] = useState(() => parseSection(location.hash))
-  const links = useLoad(() => (hubKey() ? api.links().then((r) => r.links) : Promise.resolve([])), [])
-  const acc = useLoad(() => (hubKey() ? api.accounts() : Promise.resolve(null)), [], 60000)
+  // nothing else is asked before the key is known to be good: a wrong key must cost ONE try
+  const ready = status === 'ok'
+  const links = useLoad(() => (ready ? api.links().then((r) => r.links) : Promise.resolve(null)), [ready])
+  const acc = useLoad(() => (ready ? api.accounts() : Promise.resolve(null)), [ready], 60000)
 
   const loadMe = useCallback(() => {
     if (!hubKey()) return
     setStatus('loading')
-    api.me().then((r) => { setMe(r); setStatus('ok') }).catch((e) => setStatus(e instanceof ApiError && (e.status === 401 || e.status === 404) ? 'invalid' : 'error'))
+    api.me().then((r) => { setMe(r); setStatus('ok') }).catch((e) => {
+      if (e instanceof ApiError && e.status === 429) { setBlockMsg(e.message); return setStatus('limited') }
+      setStatus(e instanceof ApiError && (e.status === 401 || e.status === 404) ? 'invalid' : 'error')
+    })
   }, [])
   useEffect(loadMe, [loadMe])
   useEffect(() => {
@@ -446,17 +478,17 @@ export default function App() {
   }, [])
   // the key travels in the manifest's start_url: the home-screen app opens with it
   useEffect(() => {
-    if (!hubKey() || document.querySelector('link[rel="manifest"]')) return
+    if (!ready || document.querySelector('link[rel="manifest"]')) return
     const l = document.createElement('link')
     l.rel = 'manifest'
     l.href = `/remote/manifest.webmanifest?key=${encodeURIComponent(hubKey())}`
     document.head.appendChild(l)
-  }, [])
+  }, [ready])
   const go = (id) => { if (id !== section) { location.hash = '/' + id; setSection(id) } }
 
   if (status !== 'ok') return (
     <div className="hub-app h-full bg-background">
-      {status === 'loading' ? <div className="flex h-full items-center justify-center"><Spinner /></div> : <Blocked kind={status} onRetry={loadMe} />}
+      {status === 'loading' ? <div className="flex h-full items-center justify-center"><Spinner /></div> : <Blocked kind={status} msg={blockMsg} onRetry={loadMe} />}
     </div>
   )
   const accounts = acc.data?.accounts
