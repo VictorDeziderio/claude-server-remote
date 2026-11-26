@@ -10,6 +10,10 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+const CHROME = [process.env.CHROME_PATH, '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find((p) => p && fs.existsSync(p))
+let chromium
+try { ({ chromium } = await import('playwright-core')) } catch { /* not installed */ }
+
 const PANEL = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-chat-'))
 const PROJ = path.join(ROOT, 'projects', 'demo')
@@ -282,6 +286,41 @@ try {
   ok('no key in the panel log', !logs.includes(OWNER) && !logs.includes(LIM))
   const auditTxt = fs.readFileSync(path.join(ROOT, '.claude', 'logs', 'audit.log'), 'utf8')
   ok('audit: key actions logged without the key', /chat\.key\.create/.test(auditTxt) && /chat\.send/.test(auditTxt) && !auditTxt.includes(OWNER) && !auditTxt.includes(LIM))
+
+  // ---- end to end: the BUILT page, served by this server, on an iPhone-sized screen ----
+  if (hasChatHtml && chromium && CHROME) {
+    const browser = await chromium.launch({ executablePath: CHROME, args: ['--no-sandbox'] })
+    try {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 })
+      const page = await ctx.newPage()
+      const errors = []
+      page.on('pageerror', (e) => errors.push(e.message))
+      page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
+      page.on('response', (r) => { if (r.status() >= 400) errors.push(r.status() + ' ' + r.url().replace(OWNER, '[key]')) })
+      await page.goto(`${BASE}/c/${OWNER}`)
+      await page.getByTestId('screen-list').waitFor({ timeout: 10000 }).catch(async (e) => { throw new Error(e.message + ' | page errors: ' + errors.join(' | ') + ' | body: ' + (await page.evaluate(() => document.body.innerText.slice(0, 300)))) })
+      await page.getByTestId('conv-row').first().waitFor({ timeout: 10000 }).catch(() => {})
+      ok('e2e: the link opens the conversation list', await page.getByTestId('conv-row').count() > 0)
+      ok('e2e: iPhone status bar readable on the light theme (dark text bar)', await page.evaluate(() => document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').content) === 'default')
+      ok('e2e: no horizontal overflow on the iPhone', await page.evaluate(() => document.documentElement.scrollWidth <= 390))
+      ok('e2e: per-link manifest + apple-touch-icon', await page.evaluate(() => !!document.querySelector('link[rel="manifest"][href*="/manifest.webmanifest"]') && !!document.querySelector('link[rel="apple-touch-icon"]')))
+      const icon = await fetch(BASE + '/apple-touch-icon.png'); ok('e2e: apple-touch-icon served', icon.status === 200 && /png/.test(icon.headers.get('content-type') || ''))
+      await page.getByTestId('new-chat').click()
+      await page.locator('textarea').fill('e2e hello')
+      await page.getByTestId('send-btn').click()
+      await page.locator('[data-testid="bubble"], [data-testid="bubble-live"]').filter({ hasText: /Hello from the fake Claude/ }).first().waitFor({ timeout: 15000 }).catch(async (e) => { await page.screenshot({ path: path.join(os.tmpdir(), 'chat-e2e-fail.png') }); throw new Error(e.message.split('\n')[0] + ' | ' + errors.join(' | ') + ' | ' + (await page.evaluate(() => document.body.innerText.slice(-400)))) })
+      ok('e2e: send -> streamed answer of Claude shows up', true)
+      await page.getByTestId('send-btn').waitFor({ timeout: 10000 })
+      ok('e2e: run ends (send button back)', await page.getByTestId('stop-btn').count() === 0)
+      await page.waitForTimeout(800)
+      ok('e2e: the answer shows once after the run ends (not streamed copy + saved copy)', await page.getByTestId('bubble').filter({ hasText: /Hello from the fake Claude/ }).count() === 1, String(await page.getByTestId('bubble').filter({ hasText: /Hello from the fake Claude/ }).count()))
+      await page.getByTestId('back-btn').click()
+      await page.getByTestId('screen-list').waitFor()
+      ok('e2e: the new conversation is first in the list', /e2e hello/.test(await page.getByTestId('conv-row').first().innerText()))
+      ok('e2e: no errors in the page (CSP, scripts)', errors.length === 0, errors.join(' | '))
+      if (process.env.CHAT_E2E_SHOT) await page.screenshot({ path: process.env.CHAT_E2E_SHOT })
+    } finally { await browser.close() }
+  }
 
   // ---- rename / delete of the project ----
   await sleep(500)

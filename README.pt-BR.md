@@ -39,6 +39,11 @@ notificações push. Os projetos e o login do Claude ficam num volume, então na
   se quiser, uma cópia incremental do volume inteiro em outro disco (`VOLUME_BACKUP_DIR`).
 - **Seguro por padrão:** login próprio com sessões assinadas e revogáveis, 2FA (TOTP) opcional, limite de
   tentativas, checagem de origem (CSRF), CSP e registro de auditoria. Sem senha, o painel não sobe.
+- **Chat do projeto por link + key:** uma tela de conversa por projeto (como um app de mensagens) que dá
+  para pôr na tela de início do iPhone. Todas as conversas do projeto, 20 por vez; fotos e arquivos;
+  página de dados da conversa com Mídia / Arquivos / Links. A key de dono tem poder total; keys limitadas
+  (para outras pessoas) só veem as próprias conversas, e o Claude só usa ferramentas de arquivo dentro do
+  projeto. Configurar → *Link de chat* cria e revoga as keys.
 - **Paleta de comandos** (Ctrl/⌘ + K): vai para qualquer página, terminal ou arquivos de um projeto pelo teclado.
 - **Tema claro/escuro** (shadcn/ui com Tailwind v4) e **vários idiomas** (inglês e português; um idioma novo é só copiar um arquivo JSON).
 - **Qualquer Docker:** amd64 e arm64, `docker compose` simples, HTTPS automático opcional.

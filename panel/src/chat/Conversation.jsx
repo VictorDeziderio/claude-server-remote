@@ -97,8 +97,11 @@ export function Conversation({ id: initialId, item, onBack, onInfo, onCreated, o
 
   const toBottom = (smooth) => { const el = scroller.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' }) }
 
-  // newest page again (after a run ends or the app comes back to the foreground)
-  const refresh = useCallback(async (id) => {
+  // newest page again (after a run ends or the app comes back to the foreground).
+  // final: the run is over, so the saved conversation has the whole reply. The streamed messages
+  // go: their ids are not the saved ones (the server folds the parts of one reply into one message),
+  // so keeping them would show the reply twice.
+  const refresh = useCallback(async (id, { final = false } = {}) => {
     try {
       const r = await api.messages(id)
       const page = r.items || []
@@ -106,7 +109,7 @@ export function Conversation({ id: initialId, item, onBack, onInfo, onCreated, o
       const first = toMs(page[0]?.ts)
       // older pages stay; streamed messages the page does not have yet stay after it; local echoes go
       setMsgs((prev) => {
-        const keep = prev.filter((m) => !m.local && !ids.has(m.id))
+        const keep = prev.filter((m) => !m.local && !ids.has(m.id) && !(final && m.live))
         return [...keep.filter((m) => !m.live && (!first || toMs(m.ts) <= first)), ...page, ...keep.filter((m) => m.live)]
       })
       setNext((n) => n ?? r.next ?? null)
@@ -117,7 +120,7 @@ export function Conversation({ id: initialId, item, onBack, onInfo, onCreated, o
     sse.current?.close(); sse.current = null
     setRunning(false); setLive(null)
     onActivity?.()
-    if (id) refresh(id)
+    if (id) refresh(id, { final: true })
   }, [refresh, onActivity])
 
   const connect = useCallback((id, { expect } = {}) => {
@@ -266,7 +269,7 @@ export function Conversation({ id: initialId, item, onBack, onInfo, onCreated, o
               if (dk) lastDay = dk
               return (
                 <React.Fragment key={m.id}>
-                  {sep && <div className="sticky top-1 z-[1] mx-auto my-1 rounded-full border bg-background/90 px-3 py-0.5 text-[11px] text-muted-foreground backdrop-blur">{fmtDay(m.ts)}</div>}
+                  {sep && <div className="sticky top-1 z-[1] mx-auto my-1 rounded-full border bg-background px-3 py-0.5 text-[11px] text-muted-foreground shadow-xs">{fmtDay(m.ts)}</div>}
                   <Bubble m={m} onView={onView} />
                 </React.Fragment>
               )

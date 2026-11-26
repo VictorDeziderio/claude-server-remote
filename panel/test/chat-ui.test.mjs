@@ -53,7 +53,16 @@ const srv = http.createServer((req, res) => {
 })
 await new Promise((r) => srv.listen(0, '127.0.0.1', r))
 const BASE = `http://127.0.0.1:${srv.address().port}`
-const push = (event, data) => { for (const res of sse) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`) }
+// like the real server, a finished run is in the saved conversation: the messages of the run are
+// saved under OTHER ids (the server folds the parts of one reply into one message)
+const SAVED = {}
+let runMsgs = []
+const save = (id, msgs) => { SAVED[id] = [...(SAVED[id] || []), ...msgs.map((m) => ({ ...m, id: 'saved-' + m.id }))] }
+const push = (event, data) => {
+  if (event === 'message') runMsgs.push(data)
+  if (event === 'done') { save(data.id, runMsgs); runMsgs = [] }
+  for (const res of sse) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+}
 const endStreams = () => { for (const res of sse) res.end(); sse.clear() }
 
 // ---------- mock data ----------
@@ -91,10 +100,11 @@ const page2 = (arr, before, limit) => {
   return { ok: true, items, next: start + limit < arr.length ? String(start + limit) : null }
 }
 // messages: newest first in pages, oldest -> newest inside a page
-const msgPage = (before, limit) => {
-  const end = before ? Number(before) : MSGS.length
+const msgPage = (before, limit, extra = []) => {
+  const all = [...MSGS, ...extra]
+  const end = before ? Number(before) : all.length
   const start = Math.max(0, end - limit)
-  return { ok: true, items: MSGS.slice(start, end), next: start > 0 ? String(start) : null }
+  return { ok: true, items: all.slice(start, end), next: start > 0 ? String(start) : null }
 }
 
 let fails = 0, passes = 0
@@ -115,15 +125,16 @@ async function mockApi(page) {
     if (p === 'me') return json({ ok: true, project: 'demo', label: 'Phone', role: 'owner' })
     if (p === 'conversations') return json(page2(CONVS, q.get('before'), Number(q.get('limit')) || 20))
     if (p === 'messages') {
-      if (q.get('id') === 'c1') return json(msgPage(q.get('before'), Number(q.get('limit')) || 50))
-      if (q.get('id') === 'c2') return json({ ok: true, items: [{ id: 'r1', role: 'user', ts: NOW - 60e3, text: 'Run the tests', tools: [], attachments: [] }], next: null })
-      return json({ ok: true, items: [], next: null })
+      if (q.get('id') === 'c1') return json(msgPage(q.get('before'), Number(q.get('limit')) || 50, SAVED.c1))
+      if (q.get('id') === 'c2') return json({ ok: true, items: [{ id: 'r1', role: 'user', ts: NOW - 60e3, text: 'Run the tests', tools: [], attachments: [] }, ...(SAVED.c2 || [])], next: null })
+      return json({ ok: true, items: SAVED[q.get('id')] || [], next: null })
     }
     if (p === 'send') {
       const b = JSON.parse(req.postData() || '{}')
       if (b.text === 'busy please') return json({ ok: false, msg: 'running' }, 409)
       if (b.text === 'too many please') return json({ ok: false, msg: 'Too many runs in this project' }, 429)
       if (b.text === 'revoked please') return json({ ok: false, msg: 'bad key' }, 401)
+      runMsgs = [{ id: 'sent-' + calls.length, role: 'user', ts: Date.now(), text: b.text || '', tools: [], attachments: [] }]
       return json({ ok: true, id: b.id || 'new1' })
     }
     if (p === 'stop') return json({ ok: true })
@@ -137,6 +148,7 @@ async function mockApi(page) {
       // c2 is "running": the server replays the partial reply on connect, then finishes
       if (q.get('id') === 'c2') {
         const ev = (e, d) => `event: ${e}\ndata: ${JSON.stringify(d)}\n\n`
+        if (!SAVED.c2) save('c2', [{ id: 'r2', role: 'assistant', ts: NOW - 30e3, text: 'Running them now.', tools: [{ name: 'Bash', summary: 'npm test', ok: true }], attachments: [] }, { id: 'r3', role: 'assistant', ts: NOW, text: 'All 12 tests pass.', tools: [], attachments: [] }])
         return route.fulfill({ status: 200, contentType: 'text/event-stream', body: ev('message', { id: 'r2', role: 'assistant', ts: NOW - 30e3, text: 'Running them now.', tools: [{ name: 'Bash', summary: 'npm test', ok: true }], attachments: [] }) + ev('delta', { text: 'All 12 tests pass.' }) + ev('message', { id: 'r3', role: 'assistant', ts: NOW, text: 'All 12 tests pass.', tools: [], attachments: [] }) + ev('done', { id: 'c2' }) })
       }
       return route.continue()
@@ -201,7 +213,7 @@ try {
     appTitle: document.querySelector('meta[name=apple-mobile-web-app-title]')?.content,
   }))
   ok('viewport-fit=cover', head.vp.includes('viewport-fit=cover'), head.vp)
-  ok('apple-mobile-web-app-capable + black-translucent status bar', head.capable === 'yes' && head.bar === 'black-translucent', JSON.stringify(head))
+  ok('apple-mobile-web-app-capable + readable status bar on light (default = dark text)', head.capable === 'yes' && head.bar === 'default', JSON.stringify(head))
   ok('apple-touch-icon is a PNG that exists', /\.png$/.test(head.icon || '') && (await page.request.get(BASE + head.icon)).ok(), head.icon)
   ok('per-link manifest /c/<key>/manifest.webmanifest', head.manifest === `/c/${KEY}/manifest.webmanifest`, head.manifest)
   ok('home-screen title = project, tab title "Claude · <project>"', head.appTitle === 'demo' && head.title === 'Claude · demo', JSON.stringify(head))
@@ -410,6 +422,7 @@ try {
   await dp.goto(`${BASE}/c/${KEY}`)
   await dp.locator('[data-testid="conv-row"]').first().waitFor({ timeout: 10000 })
   ok('dark: follows the system', await dp.evaluate(() => document.documentElement.classList.contains('dark')))
+  ok('dark: status bar is translucent over the dark header', await dp.evaluate(() => document.querySelector('meta[name=apple-mobile-web-app-status-bar-style]').content) === 'black-translucent')
   await shot(dp, 'list-dark')
   await dp.locator('[data-id="c1"]').click()
   await dp.locator('[data-testid="bubble"]').first().waitFor()
