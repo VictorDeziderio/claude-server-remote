@@ -1,5 +1,7 @@
 'use strict';
 const { execFile } = require('child_process');
+const fs = require('fs');
+const { pipeline } = require('stream');
 
 // found by @security: `tmux new-session` starts a shell that inherits the caller's env (the panel) —
 // without filtering, PANEL_PASSWORD/GH_TOKEN went into EVERY tmux session (and into any Claude
@@ -64,6 +66,45 @@ function sendJson(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
+// streams a file into an HTTP response: the ONLY way server code sends a file (a repo check in
+// test/unit.mjs fails on a bare `.pipe(res)`). `fs.createReadStream(x).pipe(res)` has no 'error'
+// handler: a file that passed the caller's stat but could not be opened (deleted or swapped for a
+// directory in between, no permission) raised an uncaught 'error' and took the WHOLE panel down.
+// Here the file is opened and fstat'ed FIRST and the headers are written only after that, so a
+// failure still gets a real answer (404 missing / 500 other); a failure in the middle of the body
+// destroys the response (the client sees a cut download) instead of crashing.
+// opts: { status=200, headers, start, end } (start/end inclusive, as in createReadStream).
+// Resolves true when the whole file was sent, false otherwise; never rejects.
+const NOT_FOUND_CODES = new Set(['ENOENT', 'ENOTDIR', 'EISDIR', 'ELOOP']);
+function sendStream(res, file, opts = {}) {
+  const { status = 200, headers = {}, start, end } = opts;
+  return new Promise((resolve) => {
+    const fail = (e) => {
+      if (!res.headersSent && !res.destroyed) {
+        const code = e && NOT_FOUND_CODES.has(e.code) ? 404 : 500;
+        res.writeHead(code, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(code === 404 ? 'not found' : 'read error');
+      } else if (!res.destroyed) res.destroy();
+      // the client going away mid-download is normal, not worth an error line
+      if (!e || e.code !== 'ERR_STREAM_PREMATURE_CLOSE') log('error', 'file stream failed', { err: e && e.message });
+      resolve(false);
+    };
+    fs.open(file, 'r', (err, fd) => {
+      if (err) return fail(err);
+      fs.fstat(fd, (e2, st) => {
+        if (e2 || !st.isFile()) {
+          fs.close(fd, () => {});
+          return fail(e2 || Object.assign(new Error('not a regular file'), { code: 'EISDIR' }));
+        }
+        if (res.destroyed) { fs.close(fd, () => {}); return resolve(false); }
+        res.writeHead(status, headers);
+        const rs = fs.createReadStream(null, { fd, start, end, autoClose: true });
+        pipeline(rs, res, (e3) => (e3 ? fail(e3) : resolve(true)));
+      });
+    });
+  });
+}
+
 const truthy = (v) => v === true || v === 'true' || v === 'on' || v === '1';
 const validName = (n) => typeof n === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(n) && n !== '.' && n !== '..';
 // tmux session name of the project (same sanitizing as claude-session.sh: tr -c 'A-Za-z0-9_-' '_')
@@ -91,4 +132,4 @@ async function typeLine(sess, text) {
   return (await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-m'])).ok;
 }
 
-module.exports = { TMUX_STRIP_ENV, sh, readJson, readRaw, sendJson, truthy, validName, sessionName, paneOf, clampInt, log, typeLine };
+module.exports = { TMUX_STRIP_ENV, sh, readJson, readRaw, sendJson, sendStream, truthy, validName, sessionName, paneOf, clampInt, log, typeLine };

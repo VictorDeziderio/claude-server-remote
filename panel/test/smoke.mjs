@@ -430,8 +430,43 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
   const r2 = await j('POST', '/api/login', { login: 'admin', password: 'test123' })
   const cookie2 = (r2.headers.get('set-cookie') || '').split(';')[0]
   r = await j('GET', '/api/sessions'); const other = r.data.sessions.find((s) => !s.current); ok('segunda sessao aparece', !!other)
+  // revoking a session must also close what it already has OPEN (the cookie is only checked when a
+  // connection starts): its SSE stream and its terminal WebSocket
+  const sseOpen = (ck) => new Promise((resolve) => {
+    const rq = http.get(BASE + '/api/events', { headers: { cookie: ck } }, (res) => {
+      const closed = new Promise((done) => { res.on('end', () => done('end')); res.on('close', () => done('close')); res.on('error', () => done('error')) })
+      res.resume(); resolve({ status: res.statusCode, closed, rq })
+    })
+    rq.on('error', () => resolve({ status: -1, closed: Promise.resolve('error'), rq }))
+  })
+  const within = (p, ms) => Promise.race([p, new Promise((s) => setTimeout(() => s('timeout'), ms))])
+  const termOf = (ck) => new Promise((resolve) => {
+    const ws = new WSLib(`ws://127.0.0.1:${PORT}/ws/term?name=shell&cols=80&rows=24`, { headers: { cookie: ck, origin: BASE } })
+    const closed = new Promise((done) => ws.on('close', (code) => done(code)))
+    ws.on('error', () => {})
+    ws.on('message', (m) => { const s = m.toString(); if (s.charCodeAt(0) === 1 && JSON.parse(s.slice(1)).type === 'ready') resolve({ ws, closed, ready: true }) })
+    closed.then(() => resolve({ ws, closed, ready: false }))
+    setTimeout(() => resolve({ ws, closed, ready: false }), 8000)
+  })
+  const sse2 = await sseOpen(cookie2)
+  const term2 = HAS_TMUX ? await termOf(cookie2) : null
+  ok('revoke: the session to revoke has an open SSE stream', sse2.status === 200, String(sse2.status))
+  if (term2) ok('revoke: ...and an open terminal', term2.ready)
   r = await j('POST', '/api/sessions/revoke', { id: other.id }); ok('revogar sessao', r.data.ok)
+  ok('revoke: its SSE stream is closed at once', (await within(sse2.closed, 3000)) !== 'timeout')
+  if (term2) ok('revoke: its terminal WebSocket is closed at once (4001, no reconnect)', (await within(term2.closed, 3000)) === 4001)
+  else skip('revoke: terminal WebSocket closed (no tmux)')
   r = await fetch(BASE + '/api/state', { headers: { cookie: cookie2 } }); ok('sessao revogada -> 401', r.status === 401)
+  {
+    // "sign out everywhere else": the other device's stream closes, ours stays open
+    const r3 = await j('POST', '/api/login', { login: 'admin', password: 'test123' })
+    const cookie3 = (r3.headers.get('set-cookie') || '').split(';')[0]
+    const sse3 = await sseOpen(cookie3), mine = await sseOpen(cookie)
+    r = await j('POST', '/api/sessions/revoke-others', {}); ok('revoke-others ok', r.data.ok, JSON.stringify(r.data))
+    ok('revoke-others: the other session stream is closed', (await within(sse3.closed, 3000)) !== 'timeout')
+    ok('revoke-others: the current session stream stays open', (await within(mine.closed, 500)) === 'timeout')
+    mine.rq.destroy()
+  }
 
   // 2FA
   r = await j('POST', '/api/totp/setup', {}); ok('totp setup', r.data.ok && /^otpauth:\/\/totp\//.test(r.data.otpauth) && r.data.secret.length >= 16)
@@ -733,6 +768,10 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
       ok('login: telas pos-login passadas sozinhas', /login-success/.test(p1) && /security-notes/.test(p1) && /terminal=2\. No, maybe later/.test(p1), p1)
       ok('login: pasta confiavel e aviso do bypass aceitos (default era "No, exit")', /trust=Yes, I trust this folder/.test(p1) && /bypass=Yes, I accept/.test(p1) && !/=No, exit/.test(p1), p1)
       ok('login: tela desconhecida passou com Enter e foi pro log', /unknown-passed/.test(p1) && /login: unknown screen/.test(logs), p1)
+      // that unknown screen still shows the pasted code (fake-claude.sh "last input"): it is masked in
+      // the panel log and in the audit log, never written in clear
+      ok('login: the pasted code never reaches the panel log (masked)', !logs.includes('good-code') && logs.includes('[code hidden]'), logs.split('\n').filter((l) => /unknown screen/.test(l)).join('\n').slice(0, 400))
+      ok('login: the pasted code is not in the audit log', !fs.readFileSync(path.join(ROOT, '.claude', 'logs', 'audit.log'), 'utf8').includes('good-code'))
       await new Promise((s) => setTimeout(s, 2000))
       ok('login: sessao cr-login encerrada no fim', spawnSync('tmux', ['has-session', '-t', '=cr-login'], { env }).status !== 0)
       // switching account: already logged in, claude opens at the prompt -> the panel sends /login by itself

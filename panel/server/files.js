@@ -21,6 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const cfg = require('./config');
+const { sendStream } = require('./util');
 
 const BASE = cfg.FS_BASE;
 const MAX_TEXT = 2 * 1024 * 1024;     // leitura/edicao inline
@@ -197,14 +198,13 @@ function fsDownload(rel, res) {
     return res.end(tr('srv.fileNotFound'));
   }
   const name = path.basename(full);
-  res.writeHead(200, {
+  return sendStream(res, full, { headers: {
     'Content-Type': MIME[path.extname(full).toLowerCase()] || 'application/octet-stream',
     'Content-Length': st.size,
     'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
-  });
-  fs.createReadStream(full).pipe(res);
+  } });
 }
 // upload: STREAMED straight to disk (found by @security: one Buffer per upload, up to 100MB,
 // with no limit on how many in parallel, made the panel's RAM proportional to simultaneous uploads).
@@ -221,43 +221,82 @@ function fsUploadStream(rel, req, overwrite) {
   if (full === BASE) return Promise.resolve({ ok: false, msg: tr('srv.badPath') });
   return streamUpload(full, req, overwrite).then((r) => (r.ok ? { ...r, msg: tr('srv.uploaded', { path: relOf(full), size: r.size }), path: relOf(full) } : r));
 }
+// no request data for this long -> the upload fails and its temp file is removed (the server's own
+// requestTimeout is far higher, so a big upload on a slow link is never cut while data keeps coming)
+const UPLOAD_IDLE_MS = 120 * 1000;
 // streams the request body into `full` (already checked by the caller) -> {ok, size} | {ok:false, msg, status?, code?}
-function streamUpload(full, req, overwrite) {
+// Async writes with backpressure: when the disk is slower than the network the request is paused
+// (no unbounded buffering in memory) and resumed on 'drain'. Same outcome as before for every case:
+// temp file + atomic rename, EXISTS check at the end, over the limit = stop writing and let the body
+// drain until 'end' (so the "too big" answer really reaches the client), write error = keep draining
+// and answer the error message.
+// opts.idleMs: inactivity timeout override (tests).
+function streamUpload(full, req, overwrite, opts = {}) {
   if (activeUploads >= MAX_CONCURRENT_UPLOADS) {
     return Promise.resolve({ ok: false, status: 429, msg: tr('srv.tooManyUploads') });
   }
   activeUploads++;
+  const idleMs = opts.idleMs || UPLOAD_IDLE_MS;
   const tmp = full + '.upload-' + crypto.randomBytes(8).toString('hex') + '.tmp';
   return new Promise((resolve) => {
-    let size = 0, over = false, writeErr = null, fd = null, done = false;
+    let size = 0, over = false, writeErr = null, out = null, done = false, ended = false, paused = false, idle = null;
     const finish = (v) => {
       if (done) return;
       done = true;
-      if (fd !== null) { try { fs.closeSync(fd); } catch { /* */ } }
+      if (idle) clearTimeout(idle);
+      if (out && !out.closed) out.destroy();
       activeUploads--;
       if (!v.ok) { try { fs.rmSync(tmp, { force: true }); } catch { /* */ } }
       resolve(v);
     };
+    // inactivity: counts only while WE are waiting for the client (not while paused for the disk)
+    const arm = () => {
+      if (idle) clearTimeout(idle);
+      idle = null;
+      if (done || ended || paused) return;
+      idle = setTimeout(() => {
+        finish({ ok: false, status: 408, msg: tr('srv.uploadStalled', { s: Math.round(idleMs / 1000) }) });
+        try { req.destroy(); } catch { /* */ }
+      }, idleMs);
+      if (idle.unref) idle.unref();
+    };
+    let fd;
     try {
       fs.mkdirSync(path.dirname(full), { recursive: true });
       fd = fs.openSync(tmp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | NOFOLLOW);
     } catch (e) { return finish({ ok: false, msg: e.message }); }
-    req.on('data', (chunk) => {
-      if (over || writeErr) return;
-      size += chunk.length;
-      if (size > MAX_UPLOAD) { over = true; return; } // stops writing, but lets the body drain
-      try { fs.writeSync(fd, chunk); } catch (e) { writeErr = e; }
-    });
-    req.on('end', () => {
+    out = fs.createWriteStream(null, { fd, autoClose: true });
+    const resume = () => { if (paused) { paused = false; req.resume(); arm(); } };
+    out.on('drain', resume);
+    out.on('error', (e) => { if (!writeErr) writeErr = e; resume(); }); // keeps draining the body
+    // fd closed after out.end(): the file is complete on disk, switch it to the final name
+    out.on('close', () => {
+      if (done || !ended) return;
       if (writeErr) return finish({ ok: false, msg: writeErr.message });
-      if (over) return finish({ ok: false, msg: tr('srv.uploadTooBig', { mb: MAX_UPLOAD / 1024 / 1024 }) });
       if (!overwrite && fs.existsSync(full)) return finish({ ok: false, code: 'EXISTS', msg: tr('srv.existsOverwrite') });
-      try { fs.closeSync(fd); fd = null; fs.renameSync(tmp, full); }
+      try { fs.renameSync(tmp, full); }
       catch (e) { return finish({ ok: false, msg: e.message }); }
       finish({ ok: true, size });
     });
+    req.on('data', (chunk) => {
+      arm();
+      if (over || writeErr) return;
+      size += chunk.length;
+      if (size > MAX_UPLOAD) { over = true; return; } // stops writing, but lets the body drain
+      if (!out.write(chunk)) { paused = true; req.pause(); arm(); }
+    });
+    req.on('end', () => {
+      ended = true;
+      if (idle) clearTimeout(idle);
+      if (writeErr) return finish({ ok: false, msg: writeErr.message });
+      if (over) return finish({ ok: false, msg: tr('srv.uploadTooBig', { mb: MAX_UPLOAD / 1024 / 1024 }) });
+      out.end(); // -> 'close' above
+    });
     req.on('error', () => finish({ ok: false, msg: tr('srv.uploadBroken') }));
-    req.on('close', () => finish({ ok: false, msg: tr('srv.uploadBroken') }));
+    // 'close' also comes right after a normal 'end', while the last write may still be on its way to
+    // disk: only a close BEFORE the end means the client went away
+    req.on('close', () => { if (!ended) finish({ ok: false, msg: tr('srv.uploadBroken') }); });
+    arm();
   });
 }
 
@@ -278,4 +317,4 @@ async function saveUpload(dir, name, req) {
   return r.ok ? { ok: true, path: full, size: r.size } : r;
 }
 
-module.exports = { UPLOAD_DIR, saveUpload, fsStat, fsList, fsRead, fsSave, fsCreate, fsDelete, fsRename, fsDownload, fsUploadStream, MAX_UPLOAD, confine, streamUpload, MIME };
+module.exports = { UPLOAD_IDLE_MS, UPLOAD_DIR, saveUpload, fsStat, fsList, fsRead, fsSave, fsCreate, fsDelete, fsRename, fsDownload, fsUploadStream, MAX_UPLOAD, confine, streamUpload, MIME };

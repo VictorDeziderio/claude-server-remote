@@ -9,6 +9,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 
 const CHROME = [process.env.CHROME_PATH, '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find((p) => p && fs.existsSync(p))
 let chromium
@@ -364,6 +365,13 @@ try {
     } finally { await browser.close() }
   }
 
+  // ---- two projects must never map to the same tmux session ('.' becomes '_' in the session name) ----
+  r = await j('POST', '/api/create', { name: 'dot.name' }); ok('create "dot.name"', r.data.ok, JSON.stringify(r.data))
+  r = await j('POST', '/api/create', { name: 'dot_name' }); ok('create "dot_name" refused: same tmux session as "dot.name"', r.data.ok === false && /dot\.name/.test(r.data.msg) && !fs.existsSync(path.join(ROOT, 'projects', 'dot_name')), JSON.stringify(r.data))
+  r = await j('POST', '/api/rename', { name: 'other', newName: 'dot_name' }); ok('rename to "dot_name" refused: same tmux session as "dot.name"', r.data.ok === false && fs.existsSync(path.join(ROOT, 'projects', 'other')), JSON.stringify(r.data))
+  r = await j('POST', '/api/rename', { name: 'dot.name', newName: 'dot_name' }); ok('renaming a project to its own session name is fine', r.data.ok, JSON.stringify(r.data))
+  r = await j('POST', '/api/delete', { name: 'dot_name' }); ok('delete "dot_name"', r.data.ok, JSON.stringify(r.data))
+
   // ---- rename / delete of the project ----
   await sleep(500)
   r = await j('POST', '/api/rename', { name: 'demo', newName: 'demo2' }); ok('rename project', r.data.ok, JSON.stringify(r.data))
@@ -397,6 +405,26 @@ try {
     ok('guard: Edit of CLAUDE.md denied', run({ tool_name: 'Edit', tool_input: { file_path: 'sub/CLAUDE.md' } }).status === 2)
     ok('guard: Read of .claude/settings.json still allowed', run({ tool_name: 'Read', tool_input: { file_path: '.claude/settings.json' } }).status === 0)
     ok('guard: invalid input denied', spawnSync(process.execPath, [G, P], { input: 'nope', encoding: 'utf8' }).status === 2)
+    // files another tool would EXECUTE later (npm scripts, git/CI hooks, make, direnv, editor tasks,
+    // container builds, root scripts): no writes from a limited link; reading them is fine
+    for (const f of ['package.json', 'web/package.json', 'package-lock.json', '.npmrc', '.husky/pre-commit', '.github/workflows/ci.yml', '.gitlab-ci.yml',
+      '.envrc', 'Makefile', 'sub/makefile', '.vscode/tasks.json', '.devcontainer/devcontainer.json', 'Dockerfile', 'api/Dockerfile.dev', 'docker-compose.yml',
+      'compose.prod.yaml', 'deploy.sh', '.pre-commit-config.yaml']) {
+      ok(`guard: Write to ${f} denied`, run({ tool_name: 'Write', tool_input: { file_path: f } }).status === 2)
+    }
+    ok('guard: Read of package.json still allowed', run({ tool_name: 'Read', tool_input: { file_path: 'package.json' } }).status === 0)
+    ok('guard: a script deeper in the tree is ordinary content', run({ tool_name: 'Edit', tool_input: { file_path: 'docs/examples/demo.sh' } }).status === 0)
+    ok('guard: ordinary source file still writable', run({ tool_name: 'Edit', tool_input: { file_path: 'src/app.js' } }).status === 0)
+    // fail CLOSED: an exception inside the checks denies (exit 0 would mean "allow")
+    {
+      const GM = createRequire(import.meta.url)(G)
+      const why = GM.decide(JSON.stringify({ tool_name: 'Read', tool_input: { file_path: 'a.txt' } }), P, () => { throw new Error('boom') })
+      ok('guard: an exception in the checks denies the call', /refused/.test(why) && /boom/.test(why), why)
+      ok('guard: JSON that is not an object denied', GM.decide('42', P) !== '' && GM.decide('null', P) !== '')
+      ok('guard: normal decision unchanged', GM.decide(JSON.stringify({ tool_name: 'Read', tool_input: { file_path: 'a.txt' } }), P) === '')
+      const src = fs.readFileSync(G, 'utf8')
+      ok('guard: uncaught exceptions also exit 2', /process\.on\('uncaughtException'[^\n]*deny/.test(src))
+    }
   }
 } catch (e) {
   console.log('  EXCEPTION', e); fails++

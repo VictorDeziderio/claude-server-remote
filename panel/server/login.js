@@ -105,6 +105,17 @@ function classify(screen) {
 
 let st = idle();
 let timer = null;
+// the OAuth code pasted by the owner (kept only in memory, only to mask it): it may still be on
+// screen (the input line) when an unknown screen is written to the panel log or shown back
+let sentCode = '';
+// screen text that is safe to log/show: once a code was sent, the code itself and any line of the
+// "paste code" prompt are masked (the panel log is readable from the Logs page and kept on disk)
+function safeScreen(screen) {
+  let s = String(screen || '');
+  if (!st.codeAt && !sentCode) return s;
+  if (sentCode) s = s.split(sentCode).join('[code hidden]');
+  return s.split('\n').map((l) => (PASTE_RX.test(l) ? '[code prompt hidden]' : l)).join('\n');
+}
 function idle() {
   return {
     phase: 'idle', step: '', url: '', msg: '', screen: '', startedAt: 0, lastActAt: 0,
@@ -140,7 +151,7 @@ function act(sig, what, fn) {
 const signature = (screen) => lastLines(screen, 15).replace(/[✻✶✳✢·*◐◓◑◒⠁-⣿]/g, '').replace(/\d+s\b/g, '');
 
 function attention(screen, why) {
-  if (st.phase !== 'attention') log('warn', 'login: unknown screen', { why, screen: lastLines(screen, 20) });
+  if (st.phase !== 'attention') log('warn', 'login: unknown screen', { why, screen: safeScreen(lastLines(screen, 20)) });
   st.phase = 'attention';
 }
 
@@ -167,7 +178,7 @@ async function tick() {
     return;
   }
   const screen = await capture();
-  st.screen = lastLines(screen, 40);
+  st.screen = safeScreen(lastLines(screen, 40));
   // new credential saved = login ok, even if the "Login successful" screen went by too fast
   if (!st.loggedIn && st.codeAt && !st.wasLogged && loginInfo().logged) st.loggedIn = true;
   if (st.codeAt && !st.loggedIn && ERROR_RX.test(lastLines(screen, 8))) {
@@ -212,7 +223,7 @@ async function tick() {
   if (Date.now() - st.lastActAt < UNKNOWN_STABLE_MS) return;
   st.unknownEnters[sig] = n + 1;
   st.lastActAt = Date.now();
-  log('warn', 'login: unknown screen — trying Enter', { try: n + 1, screen: lastLines(screen, 20) });
+  log('warn', 'login: unknown screen — trying Enter', { try: n + 1, screen: safeScreen(lastLines(screen, 20)) });
   await keys('Enter');
 }
 
@@ -220,6 +231,7 @@ function stopTimer() { if (timer) { clearInterval(timer); timer = null; } }
 
 async function start() {
   stopTimer();
+  sentCode = '';
   await sh('tmux', ['kill-session', '-t', '=' + SESS]);
   const r = await sh('tmux', ['new-session', '-d', '-s', SESS, '-x', '500', '-y', '50', '-c', cfg.HOME, 'claude']);
   if (!r.ok) { st = { ...idle(), phase: 'error', msg: tr('srv.loginStartFailed') + r.stderr.trim() }; return status(); }
@@ -237,6 +249,7 @@ async function sendCode(code) {
   const c = String(code || '').trim();
   if (!c || c.length > 2000 || /[\x00-\x1f\x7f]/.test(c)) return { ok: false, msg: tr('srv.badCode') };
   if (!(await hasSess())) return { ok: false, msg: tr('srv.noLoginTap') };
+  sentCode = c;
   await keys('-l', c);
   await new Promise((r) => setTimeout(r, 400));
   await keys('Enter');
@@ -258,6 +271,7 @@ async function cancel(msg) {
   stopTimer();
   await sh('tmux', ['kill-session', '-t', '=' + SESS]);
   st = { ...idle(), msg: msg || '' };
+  sentCode = '';
   return { ok: true, msg: msg || 'login cancelled' };
 }
 
@@ -287,4 +301,4 @@ async function restartStuckProjects() {
   } catch (e) { log('error', 'restartStuckProjects', { err: e.message }); }
 }
 
-module.exports = { start, sendCode, sendKey, cancel, status, classify, SCREENS, SESSION: SESS };
+module.exports = { start, sendCode, sendKey, cancel, status, classify, SCREENS, SESSION: SESS, _safeScreen: safeScreen, _setSentCode: (c) => { sentCode = c; } };
