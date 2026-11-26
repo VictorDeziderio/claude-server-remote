@@ -114,7 +114,7 @@ try {
       const fresh = sec.locator('[data-testid="chatlink-fresh"] input')
       await fresh.waitFor({ timeout: 5000 }).catch(() => {})
       const url = await fresh.inputValue().catch(() => '')
-      ok('chat link: created link shown once with /c/<key>', /\/c\/[A-Za-z0-9_-]{43}$/.test(url), url)
+      ok('chat link: created link shown once as /remote/<project>?key=<key>', /\/remote\/[^/?]+\?key=[A-Za-z0-9_-]{43}$/.test(url), url)
       const row = sec.locator('[data-testid="chatlink-key"]', { hasText: 'Guest UI' })
       await row.waitFor({ timeout: 5000 }).catch(() => {})
       ok('chat link: listed with its role', /limited/i.test(await row.innerText().catch(() => '')))
