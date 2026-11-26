@@ -204,6 +204,24 @@ try {
   ok('Escape closes the palette', !(await cmd.count()))
   await page.goto(BASE + '/dashboard')
 
+  // ---- every page of the panel opens without a script error (the Backup page was blank: it read
+  // a field of the data before the data arrived)
+  {
+    const pageErrors = []
+    const onErr = (e) => pageErrors.push(e.message)
+    page.on('pageerror', onErr)
+    const broken = []
+    for (const route of ['/dashboard', '/terminal', '/files', '/history', '/report', '/logs', '/backup', '/settings', '/notifications', '/account']) {
+      pageErrors.length = 0
+      await page.goto(BASE + route)
+      await page.waitForTimeout(1200)
+      const empty = await page.evaluate(() => !document.querySelector('main') || document.querySelector('main').innerText.trim().length < 5)
+      if (pageErrors.length || empty) broken.push(`${route}: ${pageErrors[0] || 'empty page'}`)
+    }
+    page.off('pageerror', onErr)
+    ok('every panel page opens without errors', broken.length === 0, broken.join(' | '))
+  }
+
   // ---- one shared health poll: header pill + dashboard card ask /api/health once, not once each
   let healthCalls = 0
   const countHealth = (r) => { if (r.url().endsWith('/api/health')) healthCalls++ }

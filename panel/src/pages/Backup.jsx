@@ -99,7 +99,9 @@ export default function BackupPage({ onFlash }) {
 
       <Card title={t('backup.volume')} subtitle={t('backup.volumeSub')}>
         <div className="text-sm" data-testid="volume-backup">
-          {!st.volume ? (
+          {!st ? (
+            <Skeleton className="h-10" />
+          ) : !st.volume ? (
             <p className="text-xs text-muted-foreground"><TR k="backup.volumeOff" /></p>
           ) : (
             <div className="space-y-1 text-xs">
