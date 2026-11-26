@@ -9,6 +9,7 @@
 // Usage: npm run build && node test/ui.test.mjs   (npm test runs it; no Chrome -> SKIP, but in CI it fails)
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
+import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,7 +25,9 @@ if (!CHROME || !chromium || !fs.existsSync(path.join(PANEL, 'dist', 'index.html'
 
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-ui-'))
 fs.mkdirSync(path.join(ROOT, 'projects', 'demo'), { recursive: true })
-const PORT = 7900 + Math.floor(Math.random() * 90), BASE = `http://127.0.0.1:${PORT}`
+// a port the OS says is free right now (listen on 0), instead of a random pick from a small range
+// that collided with other test servers now and then
+const PORT = await new Promise((resolve, reject) => { const s = net.createServer().once('error', reject).listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)) }) }), BASE = `http://127.0.0.1:${PORT}`
 const PASS = 'ui-test-only-password'
 const env = { ...process.env, HOME: ROOT, PANEL_PORT: String(PORT), PANEL_PASSWORD: PASS, PANEL_LOGIN: 'admin', PROJECTS_DIR: path.join(ROOT, 'projects'), PANEL_CONFIG: path.join(ROOT, 'panel.json'), USAGE_MONITOR: '0', AUTO_RESUME: '0', DEPLOY_WEBHOOK_URL: 'http://127.0.0.1:9/never-called' }
 delete env.TMUX; delete env.TMUX_PANE

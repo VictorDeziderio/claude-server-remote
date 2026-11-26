@@ -64,10 +64,7 @@ fix_owner "$H/.claude" -maxdepth 3
 # the file is never executed (no `source`).
 if [ -f "$SECRETS_FILE" ]; then
   chown root:root "$SECRETS_FILE"; chmod 600 "$SECRETS_FILE"
-  while IFS= read -r line || [ -n "$line" ]; do
-    k="${line%%=*}"; v="${line#*=}"
-    case "$k" in PANEL_LOGIN|PANEL_PASSWORD|GH_TOKEN|ANTHROPIC_ADMIN_KEY|DEPLOY_WEBHOOK_URL) export "$k=$v" ;; esac
-  done < "$SECRETS_FILE"
+  load_secrets_file "$SECRETS_FILE"   # devbox-lib.sh (strips quotes and \r)
   say "secrets: read from $SECRETS_FILE"
 fi
 
@@ -151,11 +148,11 @@ mem_guard() {
 ( while sleep 10; do
     ensure_sessions >/dev/null 2>&1
     mem_guard
-    for f in "$LOGS"/panel.log "$LOGS"/sessions.log "$LOGS"/backup.log "$ALERTS"; do trim_log "$f"; done
+    for f in "$LOGS"/panel.log "$LOGS"/sessions.log "$LOGS"/backup.log "$LOGS"/audit.log "$ALERTS"; do trim_log "$f"; done
   done ) &
 
 # ---------------------------------------------------------------------------
-# 4) backup automatico
+# 4) automatic backup
 # ---------------------------------------------------------------------------
 if [ "${BACKUP_ENABLED:-true}" = "true" ]; then
   say "backup: on (every ${BACKUP_INTERVAL:-3600}s) | log: $LOGS/backup.log"
@@ -194,7 +191,7 @@ fi
 # respawn with backoff: runs a command in a loop (reopens it if it dies), as ubuntu, logging to a
 # file. Without backoff, a crash-looping process (bug/OOM) reopens every 3s forever and
 # alone overloads the machine — see devbox-lib.sh#backoff_next.
-run_bg() {  # $1=label  $2=logfile  resto=comando
+run_bg() {  # $1=label  $2=logfile  rest=command
   local label="$1" log="$2" fails=0 t0 ran delay; shift 2
   ( while true; do
       t0=$(date +%s)
@@ -209,12 +206,12 @@ run_bg() {  # $1=label  $2=logfile  resto=comando
 
 if [ "${PANEL_ENABLED:-true}" = "true" ]; then
   say "Claude Remote panel (internal $PANEL_PORT, served at / by the gateway) | projects: $PROJECTS_DIR"
-  run_bg "painel" "$LOGS/panel.log" \
+  run_bg "panel" "$LOGS/panel.log" \
     env PANEL_BIND=127.0.0.1 PANEL_PORT="$PANEL_PORT" \
       PROJECTS_DIR="$PROJECTS_DIR" PANEL_CONFIG="$PANEL_CONFIG" PROJECT_FOLDER="$PROJECT_FOLDER" \
       REMOTE_CONTROL_NAME="$REMOTE_CONTROL_NAME" CLAUDE_AUTOCMD_DELAY="$CLAUDE_AUTOCMD_DELAY" \
       PANEL_LOGIN="$PANEL_LOGIN" PANEL_PASSWORD="$PANEL_PASSWORD" \
-      PANEL_SESSION_DAYS="${PANEL_SESSION_DAYS:-30}" \
+      PANEL_SESSION_DAYS="${PANEL_SESSION_DAYS:-365}" \
       BACKUP_ENABLED="${BACKUP_ENABLED:-true}" BACKUP_INTERVAL="${BACKUP_INTERVAL:-3600}" \
       GATEWAY_PORT="$GATEWAY_PORT" GH_TOKEN="${GH_TOKEN:-}" ANTHROPIC_ADMIN_KEY="${ANTHROPIC_ADMIN_KEY:-}" \
       DEPLOY_WEBHOOK_URL="${DEPLOY_WEBHOOK_URL:-}" \

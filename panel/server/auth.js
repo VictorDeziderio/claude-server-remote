@@ -37,7 +37,7 @@ if (!cfg.PANEL_PASSWORD || KNOWN_PUBLIC.has(passHash)) {
   log('error', cfg.PANEL_PASSWORD
     ? 'PANEL_PASSWORD is a PUBLIC password (an old default) — the panel exposes a shell and will NOT start with it.'
     : 'PANEL_PASSWORD is not set — the panel exposes a shell and will NOT start without a password.',
-  { fix: 'defina uma PANEL_PASSWORD forte no Environment do servico e suba de novo.' });
+  { fix: 'set a strong PANEL_PASSWORD in the service environment and start it again.' });
   process.exit(1);
 }
 

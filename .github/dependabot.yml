@@ -1,0 +1,22 @@
+# Weekly update PRs for the panel's npm packages, the CI actions and the Docker base images.
+# CI runs on each PR; merge only when it is green.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /panel
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      panel-dev:
+        dependency-type: development
+      panel-runtime:
+        dependency-type: production
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

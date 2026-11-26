@@ -18,7 +18,7 @@ mkdir -p "$T/bin" "$T/.claude" "$T/projects/p1"
 pass=0 fail=0
 ok() { if [ "$2" = "0" ]; then echo "  PASS $1"; pass=$((pass + 1)); else echo "  FAIL $1 ${3:-}"; fail=$((fail + 1)); fi; }
 screen() { tmux capture-pane -t '=claude-p1:' -p 2>/dev/null; }
-wait_for() {  # $1 = regex, $2 = segundos
+wait_for() {  # $1 = regex, $2 = seconds
   local i
   for ((i = 0; i < $2 * 2; i++)); do screen | grep -qE "$1" && return 0; sleep 0.5; done
   return 1
@@ -39,38 +39,38 @@ while IFS= read -r cmd; do
       echo " ❯ 1. Enable Remote Control   Opens a secure connection to claude.ai."
       echo "   2. Never mind"
       IFS= read -rsn1 k
-      if [ -z "$k" ]; then echo "Remote Control active: https://claude.ai/code/session_TESTE123"
-      else echo "remote cancelado"; fi ;;
+      if [ -z "$k" ]; then echo "Remote Control active: https://claude.ai/code/session_TEST123"
+      else echo "remote cancelled"; fi ;;
   esac
 done
 EOF
 chmod +x "$T/bin/claude"
 
-echo "== remote-control com o dialogo de confirmacao"
-echo '{"ok":1}' > "$T/.claude/.credentials.json"   # "logado"
+echo "== remote-control with the confirmation dialog"
+echo '{"ok":1}' > "$T/.claude/.credentials.json"   # "logged in"
 start
-wait_for 'claude\.ai/code/session_TESTE123' 25; r=$?
-ok "o supervisor confirma 'Enable Remote Control' e o remote ativa" "$r" "$(screen | tail -5 | tr '\n' '|')"
-screen | grep -q 'remote cancelado'; ok "nao cancelou o dialogo (Esc = Never mind)" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+wait_for 'claude\.ai/code/session_TEST123' 25; r=$?
+ok "the supervisor confirms 'Enable Remote Control' and remote turns on" "$r" "$(screen | tail -5 | tr '\n' '|')"
+screen | grep -q 'remote cancelled'; ok "did not cancel the dialog (Esc = Never mind)" "$([ $? -ne 0 ] && echo 0 || echo 1)"
 
-echo "== sem login, o remote nao e enviado"
+echo "== not logged in: remote is not sent"
 rm -f "$T/.claude/.credentials.json"
 start
 sleep 4
-screen | grep -q '/remote-control\|Remote Control'; ok "sem login nao digita /remote-control" "$([ $? -ne 0 ] && echo 0 || echo 1)"
-grep -q 'not logged in' "$T/.claude/logs/sessions.log" 2>/dev/null; ok "registra o motivo em sessions.log" "$?"
+screen | grep -q '/remote-control\|Remote Control'; ok "not logged in: does not type /remote-control" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+grep -q 'not logged in' "$T/.claude/logs/sessions.log" 2>/dev/null; ok "logs the reason in sessions.log" "$?"
 
-echo "== Claude OFF no panel.json -> shell"
+echo "== Claude OFF in panel.json -> shell"
 echo '{"projects":{"p1":{"autoStartClaude":false}}}' > "$T/.claude/panel.json"
 start
-wait_for 'Claude (is )?OFF' 5; ok "sessao sobe so com o shell" "$?"
+wait_for 'Claude (is )?OFF' 5; ok "session starts with only the shell" "$?"
 
-echo "== projeto desligado (enabled=false) -> sem sessao"
+echo "== project off (enabled=false) -> no session"
 echo '{"projects":{"p1":{"enabled":false}}}' > "$T/.claude/panel.json"
 start
-tmux has-session -t '=claude-p1' 2>/dev/null; ok "nao cria a sessao" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+tmux has-session -t '=claude-p1' 2>/dev/null; ok "does not create the session" "$([ $? -ne 0 ] && echo 0 || echo 1)"
 
-echo "== workspace novo pede 'trust this folder' -> supervisor aceita sozinho"
+echo "== new workspace asks 'trust this folder' -> the supervisor accepts it"
 cat > "$T/bin/claude" <<'EOF'
 #!/usr/bin/env bash
 echo "Quick safety check: Is this project you created or one you trust?"
@@ -93,9 +93,9 @@ chmod +x "$T/bin/claude"
 rm -f "$T/.claude/panel.json"
 echo '{"ok":1}' > "$T/.claude/.credentials.json"
 start
-wait_for '\? for shortcuts' 15; ok "aceita 'trust this folder' sozinho e a TUI libera" "$?" "$(screen | tail -6 | tr '\n' '|')"
+wait_for '\? for shortcuts' 15; ok "accepts 'trust this folder' by itself and the TUI opens" "$?" "$(screen | tail -6 | tr '\n' '|')"
 
-echo "== pausado: nao abre o Claude ate tirar o flag"
+echo "== paused: does not open Claude until the flag is removed"
 cat > "$T/bin/claude" <<'EOF'
 #!/usr/bin/env bash
 [ "${1:-}" = "--version" ] && { echo "9.9.9 (Claude Code)"; exit 0; }
@@ -104,12 +104,12 @@ EOF
 chmod +x "$T/bin/claude"
 mkdir -p "$T/.claude/run"; echo manual > "$T/.claude/run/claude-p1.paused"
 start
-wait_for 'Claude paused' 8; ok "mostra 'pausado' em vez de abrir o Claude" "$?" "$(screen | tail -4 | tr '\n' '|')"
-screen | grep -q '? for shortcuts'; ok "Claude nao abriu enquanto pausado" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+wait_for 'Claude paused' 8; ok "shows 'paused' instead of opening Claude" "$?" "$(screen | tail -4 | tr '\n' '|')"
+screen | grep -q '? for shortcuts'; ok "Claude did not open while paused" "$([ $? -ne 0 ] && echo 0 || echo 1)"
 rm -f "$T/.claude/run/claude-p1.paused"
-wait_for '\? for shortcuts' 12; ok "tirou o flag -> Claude abre" "$?"
+wait_for '\? for shortcuts' 12; ok "flag removed -> Claude opens" "$?"
 
-echo "== crash-loop: para de reabrir e avisa"
+echo "== crash-loop: stops reopening and warns"
 cat > "$T/bin/claude" <<'EOF'
 #!/usr/bin/env bash
 [ "${1:-}" = "--version" ] && { echo "9.9.9 (Claude Code)"; exit 0; }
@@ -118,21 +118,21 @@ EOF
 chmod +x "$T/bin/claude"
 : > "$T/.claude/run/alerts.jsonl"
 MAX_FAST_FAILS=2 start
-wait_for 'too fast' 20; ok "cai no shell apos falhas rapidas seguidas" "$?" "$(screen | tail -4 | tr '\n' '|')"
-grep -q '"kind":"crash-loop"' "$T/.claude/run/alerts.jsonl"; ok "grava alerta crash-loop" "$?"
+wait_for 'too fast' 20; ok "drops to the shell after fast failures in a row" "$?" "$(screen | tail -4 | tr '\n' '|')"
+grep -q '"kind":"crash-loop"' "$T/.claude/run/alerts.jsonl"; ok "writes a crash-loop alert" "$?"
 
-echo "== projeto apagado nao renasce (bug do projeto \"codigo\")"
+echo "== a deleted project does not come back"
 tmux kill-server >/dev/null 2>&1
-bash "$HERE/claude-session.sh" fantasma </dev/null >/dev/null 2>&1
-[ ! -d "$T/projects/fantasma" ]; ok "pasta apagada nao e recriada" $?
-tmux has-session -t '=claude-fantasma' 2>/dev/null; [ $? -ne 0 ]; ok "sessao do projeto apagado nao sobe" $?
-echo "== worktree do Claude ao lado do projeto nao vira projeto (bug do 'app.gate-wt')"
+bash "$HERE/claude-session.sh" ghost </dev/null >/dev/null 2>&1
+[ ! -d "$T/projects/ghost" ]; ok "deleted folder is not recreated" $?
+tmux has-session -t '=claude-ghost' 2>/dev/null; [ $? -ne 0 ]; ok "session of the deleted project does not start" $?
+echo "== a git worktree Claude makes next to a project is not a project ('app.gate-wt' bug)"
 tmux kill-server >/dev/null 2>&1
 mkdir -p "$T/projects/app" "$T/projects/app.gate-wt" "$T/projects/wt2"
 echo "gitdir: $T/projects/app/.git/worktrees/wt2" > "$T/projects/wt2/.git"
 bash "$HERE/claude-session.sh" --all </dev/null >/dev/null 2>&1
-tmux has-session -t '=claude-app_gate-wt' 2>/dev/null; [ $? -ne 0 ]; ok "pasta <projeto>.<x> nao ganha sessao" $?
-tmux has-session -t '=claude-wt2' 2>/dev/null; [ $? -ne 0 ]; ok "worktree git (.git arquivo) nao ganha sessao" $?
+tmux has-session -t '=claude-app_gate-wt' 2>/dev/null; [ $? -ne 0 ]; ok "'<project>.<x>' folder gets no session" $?
+tmux has-session -t '=claude-wt2' 2>/dev/null; [ $? -ne 0 ]; ok "git worktree (.git is a file) gets no session" $?
 tmux kill-server >/dev/null 2>&1
 rm -rf "$T/projects/app" "$T/projects/app.gate-wt" "$T/projects/wt2"
 echo

@@ -1,5 +1,5 @@
 {
-  "note": "Config dos projetos do dev-box claude. Este arquivo no repo e a SEMENTE: copiado para /root/.claude/panel.json (volume, persiste) na 1a inicializacao se a copia viva ainda nao existir. O painel grava na copia viva, nao aqui. 'defaults' aplica a qualquer projeto sem entrada propria. Por projeto: enabled (projeto ligado: a sessao tmux sobe no boot e o watchdog a mantem), autoStartClaude (a sessao roda o Claude; senao so um shell), autoRemote (religa o /remote-control a cada inicio do Claude) e initLine (prompt inicial).",
+  "note": "Project config of the claude dev box. This file in the repo is the SEED: it is copied to /root/.claude/panel.json (volume, persists) on the first start if the live copy does not exist yet. The panel writes to the live copy, not here. 'defaults' applies to any project without its own entry. Per project: enabled (project on: the tmux session starts at boot and the watchdog keeps it up), autoStartClaude (the session runs Claude; otherwise only a shell), autoRemote (turns /remote-control back on at each Claude start) and initLine (first prompt).",
   "defaults": {
     "enabled": true,
     "autoStartClaude": true,
