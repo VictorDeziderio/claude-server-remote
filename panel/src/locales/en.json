@@ -835,5 +835,11 @@
   "chat.invalidLinkHint": "It may have been revoked. Ask the owner for a new link.",
   "chat.offline": "No connection",
   "chat.offlineHint": "Check your internet and try again.",
-  "chat.tooMany": "Too many replies running in this project. Try again in a moment."
+  "chat.tooMany": "Too many replies running in this project. Try again in a moment.",
+  "term.attachBtn": "send an image to the terminal (you can also drag it or paste it)",
+  "term.attach": "Send image",
+  "term.dropHere": "Drop to send to the terminal",
+  "term.uploading": "Sending {n}…",
+  "term.uploaded": "{n} file(s) sent: path typed in the terminal",
+  "term.uploadFailed": "Could not send {name}: {msg}"
 }

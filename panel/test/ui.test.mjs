@@ -139,6 +139,23 @@ try {
     ok('drawer: Escape closes', !(await drawer.count()))
   } else ok('configure button found on the dashboard', false, 'no button[title^=configure]')
 
+  // ---- terminal: an image dragged onto it is sent to the project (its path is typed in the terminal)
+  await page.goto(BASE + '/terminal/demo')
+  const dropZone = page.locator('[data-slot="term-drop"]')
+  await dropZone.waitFor({ timeout: 8000 })
+  const upDir = path.join(ROOT, 'projects', 'demo', '.chat-uploads')
+  await dropZone.evaluate((el) => {
+    const dt = new DataTransfer()
+    dt.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'drop.png', { type: 'image/png' }))
+    el.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }))
+    el.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
+  })
+  await page.getByText(/1 file\(s\) sent/i).first().waitFor({ timeout: 6000 }).catch(() => {})
+  const saved = fs.existsSync(upDir) ? fs.readdirSync(upDir, { recursive: true }).filter((n) => /-drop\.png$/.test(String(n))) : []
+  ok('terminal: dropped image is saved in the project and confirmed', saved.length === 1 && (await page.getByText(/1 file\(s\) sent/i).count()) > 0, `saved=${saved}`)
+  ok('terminal: drop hint gone after sending', (await page.locator('[data-slot="term-drop-hint"]').count()) === 0)
+  ok('terminal: image button opens a file picker for images', (await page.locator('[data-slot="term-pick"]').getAttribute('accept')) === 'image/*')
+
   // ---- file upload over an existing file: asks in the panel's modal (not window.confirm)
   let nativeDialog = false
   page.on('dialog', (d) => { nativeDialog = true; d.dismiss().catch(() => {}) })

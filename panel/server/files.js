@@ -261,4 +261,21 @@ function streamUpload(full, req, overwrite) {
   });
 }
 
-module.exports = { fsStat, fsList, fsRead, fsSave, fsCreate, fsDelete, fsRename, fsDownload, fsUploadStream, MAX_UPLOAD, confine, streamUpload, MIME };
+// a file sent from the chat or dropped on the terminal: saved under <dir>/.chat-uploads/<yyyy-mm>/
+// with a random prefix (never overwrites, never leaves `dir`) -> {ok, path, size} | {ok:false, msg}
+const UPLOAD_DIR = '.chat-uploads';
+function safeName(n) {
+  const base = path.basename(String(n || '')).normalize('NFKD').replace(/[^\w.-]+/g, '_').replace(/^\.+/, '').slice(-80);
+  return base || 'file';
+}
+async function saveUpload(dir, name, req) {
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const full = path.join(dir, UPLOAD_DIR, month, crypto.randomBytes(4).toString('hex') + '-' + safeName(name));
+  const g = confine(dir, full);
+  if (g.err) return { status: 400, ok: false, msg: g.err };
+  const r = await streamUpload(full, req, false);
+  return r.ok ? { ok: true, path: full, size: r.size } : r;
+}
+
+module.exports = { UPLOAD_DIR, saveUpload, fsStat, fsList, fsRead, fsSave, fsCreate, fsDelete, fsRename, fsDownload, fsUploadStream, MAX_UPLOAD, confine, streamUpload, MIME };

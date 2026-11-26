@@ -233,6 +233,12 @@ try {
   r = await j('POST', '/api/fs/delete', { path: '' }); ok('fs delete raiz bloqueado', r.data.ok === false)
   r = await j('POST', '/api/fs/delete', { path: '.claude' }); ok('fs delete .claude protegido', r.data.ok === false)
   r = await j('POST', '/api/fs/delete', { path: 'projects/demo/b.txt' }); ok('fs delete', r.data.ok)
+  // terminal: a dropped image is kept inside the project and its absolute path comes back
+  r = await fetch(BASE + '/api/term/upload?name=demo&file=' + encodeURIComponent('../tela 1.png'), { method: 'POST', headers: { cookie, ...H, 'content-type': 'application/octet-stream' }, body: Buffer.from([137, 80, 78, 71]) })
+  { const d = await r.json(); const inDir = path.join(ROOT, 'projects', 'demo', '.chat-uploads') + path.sep
+    ok('term upload: saved inside the project, safe name', d.ok && d.path.startsWith(inDir) && /-tela_1\.png$/.test(d.path) && fs.readFileSync(d.path).length === 4, JSON.stringify(d)) }
+  r = await fetch(BASE + '/api/term/upload?name=..&file=x.png', { method: 'POST', headers: { cookie, ...H, 'content-type': 'application/octet-stream' }, body: Buffer.from([1]) }); ok('term upload: bad project refused', !(await r.json()).ok)
+  r = await fetch(BASE + '/api/term/upload?name=demo&file=x.png', { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: Buffer.from([1]) }); ok('term upload: needs login', r.status === 401)
 
   // sandbox x SYMLINK: a link inside HOME pointing OUTSIDE must not read/write/delete out there
   {

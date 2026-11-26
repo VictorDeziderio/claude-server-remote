@@ -54,4 +54,40 @@ async function all(file) {
   return linesOf(buf, 0, { cutHead: false, cutTail: false });
 }
 
-module.exports = { BIG, WINDOW, head, windowBefore, all };
+// ---------------------------------------------------------------- conversation title
+// A project resumed with "continue" (by hand or by the auto-resume) starts many conversations with
+// that word, so "the first user message" is a poor title. The pick, best first: the name given with
+// /rename (a custom-title line; the newest wins), the first real request, Claude's own summary line,
+// the newest real request. Resume words and slash-command echoes never count as requests.
+const RESUME_WORDS = /^(continue|continua|continuar|continue de onde parou|go on|keep going|resume|retome|retomar|siga|segue|ok|okay|sim|yes|y|s)[\s.!]*$/i;
+function isTrivialPrompt(text) {
+  const t = String(text || '').trim();
+  const own = String(process.env.AUTO_RESUME_TEXT || '').trim();
+  return !t || RESUME_WORDS.test(t) || (own && t === own) || t.startsWith('[') || /^<[a-z-]+>/.test(t);
+}
+function titler() {
+  const s = { custom: '', first: '', summary: '', latest: '' };
+  const clean = (t) => String(t).replace(/\s+/g, ' ').trim().slice(0, 120);
+  return {
+    // any parsed line (custom-title / summary records)
+    line(o) {
+      if (!o) return;
+      if (o.type === 'custom-title' && o.customTitle) s.custom = clean(o.customTitle);
+      else if (o.type === 'summary' && o.summary) s.summary = clean(o.summary);
+    },
+    // the text of a user message
+    user(text) {
+      if (isTrivialPrompt(text)) return;
+      if (!s.first) s.first = clean(text);
+      s.latest = clean(text);
+    },
+    state: () => ({ ...s }),
+  };
+}
+// best title from one or more titler states (in file order: a later custom title wins)
+function pickTitle(...states) {
+  const by = (k, last) => { const v = states.map((x) => x && x[k]).filter(Boolean); return last ? v[v.length - 1] : v[0]; };
+  return by('custom', true) || by('first') || by('summary', true) || by('latest', true) || '';
+}
+
+module.exports = { BIG, WINDOW, head, windowBefore, all, isTrivialPrompt, titler, pickTitle };

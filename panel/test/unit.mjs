@@ -14,6 +14,8 @@ const T = await load('src/lib/theme.js')
 const I = await load('src/lib/i18n-core.js')
 const N = await load('src/lib/notice.js')
 const CA = await load('src/chat/api.js')
+const TF = await load('src/lib/termfiles.js')
+const J = (await import('node:module')).createRequire(import.meta.url)('../server/jsonl.js')
 
 let fails = 0, passes = 0
 const eq = (name, got, want) => {
@@ -22,6 +24,23 @@ const eq = (name, got, want) => {
   ok ? passes++ : fails++
 }
 const E = '\x1b'
+
+console.log('\n== conversation title: not "continue"')
+{
+  const pick = (lines) => { const n = J.titler(); for (const l of lines) { if (l.user != null) n.user(l.user); else n.line(l) } return J.pickTitle(n.state()) }
+  eq('resume words are skipped', pick([{ user: 'continue' }, { user: 'Continue.' }, { user: 'fix the login page' }]), 'fix the login page')
+  eq('/rename wins, newest one', pick([{ user: 'fix it' }, { type: 'custom-title', customTitle: 'Old' }, { type: 'custom-title', customTitle: 'Pilot' }]), 'Pilot')
+  eq('only resume words: Claude summary', pick([{ user: 'continue' }, { type: 'summary', summary: 'Owner: edit displays' }]), 'Owner: edit displays')
+  eq('nothing usable: empty (caller says untitled)', pick([{ user: 'continue' }, { user: '<command-name>/clear</command-name>' }]), '')
+  eq('head + tail of a big file: custom title in the tail wins', J.pickTitle({ first: 'a' }, { custom: 'B', first: 'c' }), 'B')
+}
+
+console.log('\n== terminal: files dropped/pasted become paths typed in the terminal')
+eq('plain path is not quoted', TF.shellQuote('/root/projects/demo/.chat-uploads/2026-11/ab12cd34-shot.png'), '/root/projects/demo/.chat-uploads/2026-11/ab12cd34-shot.png')
+eq('path with space and quote is quoted', TF.shellQuote("/tmp/my it's.png"), "'/tmp/my it'\\''s.png'")
+eq('several paths: one line, trailing space', TF.pathsLine(['/a.png', '/b c.png']), "/a.png '/b c.png' ")
+eq('no path: nothing typed', TF.pathsLine([]), '')
+eq('text-only drop carries no files', TF.filesOf({ files: [] }), [])
 
 console.log('\n== termkeys: modificadores grudentos')
 eq('cycleMod off -> once', K.cycleMod('off'), 'once')

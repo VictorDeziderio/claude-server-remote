@@ -41,26 +41,28 @@ async function summarizeFile(file, wantMessages) {
     }
   } catch { return null; }
   const id = path.basename(file, '.jsonl');
-  let title = '', first = '', last = '', model = '', count = 0;
+  const names = jsonl.titler();
+  let first = '', last = '', model = '', count = 0;
   let tokens = 0;
   const msgs = [];
   for (const { line } of entries) {
     if (!line) continue;
     let o; try { o = JSON.parse(line); } catch { continue; }
+    names.line(o);
     const m = o && o.message;
     if (!m || !m.role) continue;
     const ts = String(o.timestamp || '');
     if (!first) first = ts;
     last = ts;
     const text = textOf(m.content);
-    if (m.role === 'user' && !title && text && !text.startsWith('[') && !/^<[a-z-]+>/.test(text)) title = text.slice(0, 120).replace(/\s+/g, ' ');
+    if (m.role === 'user' && !o.isMeta) names.user(text);
     if (m.model) model = m.model;
     if (m.usage) tokens += (m.usage.input_tokens || 0) + (m.usage.output_tokens || 0);
     count++;
     if (wantMessages && text) msgs.push({ role: m.role, text: text.slice(0, 4000), ts, model: m.model || '' });
   }
   if (!count) return null;
-  const out = { id, title: title || tr('srv.untitled'), first, last, messages: count, model, tokens, partial };
+  const out = { id, title: jsonl.pickTitle(names.state()) || tr('srv.untitled'), first, last, messages: count, model, tokens, partial };
   if (wantMessages) out.items = msgs.slice(-400);
   return out;
 }

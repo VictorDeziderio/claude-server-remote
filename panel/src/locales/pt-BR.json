@@ -835,5 +835,11 @@
   "chat.invalidLinkHint": "Ele pode ter sido revogado. Peça um link novo ao dono.",
   "chat.offline": "Sem conexão",
   "chat.offlineHint": "Confira a internet e tente de novo.",
-  "chat.tooMany": "Muitas respostas rodando neste projeto. Tente de novo daqui a pouco."
+  "chat.tooMany": "Muitas respostas rodando neste projeto. Tente de novo daqui a pouco.",
+  "term.attachBtn": "enviar imagem ao terminal (também dá para arrastar ou colar)",
+  "term.attach": "Enviar imagem",
+  "term.dropHere": "Solte para enviar ao terminal",
+  "term.uploading": "Enviando {n}…",
+  "term.uploaded": "{n} arquivo(s) enviado(s): caminho digitado no terminal",
+  "term.uploadFailed": "Não foi possível enviar {name}: {msg}"
 }

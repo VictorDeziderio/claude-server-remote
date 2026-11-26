@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { SquareTerminal, Cpu, Maximize2, Minimize2, RefreshCw, ClipboardPaste, Eraser, ZoomIn, ZoomOut, Keyboard, Wifi, WifiOff, Loader2, AlertTriangle, Search, ChevronUp, ChevronDown, X, PanelRightOpen, PanelRightClose, Plus, AppWindow, Users, LogIn, Power, TextSelect, Ellipsis, Copy, Send } from 'lucide-react'
+import { SquareTerminal, Cpu, Maximize2, Minimize2, RefreshCw, ClipboardPaste, Eraser, ZoomIn, ZoomOut, Keyboard, Wifi, WifiOff, Loader2, AlertTriangle, Search, ChevronUp, ChevronDown, X, PanelRightOpen, PanelRightClose, Plus, AppWindow, Users, LogIn, Power, TextSelect, Ellipsis, Copy, Send, ImagePlus } from 'lucide-react'
 import XTerm from '../components/XTerm.jsx'
 import Files from '../components/Files.jsx'
 import { Dot, IconBtn, ActivityDot, Btn, Modal, inputCls } from '../components/ui.jsx'
@@ -9,6 +9,7 @@ import { cn } from '../lib/utils.js'
 import { copyText } from '../lib/clipboard.js'
 import { EXTRA_KEYS, CLAUDE_ACTIONS, cycleMod, afterUse, applyModifiers, isUserInput, clampFont, defaultFont } from '../lib/termkeys.js'
 import * as api from '../api.js'
+import { pathsLine, filesOf } from '../lib/termfiles.js'
 import { t, tOr } from '../lib/i18n.js'
 import { TR } from '../lib/i18n-rich.jsx'
 
@@ -216,6 +217,35 @@ export default function TerminalPage({ data, activity, onFlash }) {
     const ok = await termRef.current?.paste()
     if (!ok) setPasting(true)
   }
+  // files dropped / pasted / picked: upload, then type their paths (Claude Code attaches images so)
+  const [dropping, setDropping] = useState(false)
+  const [sending, setSending] = useState(0)
+  const pickRef = useRef(null)
+  const sendFiles = async (list) => {
+    if (!list.length) return
+    setSending((n) => n + list.length)
+    const paths = []
+    for (const f of list) {
+      const r = await api.termUpload(target, f).catch((e) => ({ ok: false, msg: e.message }))
+      setSending((n) => n - 1)
+      if (r.ok) paths.push(r.path)
+      else onFlash?.({ ok: false, msg: t('term.uploadFailed', { name: f.name || 'file', msg: r.msg || '' }) })
+    }
+    if (paths.length) {
+      termRef.current?.pasteText(pathsLine(paths))
+      onFlash?.({ ok: true, msg: t('term.uploaded', { n: paths.length }) })
+    }
+  }
+  const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes('Files')
+  const dropProps = {
+    onDragEnter: (e) => { if (hasFiles(e)) { e.preventDefault(); setDropping(true) } },
+    onDragOver: (e) => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' } },
+    onDragLeave: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDropping(false) },
+    onDrop: (e) => { if (!hasFiles(e)) return; e.preventDefault(); setDropping(false); sendFiles(filesOf(e.dataTransfer)) },
+    // an image in the clipboard (a screenshot): the capture phase runs before xterm's own paste
+    onPasteCapture: (e) => { const fs = filesOf(e.clipboardData); if (fs.length) { e.preventDefault(); e.stopPropagation(); sendFiles(fs) } },
+  }
+  const pickFiles = () => { setMenu(false); pickRef.current?.click() }
   const pressKey = (k) => {
     if (k.mod) {
       setMods((m) => {
@@ -351,6 +381,9 @@ export default function TerminalPage({ data, activity, onFlash }) {
           <IconBtn title={t('term.pasteBtn')} onClick={paste}>
             <ClipboardPaste className="h-4 w-4" />
           </IconBtn>
+          <IconBtn title={t('term.attachBtn')} onClick={pickFiles}>
+            <ImagePlus className="h-4 w-4" />
+          </IconBtn>
           <IconBtn title={t('term.selectScroll')} onClick={() => setSelecting(true)}>
             <TextSelect className="h-4 w-4" />
           </IconBtn>
@@ -418,6 +451,7 @@ export default function TerminalPage({ data, activity, onFlash }) {
             {menu && (
               <div className="absolute right-0 top-full z-[65] mt-1 w-56 rounded-lg border border-border bg-popover p-1 shadow-xl" role="menu">
                 <button type="button" className={menuItem} onClick={paste}><ClipboardPaste className="size-4" /> {t('term.paste')}</button>
+                <button type="button" className={menuItem} onClick={pickFiles}><ImagePlus className="size-4" /> {t('term.attach')}</button>
                 <button type="button" className={menuItem} onClick={toggleSearch}><Search className="size-4" /> {t('term.searchShort')}</button>
                 <button type="button" className={menuItem} onClick={() => termRef.current?.clear()}><Eraser className="size-4" /> {t('term.clearShort')}</button>
                 <button type="button" className={menuItem} onClick={() => termRef.current?.reconnect()}><RefreshCw className="size-4" /> {t('term.reconnectShort')}</button>
@@ -470,7 +504,14 @@ export default function TerminalPage({ data, activity, onFlash }) {
 
       {/* Terminal (+ files beside it) */}
       <div className="flex min-h-0 flex-1">
-        <div className="relative min-h-0 min-w-0 flex-1 sm:p-1">
+        <div className="relative min-h-0 min-w-0 flex-1 sm:p-1" data-slot="term-drop" {...dropProps}>
+          <input ref={pickRef} type="file" accept="image/*" multiple hidden data-slot="term-pick"
+            onChange={(e) => { const fs = filesOf(e.target); e.target.value = ''; sendFiles(fs) }} />
+          {(dropping || sending > 0) && (
+            <div className="pointer-events-none absolute inset-1 z-20 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-background/70 text-sm font-medium text-foreground" role="status" data-slot="term-drop-hint">
+              {sending > 0 ? <><Loader2 className="mr-2 size-4 animate-spin" /> {t('term.uploading', { n: sending })}</> : <><ImagePlus className="mr-2 size-4" /> {t('term.dropHere')}</>}
+            </div>
+          )}
           <XTerm ref={termRef} target={target} fontSize={font} detach={detach} onStatus={onStatus} onSearchToggle={toggleSearch} onCopy={onCopy} onLongPress={onLongPress} onPinch={onPinch} transformInput={withMods} className="sm:rounded-lg" />
           {lost && (
             <div className="absolute inset-x-0 top-2 z-10 mx-auto flex w-fit max-w-[92%] items-center gap-2 rounded-lg bg-amber-950/90 px-3 py-2 text-xs text-amber-800 dark:text-amber-100 ring-1 ring-amber-500/30" role="status">

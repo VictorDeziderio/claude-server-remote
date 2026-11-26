@@ -185,6 +185,11 @@ async function handle(req, res) {
           audit('fs.upload', { ip: auth.clientIp(req), path: u.searchParams.get('path') || '', ok: r.ok, size: r.size || 0 });
           return sendJson(res, r.status || 200, r);
         }
+        if (url === '/api/term/upload') {
+          const r = await term.termUpload(u.searchParams.get('name') || 'shell', u.searchParams.get('file') || '', req);
+          audit('term.upload', { ip: auth.clientIp(req), name: u.searchParams.get('name') || 'shell', ok: r.ok, size: r.size || 0 });
+          return sendJson(res, r.status || 200, r);
+        }
         const h = POST[url];
         if (!h) return sendJson(res, 404, { ok: false, msg: tr('srv.unknownRoute') });
         const body = await readJson(req);

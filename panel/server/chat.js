@@ -37,7 +37,7 @@ const KEYS_FILE = cfg.CHAT_KEYS_FILE;
 const MAX_RUNS_PER_PROJECT = 3;
 const CLAUDE_BIN = process.env.CHAT_CLAUDE_BIN || 'claude';
 const GUARD = path.join(__dirname, 'chat-guard.js');
-const UPLOAD_DIR = '.chat-uploads';
+const UPLOAD_DIR = files.UPLOAD_DIR;
 const projectDir = (name) => path.join(cfg.PROJECTS_DIR, name);
 const histDir = (name) => require('./history').dirOf(name);
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
@@ -193,10 +193,12 @@ function parseLines(entries, fallbackTs) {
   if (typeof entries === 'string') entries = entries.split('\n').map((line) => ({ line, off: 0 }));
   const msgs = [];
   const toolsById = new Map();
-  let title = '', updatedAt = '';
+  const names = jsonl.titler();
+  let updatedAt = '';
   for (const { line, off } of entries) {
     if (!line) continue;
     let o; try { o = JSON.parse(line); } catch { continue; }
+    names.line(o);
     if (!o || (o.type !== 'user' && o.type !== 'assistant') || o.isMeta || o.isSidechain || o.isCompactSummary) continue;
     const m = o.message;
     if (!m || !m.role) continue;
@@ -209,7 +211,7 @@ function parseLines(entries, fallbackTs) {
       const raw = textBlocks(c);
       if (isNoiseText(raw)) continue; // tool_result-only lines fold into the previous assistant tools
       const { text, paths } = splitAttachments(raw);
-      if (!title) title = clip(text.replace(/\s+/g, ' ').trim(), 120) || (paths[0] ? path.basename(paths[0]) : '');
+      names.user(text || (paths[0] ? path.basename(paths[0]) : ''));
       msgs.push({ id: o.uuid || 'u' + msgs.length, role: 'user', ts, text, tools: [], attachments: paths.map(attOf), _written: [], _off: off });
     } else {
       const p = assistantParts(m.content);
@@ -224,7 +226,7 @@ function parseLines(entries, fallbackTs) {
       last._written.push(...p.written);
     }
   }
-  return { msgs, title, updatedAt: updatedAt || fallbackTs };
+  return { msgs, names: names.state(), title: jsonl.pickTitle(names.state()), updatedAt: updatedAt || fallbackTs };
 }
 const cleanMsg = (m) => ({ id: m.id, role: m.role, ts: m.ts, text: m.text, tools: m.tools.map((t) => ({ name: t.name, summary: t.summary, ok: t.ok })), attachments: m.attachments });
 
@@ -246,7 +248,7 @@ async function readConv(project, id) {
     else {
       const w = await jsonl.windowBefore(file, st.size);
       const tail = parseLines(w.lines, fallback);
-      parsed = { id, title: parseLines(await jsonl.head(file, st.size), fallback).title || tail.title, updatedAt: tail.updatedAt, msgs: tail.msgs, big: true, start: w.start, size: st.size };
+      parsed = { id, title: jsonl.pickTitle(parseLines(await jsonl.head(file, st.size), fallback).names, tail.names), updatedAt: tail.updatedAt, msgs: tail.msgs, big: true, start: w.start, size: st.size };
     }
   } catch { return null; }
   cache.delete(file);
@@ -487,21 +489,11 @@ function stream(k, q, req, res) {
 }
 
 // ---------------------------------------------------------------- upload / file
-function safeName(n) {
-  const base = path.basename(String(n || '')).normalize('NFKD').replace(/[^\w.-]+/g, '_').replace(/^\.+/, '').slice(-80);
-  return base || 'file';
-}
 async function upload(k, q, req) {
-  const now = new Date();
-  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const dir = projectDir(k.project);
-  const full = path.join(dir, UPLOAD_DIR, month, crypto.randomBytes(4).toString('hex') + '-' + safeName(q.get('name')));
-  const g = files.confine(dir, full);
-  if (g.err) return { status: 400, ok: false, msg: g.err };
-  const r = await files.streamUpload(full, req, false);
+  const r = await files.saveUpload(projectDir(k.project), q.get('name'), req);
   if (!r.ok) return r;
   audit('chat.upload', { name: k.project, keyId: k.id, size: r.size });
-  return { ok: true, att: attOf(full) };
+  return { ok: true, att: attOf(r.path) };
 }
 const INLINE = new Set(['image', 'video', 'audio']);
 const EXTRA_MIME = { '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.m4v': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.heic': 'image/heic', '.avif': 'image/avif' };

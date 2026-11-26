@@ -55,6 +55,17 @@ async function targetSession(name, { create = true } = {}) {
 const isDisabled = (name) => !!name && name !== 'shell' && validName(name) && !projConfig(name).enabled;
 
 // ---------- supporting REST ----------
+// a file dropped/pasted on the terminal page: saved inside the project (the shell: the home folder);
+// the page then types its absolute path into the terminal, which is how Claude Code takes an image.
+async function termUpload(name, fileName, req) {
+  let dir = cfg.HOME;
+  if (name && name !== 'shell') {
+    if (!validName(name) || !fs.existsSync(path.join(cfg.PROJECTS_DIR, name))) return { ok: false, status: 404, msg: tr('srv.noProject') };
+    dir = path.join(cfg.PROJECTS_DIR, name);
+  }
+  return require('./files').saveUpload(dir, fileName, req);
+}
+
 // lines = how many lines of HISTORY (beyond the screen) to bring: 200 by default (Claude login);
 // the phone's "Select text" screen asks for more (up to CAPTURE_MAX) to copy with a finger.
 const CAPTURE_MAX = 5000;
@@ -234,4 +245,4 @@ function shutdown() {
   for (const c of wss.clients) { try { c.terminate(); } catch { /* */ } }
 }
 
-module.exports = { CAPTURE_MAX, termCapture, termSend, termExit, listWindows, windowAction, handleUpgrade, shutdown, ptyAvailable: !!pty };
+module.exports = { termUpload, CAPTURE_MAX, termCapture, termSend, termExit, listWindows, windowAction, handleUpgrade, shutdown, ptyAvailable: !!pty };

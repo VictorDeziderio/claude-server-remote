@@ -50,6 +50,11 @@ export const fsUpload = (p, file, overwrite = false) =>
   }).then(handle)
 
 // --- terminal: WebSocket real + REST de apoio ---
+// a file dropped/pasted on the terminal -> {ok, path} (the server keeps it inside the project)
+export const termUpload = (name, file) =>
+  fetch('/api/term/upload?' + q({ name: name || 'shell', file: file.name || 'image.png' }), {
+    method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file,
+  }).then(handle)
 export const termWsUrl = (name, cols, rows, detach) => {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
   return `${proto}://${window.location.host}/ws/term?` + q({ name: name || 'shell', cols, rows, detach: detach ? '1' : '0' })
