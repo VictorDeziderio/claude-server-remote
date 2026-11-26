@@ -35,7 +35,7 @@ const path = require('path');
 const crypto = require('crypto');
 const cfg = require('./config');
 const { tr } = require('./i18n');
-const { readJson, sendJson, sendStream, validName, sessionName, paneOf, clampInt, log, sh, typeText } = require('./util');
+const { readJson, sendJson, sendStream, sendRange, validName, sessionName, paneOf, clampInt, log, sh, typeText } = require('./util');
 const { audit } = require('./audit');
 const auth = require('./auth');
 const files = require('./files');
@@ -673,19 +673,7 @@ function serveFile(k, q, req, res) {
     'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(path.basename(full))}`,
     'Accept-Ranges': 'bytes',
   };
-  // single byte range (iOS plays video only with Range support)
-  const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
-  if (m && (m[1] || m[2])) {
-    let start = m[1] ? parseInt(m[1], 10) : Math.max(0, st.size - parseInt(m[2], 10));
-    let end = m[1] && m[2] ? Math.min(parseInt(m[2], 10), st.size - 1) : st.size - 1;
-    if (start > end || start >= st.size) { res.writeHead(416, { 'Content-Range': `bytes */${st.size}` }); return res.end(); }
-    const partial = { ...headers, 'Content-Range': `bytes ${start}-${end}/${st.size}`, 'Content-Length': end - start + 1 };
-    if (req.method === 'HEAD') { res.writeHead(206, partial); return res.end(); }
-    return sendStream(res, full, { status: 206, headers: partial, start, end });
-  }
-  const whole = { ...headers, 'Content-Length': st.size };
-  if (req.method === 'HEAD') { res.writeHead(200, whole); return res.end(); }
-  return sendStream(res, full, { headers: whole });
+  return sendRange(req, res, full, st.size, headers);
 }
 
 // ---------------------------------------------------------------- HTTP entry points

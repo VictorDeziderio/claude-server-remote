@@ -5,6 +5,7 @@ import { Button } from './ui/button.jsx'
 import { fmtSize, fmtDate, joinPath, parentOf } from '../lib/format.js'
 import * as api from '../api.js'
 import { t } from '../lib/i18n.js'
+import { FileViewer, viewKind } from './FileViewer.jsx'
 
 const CodeEditor = lazy(() => import('./CodeEditor.jsx'))
 
@@ -53,8 +54,10 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
   const [creating, setCreating] = useState('') // 'file' | 'dir' | ''
   const [renaming, setRenaming] = useState('') // entry name
   const [deleting, setDeleting] = useState('') // entry name
+  const [viewing, setViewing] = useState(-1) // index in `viewable` of the file open in the viewer
   const [confirmEl, ask] = useConfirm()
   const uploadRef = useRef(null)
+  const pendingView = useRef('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -77,8 +80,10 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
       } else {
         const r = await api.fsRead(cur)
         if (!r.ok) {
-          onFlash?.({ ok: false, msg: r.msg })
-          if (r.code === 'BINARY' || r.code === 'TOOBIG') window.open(api.fsDownloadUrl(cur), '_blank')
+          if (!((r.code === 'BINARY' || r.code === 'TOOBIG') && viewKind(cur))) onFlash?.({ ok: false, msg: r.msg })
+          // a link straight to an image/PDF/video: open its folder with the viewer on it
+          if ((r.code === 'BINARY' || r.code === 'TOOBIG') && viewKind(cur)) pendingView.current = cur
+          else if (r.code === 'BINARY' || r.code === 'TOOBIG') window.open(api.fsDownloadUrl(cur), '_blank')
           go(parentOf(cur))
           return
         }
@@ -100,6 +105,14 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
     load()
   }, [load])
 
+  // images / PDF / video / audio of this folder, in list order: the viewer steps through them
+  const viewable = kind === 'dir' ? entries.filter((e) => e.type === 'file' && !e.outside && viewKind(e.name)).map((e) => ({ name: e.name, path: joinPath(cur, e.name), size: e.size })) : []
+  useEffect(() => setViewing(-1), [cur])
+  useEffect(() => {
+    if (!pendingView.current) return
+    const i = viewable.findIndex((x) => x.path === pendingView.current)
+    if (i >= 0) { pendingView.current = ''; setViewing(i) }
+  }, [entries]) // eslint-disable-line react-hooks/exhaustive-deps
   const dirty = kind === 'file' && draft !== orig
   // leaving the editor with unsaved edits (back, breadcrumb) asks first in the panel's modal
   const leave = useCallback(async (p) => {
@@ -289,7 +302,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
           return (
             <Row
               key={e.name}
-              onOpen={() => go(full)}
+              onOpen={() => { const v = e.type === 'file' && !e.outside ? viewable.findIndex((x) => x.path === full) : -1; if (v >= 0) setViewing(v); else go(full) }}
               icon={<Ic className={`h-4 w-4 ${e.type === 'dir' ? 'text-primary' : 'text-muted-foreground'}`} />}
               name={e.name}
               right={
@@ -348,6 +361,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
         })}
       </div>
       {confirmEl}
+      {viewing >= 0 && viewable[viewing] && <FileViewer items={viewable} index={viewing} onIndex={setViewing} onClose={() => setViewing(-1)} />}
     </div>
   )
 }

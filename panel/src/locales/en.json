@@ -1041,5 +1041,11 @@
   "srv.restore.exists": "the project \"{name}\" already exists",
   "srv.restore.turnOff": "turn the project \"{name}\" OFF first (Configure → power), then restore",
   "srv.restore.projectDone": "Project \"{name}\" restored. Turn it on in Projects.",
-  "srv.restore.projectReplaced": "Project \"{name}\" restored; the old folder is in {old}."
+  "srv.restore.projectReplaced": "Project \"{name}\" restored; the old folder is in {old}.",
+  "viewer.close": "Close",
+  "viewer.prev": "Previous",
+  "viewer.next": "Next",
+  "viewer.newTab": "Open in a new tab",
+  "viewer.position": "{i} of {n}",
+  "viewer.cannotShow": "This file cannot be shown here. Download it or open it in a new tab."
 }

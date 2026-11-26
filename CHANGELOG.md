@@ -13,6 +13,10 @@
   config backup of the server or a project of a copy of the volume, then restore. The config is
   merged after a safety backup (the panel login is kept, the panel restarts by itself); a project
   is restored as a new one or over one that is off (the old folder is moved aside, never deleted).
+- Files: images, PDF, video and audio open in a viewer (no download), with previous / next among
+  the files of the folder (buttons, ← →, swipe), download and "open in a new tab". A link straight
+  to an image opens its folder with the viewer on it. Inline files are served sandboxed (SVG) or
+  framed by the panel only (PDF), with byte ranges for video.
 
 ## 4.0.0 — 2026-11-26
 

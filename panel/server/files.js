@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const cfg = require('./config');
-const { sendStream } = require('./util');
+const { sendStream, sendRange } = require('./util');
 
 const BASE = cfg.FS_BASE;
 const MAX_TEXT = 2 * 1024 * 1024;     // leitura/edicao inline
@@ -101,6 +101,9 @@ const relOf = (full) => path.relative(BASE, full).split(path.sep).join('/');
 const TEXT_EXT = new Set(['.txt', '.md', '.json', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.css', '.html', '.sh', '.yml', '.yaml', '.toml', '.env', '.py', '.sql', '.xml', '.svg', '.csv', '.ini', '.conf', '.log', '.gitignore']);
 const MIME = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
+  '.avif': 'image/avif', '.bmp': 'image/bmp', '.ico': 'image/x-icon',
+  '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
+  '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
   '.svg': 'image/svg+xml', '.pdf': 'application/pdf', '.zip': 'application/zip', '.json': 'application/json',
   '.txt': 'text/plain; charset=utf-8', '.md': 'text/markdown; charset=utf-8', '.html': 'text/html; charset=utf-8',
 };
@@ -188,7 +191,16 @@ function fsRename(rel, newRel) {
   catch (e) { return { ok: false, msg: e.message }; }
 }
 // download: streams the file with Content-Disposition (any type/size)
-function fsDownload(rel, res) {
+// files the viewer of the Files page shows in the page (?inline=1) instead of downloading them
+const INLINE = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.ico', '.svg', '.pdf', '.mp4', '.m4v', '.webm', '.mov', '.mp3', '.m4a', '.wav', '.ogg']);
+// inline: never a page of our origin that runs code. SVG (it can hold scripts) and media get a
+// sandboxed CSP; the PDF must be framed by the panel itself (Chrome's PDF viewer does not run in a
+// sandboxed frame, and the PDF has no access to the page).
+function inlineHeaders(ext) {
+  if (ext === '.pdf') return { 'X-Frame-Options': 'SAMEORIGIN', 'Content-Security-Policy': "frame-ancestors 'self'" };
+  return { 'Content-Security-Policy': "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'" };
+}
+function fsDownload(rel, res, req, inline) {
   const { full, err } = guard(rel);
   if (err) { res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end(err); }
   let st;
@@ -198,13 +210,17 @@ function fsDownload(rel, res) {
     return res.end(tr('srv.fileNotFound'));
   }
   const name = path.basename(full);
-  return sendStream(res, full, { headers: {
-    'Content-Type': MIME[path.extname(full).toLowerCase()] || 'application/octet-stream',
-    'Content-Length': st.size,
-    'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
+  const ext = path.extname(full).toLowerCase();
+  const show = !!inline && INLINE.has(ext);
+  const headers = {
+    'Content-Type': MIME[ext] || 'application/octet-stream',
+    'Content-Disposition': `${show ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`,
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
-  } });
+    ...(show ? inlineHeaders(ext) : {}),
+  };
+  if (show && req) return sendRange(req, res, full, st.size, headers); // video/audio seek (iOS needs Range)
+  return sendStream(res, full, { headers: { ...headers, 'Content-Length': st.size } });
 }
 // upload: STREAMED straight to disk (found by @security: one Buffer per upload, up to 100MB,
 // with no limit on how many in parallel, made the panel's RAM proportional to simultaneous uploads).

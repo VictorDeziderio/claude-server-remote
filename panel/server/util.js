@@ -76,6 +76,23 @@ function sendJson(res, code, obj) {
 // opts: { status=200, headers, start, end } (start/end inclusive, as in createReadStream).
 // Resolves true when the whole file was sent, false otherwise; never rejects.
 const NOT_FOUND_CODES = new Set(['ENOENT', 'ENOTDIR', 'EISDIR', 'ELOOP']);
+// a file with single byte-range support (iOS plays video only with Range): 206 for "bytes=a-b",
+// 416 when out of the file, else the whole file. HEAD answers the headers only.
+function sendRange(req, res, file, size, headers) {
+  const base = { ...headers, 'Accept-Ranges': 'bytes' };
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
+  if (m && (m[1] || m[2])) {
+    const start = m[1] ? parseInt(m[1], 10) : Math.max(0, size - parseInt(m[2], 10));
+    const end = m[1] && m[2] ? Math.min(parseInt(m[2], 10), size - 1) : size - 1;
+    if (start > end || start >= size) { res.writeHead(416, { 'Content-Range': `bytes */${size}` }); return res.end(); }
+    const partial = { ...base, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 };
+    if (req.method === 'HEAD') { res.writeHead(206, partial); return res.end(); }
+    return sendStream(res, file, { status: 206, headers: partial, start, end });
+  }
+  const whole = { ...base, 'Content-Length': size };
+  if (req.method === 'HEAD') { res.writeHead(200, whole); return res.end(); }
+  return sendStream(res, file, { headers: whole });
+}
 function sendStream(res, file, opts = {}) {
   const { status = 200, headers = {}, start, end } = opts;
   return new Promise((resolve) => {
@@ -152,4 +169,4 @@ async function typeText(sess, text) {
   return (await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-m'])).ok;
 }
 
-module.exports = { TMUX_STRIP_ENV, sh, readJson, readRaw, sendJson, sendStream, truthy, validName, sessionName, paneOf, clampInt, log, typeLine, typeText };
+module.exports = { TMUX_STRIP_ENV, sh, readJson, readRaw, sendJson, sendStream, sendRange, truthy, validName, sessionName, paneOf, clampInt, log, typeLine, typeText };

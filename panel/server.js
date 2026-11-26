@@ -197,7 +197,7 @@ async function handle(req, res) {
       auth.renew(req, res);
       if (req.method === 'GET') {
         if (url === '/api/events') return events.attach(req, res, auth.sessionId(req));
-        if (url === '/api/fs/download') return files.fsDownload(u.searchParams.get('path') || '', res);
+        if (url === '/api/fs/download') return files.fsDownload(u.searchParams.get('path') || '', res, req, u.searchParams.get('inline') === '1');
         if (url === '/api/backup/download') return backup.downloadConfig(res, u.searchParams.get('file') || '', u.searchParams.get('full') === '1');
         const h = GET[url];
         if (!h) return sendJson(res, 404, { ok: false, msg: tr('srv.unknownRoute') });

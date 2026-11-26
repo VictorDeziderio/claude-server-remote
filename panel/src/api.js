@@ -44,6 +44,7 @@ export const fsCreate = (p, kind) => post('/api/fs/create', { path: p, kind })
 export const fsDelete = (p) => post('/api/fs/delete', { path: p })
 export const fsRename = (p, newPath) => post('/api/fs/rename', { path: p, newPath })
 export const fsDownloadUrl = (p) => '/api/fs/download?' + q({ path: p || '' })
+export const fsViewUrl = (p) => '/api/fs/download?' + q({ path: p || '', inline: '1' })
 export const fsUpload = (p, file, overwrite = false) =>
   fetch('/api/fs/upload?' + q({ path: p, overwrite: overwrite ? '1' : '0' }), {
     method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file,

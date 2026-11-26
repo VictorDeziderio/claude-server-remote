@@ -1041,5 +1041,11 @@
   "srv.restore.exists": "o projeto \"{name}\" já existe",
   "srv.restore.turnOff": "desligue antes o projeto \"{name}\" (Configurar → energia) e restaure",
   "srv.restore.projectDone": "Projeto \"{name}\" restaurado. Ligue-o em Projetos.",
-  "srv.restore.projectReplaced": "Projeto \"{name}\" restaurado; a pasta antiga está em {old}."
+  "srv.restore.projectReplaced": "Projeto \"{name}\" restaurado; a pasta antiga está em {old}.",
+  "viewer.close": "Fechar",
+  "viewer.prev": "Anterior",
+  "viewer.next": "Próximo",
+  "viewer.newTab": "Abrir em nova aba",
+  "viewer.position": "{i} de {n}",
+  "viewer.cannotShow": "Este arquivo não pode ser mostrado aqui. Baixe ou abra em nova aba."
 }
