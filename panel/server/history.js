@@ -88,4 +88,4 @@ async function resumeConversation(name, id, running) {
   return { ok: true, msg: tr('srv.resumeSent', { name }) };
 }
 
-module.exports = { listHistory, readConversation, resumeConversation };
+module.exports = { listHistory, readConversation, resumeConversation, dirOf };

@@ -65,6 +65,13 @@ fs.writeFileSync(path.join(HIST, 'mediaconv1.jsonl'), [
   line({ type: 'user', uuid: 'mr2', timestamp: '2025-01-01T00:00:05Z', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't2', is_error: true, content: 'exit 1' }] } }),
 ].join('\n') + '\n')
 
+// like Claude does, each .jsonl was last written when its last line was (the list is ordered by it)
+for (const f of fs.readdirSync(HIST)) {
+  const lines = fs.readFileSync(path.join(HIST, f), 'utf8').trim().split('\n')
+  const t = new Date(JSON.parse(lines[lines.length - 1]).timestamp)
+  fs.utimesSync(path.join(HIST, f), t, t)
+}
+
 const srv = spawn(process.execPath, ['server.js'], { cwd: PANEL, env, stdio: ['ignore', 'pipe', 'pipe'] })
 let logs = ''
 srv.stdout.on('data', (d) => { logs += d }); srv.stderr.on('data', (d) => { logs += d })
@@ -303,6 +310,11 @@ try {
     ok('guard: Grep path outside denied', run({ tool_name: 'Grep', tool_input: { pattern: 'x', path: '/root' } }).status === 2)
     ok('guard: Glob absolute pattern denied', run({ tool_name: 'Glob', tool_input: { pattern: '/etc/*' } }).status === 2)
     ok('guard: Glob relative pattern allowed', run({ tool_name: 'Glob', tool_input: { pattern: '**/*.md' } }).status === 0)
+    ok('guard: Write to .claude/settings.json denied (hooks would run commands)', run({ tool_name: 'Write', tool_input: { file_path: path.join(P, '.claude', 'settings.json') } }).status === 2)
+    ok('guard: Edit of .mcp.json denied', run({ tool_name: 'Edit', tool_input: { file_path: '.mcp.json' } }).status === 2)
+    ok('guard: Write into .git/hooks denied', run({ tool_name: 'Write', tool_input: { file_path: '.git/hooks/pre-commit' } }).status === 2)
+    ok('guard: Edit of CLAUDE.md denied', run({ tool_name: 'Edit', tool_input: { file_path: 'sub/CLAUDE.md' } }).status === 2)
+    ok('guard: Read of .claude/settings.json still allowed', run({ tool_name: 'Read', tool_input: { file_path: '.claude/settings.json' } }).status === 0)
     ok('guard: invalid input denied', spawnSync(process.execPath, [G, P], { input: 'nope', encoding: 'utf8' }).status === 2)
   }
 } catch (e) {

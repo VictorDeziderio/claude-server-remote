@@ -11,6 +11,10 @@ const path = require('path');
 
 const ALLOWED = new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'LS', 'TodoWrite']);
 const PATH_KEYS = ['file_path', 'notebook_path', 'path'];
+const WRITERS = new Set(['Write', 'Edit', 'MultiEdit']);
+// files that make the NEXT Claude/git run execute something (settings hooks, MCP servers, git hooks):
+// writing them from a limited link would turn file access into running commands
+const PROTECTED = [/(^|\/)\.claude(\/|$)/, /(^|\/)\.mcp\.json$/, /(^|\/)\.git(\/|$)/, /(^|\/)CLAUDE(\.local)?\.md$/];
 
 const inside = (p, base) => p === base || p.startsWith(base + path.sep);
 // realpath of p, or of its nearest existing ancestor + the rest (a file still to be created)
@@ -39,6 +43,8 @@ function check(ev, project) {
     if (lst && lst.isSymbolicLink()) { try { real = fs.realpathSync(full); } catch { return 'broken symlink refused'; } }
     else real = realOf(full);
     if (!inside(path.resolve(full), path.resolve(project)) || !inside(real, base)) return `path outside the project refused: ${input[k]}`;
+    const rel = path.relative(base, real).split(path.sep).join('/');
+    if (WRITERS.has(name) && PROTECTED.some((re) => re.test(rel))) return `this file cannot be changed from this chat link: ${input[k]}`;
   }
   // glob patterns: no absolute pattern and no ".." (they could reach outside the project)
   for (const k of ['pattern', 'glob']) {

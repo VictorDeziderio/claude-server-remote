@@ -38,7 +38,7 @@ const CLAUDE_BIN = process.env.CHAT_CLAUDE_BIN || 'claude';
 const GUARD = path.join(__dirname, 'chat-guard.js');
 const UPLOAD_DIR = '.chat-uploads';
 const projectDir = (name) => path.join(cfg.PROJECTS_DIR, name);
-const histDir = (name) => path.join(cfg.CLAUDE_DIR, 'projects', projectDir(name).replace(/[^a-zA-Z0-9]/g, '-'));
+const histDir = (name) => require('./history').dirOf(name);
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const validId = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(id);
 
@@ -244,35 +244,46 @@ async function readConv(project, id) {
   return parsed;
 }
 
+// newest first by the .jsonl modification time (a stat per file); only the conversations of the
+// requested page are parsed, so a project with hundreds of long conversations still answers fast
 async function listConversations(k, q) {
   const limit = clampInt(q.get('limit'), 1, 100, 20);
   const before = q.get('before') || '';
-  let ids = [];
-  try { ids = (await fsp.readdir(histDir(k.project))).filter((f) => f.endsWith('.jsonl')).map((f) => f.slice(0, -6)); } catch { /* no history yet */ }
-  for (const r of runs.values()) if (r.project === k.project && !ids.includes(r.id)) ids.push(r.id);
-  ids = ids.filter((id) => validId(id) && canSee(k, id));
+  const dir = histDir(k.project);
+  let names = [];
+  try { names = (await fsp.readdir(dir)).filter((f) => f.endsWith('.jsonl')); } catch { /* no history yet */ }
+  const cands = [];
+  for (const f of names) {
+    const id = f.slice(0, -6);
+    if (!validId(id) || !canSee(k, id)) continue;
+    let st; try { st = await fsp.stat(path.join(dir, f)); } catch { continue; }
+    const run = runs.get(id);
+    const t = new Date(Math.max(st.mtimeMs, run ? Date.parse(run.startedAt) : 0)).toISOString();
+    cands.push({ id, t });
+  }
+  for (const r of runs.values()) if (r.project === k.project && canSee(k, r.id) && !cands.some((c) => c.id === r.id)) cands.push({ id: r.id, t: r.startedAt });
+  const keyOf = (c) => `${c.t}|${c.id}`;
+  cands.sort((a, b) => (keyOf(a) < keyOf(b) ? 1 : keyOf(a) > keyOf(b) ? -1 : 0));
+  const rest = before ? cands.filter((c) => keyOf(c) < before) : cands;
   const items = [];
-  for (const id of ids) {
+  let i = 0;
+  for (; i < rest.length && items.length < limit; i++) {
+    const { id, t } = rest[i];
     const c = await readConv(k.project, id);
     const run = runs.get(id);
-    if (!c && !run) continue;
     const msgs = c ? c.msgs : [];
-    if (c && !msgs.length && !run) continue;
+    if (!msgs.length && !run) continue; // empty / meta-only conversation
     const last = msgs[msgs.length - 1];
     items.push({
       id,
       title: (c && c.title) || (run && clip(run.prompt.replace(/\s+/g, ' '), 120)) || tr('srv.untitled'),
       preview: last ? clip((last.text || (last.tools[0] ? last.tools[0].name : '')).replace(/\s+/g, ' ').trim(), 140) : '',
-      updatedAt: (run && (!c || run.startedAt > c.updatedAt)) ? run.startedAt : c.updatedAt,
+      updatedAt: t,
       messages: msgs.length,
       running: !!run,
     });
   }
-  const keyOf = (it) => `${it.updatedAt}|${it.id}`;
-  items.sort((a, b) => (keyOf(a) < keyOf(b) ? 1 : keyOf(a) > keyOf(b) ? -1 : 0));
-  const rest = before ? items.filter((it) => keyOf(it) < before) : items;
-  const page = rest.slice(0, limit);
-  return { ok: true, items: page, next: rest.length > limit ? keyOf(page[page.length - 1]) : null };
+  return { ok: true, items, next: i < rest.length ? keyOf(rest[i - 1]) : null };
 }
 
 // pages of a list ordered oldest -> newest, read from the END: before = index (exclusive)
