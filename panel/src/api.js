@@ -108,3 +108,7 @@ export const cleanWorktrees = (name, worktrees) => post('/api/disk/clean', { nam
 // update the panel through DEPLOY_WEBHOOK_URL (server/update.js)
 export const updateStatus = () => get('/api/update')
 export const updateRequest = (mode) => post('/api/update', { mode })
+// chat link keys of a project (server/chat.js); the plain key comes back only on create
+export const chatKeys = (name) => get('/api/chat/keys?' + q({ name }))
+export const chatKeyCreate = (name, label, role) => post('/api/chat/keys/create', { name, label, role })
+export const chatKeyRevoke = (id) => post('/api/chat/keys/revoke', { id })

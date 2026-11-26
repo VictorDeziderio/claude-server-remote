@@ -105,6 +105,24 @@ try {
     ok('drawer opens on the right side, full height', db && Math.round(db.x + db.width) >= 1279 && db.height >= 790, JSON.stringify(db))
     await drawer.locator('[data-testid="disk-section"]').getByText(/project/i).first().waitFor({ timeout: 8000 }).catch(() => {})
     ok('drawer shows the disk use of the project', await drawer.locator('[data-testid="disk-section"]').getByText(/project/i).first().isVisible().catch(() => false))
+    // "Chat link": create a limited link (shown once), it is listed, revoke removes it
+    {
+      const sec = drawer.locator('[data-testid="chatlink-section"]')
+      await sec.scrollIntoViewIfNeeded()
+      await sec.locator('[data-testid="chatlink-label"]').fill('Guest UI')
+      await sec.getByRole('button', { name: /create link/i }).click()
+      const fresh = sec.locator('[data-testid="chatlink-fresh"] input')
+      await fresh.waitFor({ timeout: 5000 }).catch(() => {})
+      const url = await fresh.inputValue().catch(() => '')
+      ok('chat link: created link shown once with /c/<key>', /\/c\/[A-Za-z0-9_-]{43}$/.test(url), url)
+      const row = sec.locator('[data-testid="chatlink-key"]', { hasText: 'Guest UI' })
+      await row.waitFor({ timeout: 5000 }).catch(() => {})
+      ok('chat link: listed with its role', /limited/i.test(await row.innerText().catch(() => '')))
+      await row.getByRole('button', { name: /revoke/i }).click()
+      await page.locator('[role="dialog"]').last().getByRole('button', { name: /^revoke$/i }).click()
+      await row.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+      ok('chat link: revoke removes it', !(await row.count()) && !(await fresh.count()))
+    }
     // typing the name to delete keeps the focus in the field and the drawer where it was
     const del = drawer.locator('[data-testid="delete-confirm"]')
     await del.scrollIntoViewIfNeeded()

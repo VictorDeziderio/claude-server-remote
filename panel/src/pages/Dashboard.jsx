@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Cpu, Radio, RefreshCw, Activity, Plus, Power, Wifi, WifiOff, Save, UserRound, Tag, SquareTerminal, FolderOpen, Trash2, Settings2, History, DatabaseBackup, Pencil, HardDrive, MemoryStick, Gauge, Clock, ArrowUpCircle, CheckCircle2, ExternalLink, BarChart3, Pause, Play, ListTree, Pin } from 'lucide-react'
+import { Cpu, Radio, RefreshCw, Activity, Plus, Power, Wifi, WifiOff, Save, UserRound, Tag, SquareTerminal, FolderOpen, Trash2, Settings2, History, DatabaseBackup, Pencil, HardDrive, MemoryStick, Gauge, Clock, ArrowUpCircle, CheckCircle2, ExternalLink, BarChart3, Pause, Play, ListTree, Pin, MessageSquare, Copy, Check } from 'lucide-react'
 import { Dot, Btn, Chip, Modal, Drawer, ActivityBadge, inputCls, Skeleton, useConfirm, StatCard } from '../components/ui.jsx'
 import { useHealth } from '../hooks/useHealth.js'
-import { fmtInt, fmtTok, fmtSize, fmtUsd, fmtUptime } from '../lib/format.js'
+import { fmtInt, fmtTok, fmtSize, fmtUsd, fmtUptime, fmtIso } from '../lib/format.js'
 import * as api from '../api.js'
 import { UsageWidget } from '../components/UsageLimits.jsx'
 import { t, getLang } from '../lib/i18n.js'
@@ -437,6 +437,79 @@ function DiskSection({ name, onFlash }) {
   )
 }
 
+// "Chat link" block: private links (/c/<key>) to chat with Claude in this project from a phone.
+// The server keeps only a hash: the plain link is shown once, right after it is created.
+function ChatLinkSection({ name, onFlash }) {
+  const [keys, setKeys] = useState(null)
+  const [label, setLabel] = useState('')
+  const [role, setRole] = useState('limited')
+  const [busy, setBusy] = useState(false)
+  const [fresh, setFresh] = useState(null) // { id, url } just created
+  const [copied, setCopied] = useState(false)
+  const [confirmEl, ask] = useConfirm()
+  const load = () => api.chatKeys(name).then(setKeys).catch(() => setKeys({ ok: false }))
+  useEffect(() => { setFresh(null); load() }, [name]) // eslint-disable-line react-hooks/exhaustive-deps
+  const create = async () => {
+    setBusy(true)
+    const r = await api.chatKeyCreate(name, label.trim(), role).catch((e) => ({ ok: false, msg: e.message }))
+    setBusy(false)
+    if (!r.ok) return onFlash?.(r)
+    setFresh({ id: r.id, url: r.url }); setCopied(false); setLabel('')
+    load()
+  }
+  const revoke = async (k) => {
+    if (!(await ask(t('chatlink.revokeAsk', { label: k.label }), { yes: t('chatlink.revoke'), danger: true }))) return
+    const r = await api.chatKeyRevoke(k.id).catch((e) => ({ ok: false, msg: e.message }))
+    if (!r.ok) onFlash?.(r)
+    if (fresh?.id === k.id) setFresh(null)
+    load()
+  }
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(fresh.url); setCopied(true) } catch { /* the field below stays selectable */ }
+  }
+  return (
+    <Section title={t('chatlink.title')} icon={MessageSquare}>
+      <div className="space-y-2 text-xs" data-testid="chatlink-section">
+        <p className="text-muted-foreground">{t('chatlink.hint')}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input value={label} onChange={(e) => setLabel(e.target.value)} maxLength={60} placeholder={t('chatlink.label')} className={`min-w-0 flex-1 ${inputCls}`} data-testid="chatlink-label" />
+          <select value={role} onChange={(e) => setRole(e.target.value)} className={inputCls} data-testid="chatlink-role">
+            <option value="limited">{t('chatlink.limited')}</option>
+            <option value="owner">{t('chatlink.owner')}</option>
+          </select>
+          <Btn variant="accent" busy={busy} onClick={create}><Plus className="h-3.5 w-3.5" /> {t('chatlink.create')}</Btn>
+        </div>
+        {fresh && (
+          <div className="space-y-1 rounded-lg border border-warning/40 bg-warning/10 p-2" data-testid="chatlink-fresh">
+            <p className="text-foreground">{t('chatlink.copyOnce')}</p>
+            <div className="flex items-center gap-2">
+              <input readOnly value={fresh.url} onFocus={(e) => e.target.select()} className={`min-w-0 flex-1 font-mono ${inputCls}`} />
+              <Btn onClick={copy}>{copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {copied ? t('chatlink.copied') : t('chatlink.copy')}</Btn>
+              <a href={fresh.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline"><ExternalLink className="h-3.5 w-3.5" /> {t('chatlink.open')}</a>
+            </div>
+          </div>
+        )}
+        {!keys ? <Skeleton className="h-8" /> : !keys.ok ? <p className="text-destructive">{keys.msg || t('chatlink.error')}</p> : keys.keys.length === 0 ? (
+          <p className="text-muted-foreground">{t('chatlink.none')}</p>
+        ) : (
+          <ul className="space-y-1 rounded-lg border bg-background p-2">
+            {keys.keys.map((k) => (
+              <li key={k.id} className="flex items-center justify-between gap-2" data-testid="chatlink-key">
+                <span className="min-w-0 truncate">
+                  <b>{k.label}</b> · {k.role === 'owner' ? t('chatlink.owner') : t('chatlink.limited')}
+                  <span className="text-muted-foreground"> · {t('chatlink.created', { date: fmtIso(k.createdAt) })} · {k.lastUsedAt ? t('chatlink.lastUsed', { date: fmtIso(k.lastUsedAt) }) : t('chatlink.never')}</span>
+                </span>
+                <Btn variant="ghost" onClick={() => revoke(k)}><Trash2 className="h-3.5 w-3.5" /> {t('chatlink.revoke')}</Btn>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {confirmEl}
+    </Section>
+  )
+}
+
 // a block of the "Configure project" drawer. Defined at module level: a component created inside
 // another one is a new type on every render, so React remounts it and the inputs inside lose focus
 // (typing the name to delete jumped the drawer back to the top).
@@ -536,6 +609,8 @@ function ProjectDrawer({ p, data, busy, run, onClose, onFlash }) {
             <History className="h-3.5 w-3.5" /> {t('dash.viewConversations')}
           </Link>
         </Section>
+
+        <ChatLinkSection name={p.name} onFlash={onFlash} />
 
         <DiskSection name={p.name} onFlash={onFlash} />
 

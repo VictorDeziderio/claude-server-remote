@@ -91,4 +91,4 @@ async function typeLine(sess, text) {
   return (await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-m'])).ok;
 }
 
-module.exports = { sh, readJson, readRaw, sendJson, truthy, validName, sessionName, paneOf, clampInt, log, typeLine };
+module.exports = { TMUX_STRIP_ENV, sh, readJson, readRaw, sendJson, truthy, validName, sessionName, paneOf, clampInt, log, typeLine };

@@ -50,14 +50,15 @@ function realOf(full) {
   }
 }
 
-// -> { full } | { err }.  self=true: the operation acts on the path ITSELF (delete/rename),
-// so a symlink at the end of the path is accepted and only the parent directory needs to be really inside.
-function guard(rel, { self = false } = {}) {
-  const full = path.resolve(BASE, String(rel == null ? '' : rel).replace(/^[/\\]+/, ''));
-  if (!inside(full, BASE)) return { err: tr('srv.badPath') };
+// realpath check of an ABSOLUTE path against a base -> { full } | { err }. Shared by the file
+// manager (base = FS_BASE) and the project chat (base = the project folder, server/chat.js).
+// self=true: the operation acts on the path ITSELF (delete/rename), so a symlink at the end of the
+// path is accepted and only the parent directory needs to be really inside.
+function confine(base, full, { self = false } = {}) {
+  if (!inside(full, base)) return { err: tr('srv.badPath') };
   let real;
   try {
-    if (self && full !== BASE) {
+    if (self && full !== base) {
       real = path.join(realOf(path.dirname(full)), path.basename(full));
     } else {
       // found by @security: if `full` is a BROKEN symlink (points to something that does not exist),
@@ -78,8 +79,14 @@ function guard(rel, { self = false } = {}) {
       }
     }
   } catch (e) { return { err: e.message }; }
-  if (!inside(real, realBase())) return { err: OUTSIDE_MSG };
+  let baseR;
+  try { baseR = base === BASE ? realBase() : fs.realpathSync(base); } catch { baseR = base; }
+  if (!inside(real, baseR)) return { err: base === BASE ? OUTSIDE_MSG : tr('srv.badPath') };
   return { full };
+}
+// file manager guard: `rel` is relative to FS_BASE
+function guard(rel, opts) {
+  return confine(BASE, path.resolve(BASE, String(rel == null ? '' : rel).replace(/^[/\\]+/, '')), opts);
 }
 // writes a NEW/truncated file refusing to follow a symlink in the last component (O_NOFOLLOW):
 // defense in depth against TOCTOU between the guard() above and the real write.
@@ -212,6 +219,10 @@ function fsUploadStream(rel, req, overwrite) {
   const { full, err } = guard(rel);
   if (err) return Promise.resolve({ ok: false, msg: err });
   if (full === BASE) return Promise.resolve({ ok: false, msg: tr('srv.badPath') });
+  return streamUpload(full, req, overwrite).then((r) => (r.ok ? { ...r, msg: tr('srv.uploaded', { path: relOf(full), size: r.size }), path: relOf(full) } : r));
+}
+// streams the request body into `full` (already checked by the caller) -> {ok, size} | {ok:false, msg, status?, code?}
+function streamUpload(full, req, overwrite) {
   if (activeUploads >= MAX_CONCURRENT_UPLOADS) {
     return Promise.resolve({ ok: false, status: 429, msg: tr('srv.tooManyUploads') });
   }
@@ -243,11 +254,11 @@ function fsUploadStream(rel, req, overwrite) {
       if (!overwrite && fs.existsSync(full)) return finish({ ok: false, code: 'EXISTS', msg: tr('srv.existsOverwrite') });
       try { fs.closeSync(fd); fd = null; fs.renameSync(tmp, full); }
       catch (e) { return finish({ ok: false, msg: e.message }); }
-      finish({ ok: true, msg: tr('srv.uploaded', { path: relOf(full), size }), path: relOf(full), size });
+      finish({ ok: true, size });
     });
     req.on('error', () => finish({ ok: false, msg: tr('srv.uploadBroken') }));
     req.on('close', () => finish({ ok: false, msg: tr('srv.uploadBroken') }));
   });
 }
 
-module.exports = { fsStat, fsList, fsRead, fsSave, fsCreate, fsDelete, fsRename, fsDownload, fsUploadStream, MAX_UPLOAD };
+module.exports = { fsStat, fsList, fsRead, fsSave, fsCreate, fsDelete, fsRename, fsDownload, fsUploadStream, MAX_UPLOAD, confine, streamUpload, MIME };
