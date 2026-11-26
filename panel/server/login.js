@@ -79,9 +79,12 @@ const EXIT_OPTION_RX = /\b(exit|quit|cancel|decline|reject|never mind)\b|^\s*[�
 const lastLines = (s, n) => s.split('\n').filter((l) => l.trim()).slice(-n).join('\n');
 
 // key to bring the cursor to the `target` option (null = option/cursor not found)
+// The menu's cursor is the LAST ❯ line: /login opens its menu under the prompt, whose own line
+// ("❯ /login") also starts with ❯ and must not be taken for the selected option.
+const cursorLine = (lines) => { for (let i = lines.length - 1; i >= 0; i--) if (CURSOR_RX.test(lines[i])) return i; return -1; };
 function selectKey(screen, target) {
   const lines = screen.split('\n');
-  const cur = lines.findIndex((l) => CURSOR_RX.test(l));
+  const cur = cursorLine(lines);
   let want = -1;
   lines.forEach((l, i) => { if (target.test(l)) want = i; });
   if (cur < 0 || want < 0) return null;
@@ -90,7 +93,8 @@ function selectKey(screen, target) {
 }
 // a opcao selecionada fecharia o Claude? (Enter as cegas seria perigoso)
 function exitSelected(screen) {
-  const l = screen.split('\n').find((x) => CURSOR_RX.test(x));
+  const lines = screen.split('\n');
+  const l = lines[cursorLine(lines)];
   return !!l && EXIT_OPTION_RX.test(l);
 }
 

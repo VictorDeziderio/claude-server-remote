@@ -903,6 +903,9 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
       trust: [" Accessing workspace:\n /home/x/work\n Quick safety check: Is this a project you created or one you trust? (Like your own code)\n Claude Code'll be able to read, edit, and execute files here.\n Security guide\n ❯ No, exit\n   Yes, I trust this folder\n Enter to confirm · Esc to cancel", 'trust-folder', 'Down'],
       bypass: ['  WARNING: Claude Code running in Bypass Permissions mode\n  https://code.claude.com/docs/en/security\n  ❯ No, exit\n    Yes, I accept\n  Enter to confirm · Esc to cancel', 'bypass-warning', 'Down'],
       success: [' Login successful. Press Enter to continue', 'login-success', 'Enter'],
+      // /login typed at the prompt (new account): the prompt line "❯ /login" sits above the menu and
+      // the menu opens on the Console option (captured live on 2.1.332)
+      methodUnderPrompt: [' ▐▛███▛█   Claude Code v2.1.332\n▝▜██████▀  Opus 5.5 · API Usage Billing\n ▝▝   ▝▝   /root\n❯ /login\n────────────\n  Login\n  Claude Code can be used with your Claude subscription or billed based on API usage through your Console account.\n  Select login method:\n    1. Claude account with subscription · Individual, Team, or Enterprise\n  ❯ 2. Anthropic Console account · API usage billing\n    3. 3rd-party platform · Bedrock, Microsoft Foundry, Google Vertex AI\n  Esc to cancel', 'login-method', 'Up'],
     }
     for (const [name, [screen, id, key]] of Object.entries(real)) {
       const c = classify(screen)

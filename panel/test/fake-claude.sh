@@ -22,7 +22,10 @@ menu() {
   done
 }
 do_login() {
-  CUR=1 menu method "Claude Code can be used with your Claude subscription or billed based on API usage.\n Select login method:" \
+  # from the prompt (/login) the real one draws the menu under the "❯ /login" line, on option 2
+  local head="Claude Code can be used with your Claude subscription or billed based on API usage.\n Select login method:"
+  [ -n "$FROM_PROMPT" ] && head="❯ /login\n────────\n Login\n $head"
+  CUR=1 menu method "$head" \
     "1. Claude account with subscription · Individual, Team, or Enterprise" "2. Anthropic Console account · API usage billing" "3. 3rd-party platform · Bedrock, Microsoft Foundry, Google Vertex AI"
   case "$(tail -n1 "$PICKS")" in *"Claude account with subscription"*) ;; *) echo "wrong login method"; exit 1 ;; esac
   while :; do
@@ -43,7 +46,7 @@ repl() {
     if [ -s "$CFG/.credentials.json" ]; then echo "  ⏵⏵ bypass permissions on (shift+tab to cycle)"; else echo "  ⏵⏵ bypass permissions on (shift+tab to cycle)   Not logged in · run /login"; fi
     read -r line
     [ "$(date +%s)" -lt "$until" ] && { echo "repl-dropped=$line" >> "$PICKS"; continue; }
-    [ "$line" = "/login" ] && { echo "repl=/login" >> "$PICKS"; do_login; }
+    [ "$line" = "/login" ] && { echo "repl=/login" >> "$PICKS"; FROM_PROMPT=1 do_login; }
   done
 }
 if [ -s "$CFG/.credentials.json" ]; then repl; fi
