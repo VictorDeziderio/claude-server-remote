@@ -15,12 +15,12 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const cfg = require('./config');
-const { log } = require('./util');
+const { log, writeState } = require('./util');
 
 let webpush = null;
 try { webpush = require('web-push'); } catch { /* dependency missing: push disabled, panel keeps working */ }
 
-const FILE = process.env.PANEL_PUSH_FILE || path.join(cfg.CLAUDE_DIR, '.panel-push.json');
+const FILE = cfg.PUSH_FILE;
 const SINK = process.env.PANEL_PUSH_TEST_SINK || '';
 const MAX_DEVICES = 20;
 const SEND_TIMEOUT_MS = 10000;
@@ -32,16 +32,7 @@ const B64URL = /^[A-Za-z0-9_-]+={0,2}$/;
 
 let state = null;
 
-function save() {
-  if (require('./restore').frozen()) return; // a config restore just wrote the file: the old state must not overwrite it
-  try {
-    fs.mkdirSync(path.dirname(FILE), { recursive: true });
-    const tmp = FILE + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
-    fs.renameSync(tmp, FILE);
-    return true;
-  } catch (e) { log('error', 'push: could not save state', { err: e.message }); return false; }
-}
+const save = () => writeState(FILE, state);
 
 function load() {
   if (state) return state;

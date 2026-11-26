@@ -13,7 +13,6 @@ function initialKey() {
 }
 const KEY = initialKey()
 export const hubKey = () => KEY
-export const forgetKey = () => { try { localStorage.removeItem(STORE) } catch { /* storage off */ } }
 
 export class ApiError extends Error {
   constructor(status, msg) { super(msg || `HTTP ${status}`); this.status = status }

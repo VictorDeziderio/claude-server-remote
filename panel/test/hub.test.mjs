@@ -244,7 +244,7 @@ try {
   r = await b(A.BASE, KEY, 'GET', '/hub-api/me')
   ok('revoked: the hub key stops at once', r.status === 401 || r.status === 429) // 429: this IP sent wrong keys above
   r = await b(A.BASE, KEY, 'GET', '/chat-api/me', undefined, { 'x-chat-project': 'alpha' })
-  ok('revoked: the chats opened with it stop too', r.status === 401)
+  ok('revoked: the chats opened with it stop too', r.status === 401 || r.status === 429) // one limiter for every kind of key: this IP sent wrong keys above
 
   ok('no key in the panel logs', !A.logs().includes(KEY) && !B.logs().includes(KEYB))
   const auditTxt = fs.readFileSync(path.join(A.ROOT, '.claude', 'logs', 'audit.log'), 'utf8')

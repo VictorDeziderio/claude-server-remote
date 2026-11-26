@@ -1,6 +1,7 @@
 'use strict';
 const { execFile } = require('child_process');
 const fs = require('fs');
+const path = require('path');
 const { pipeline } = require('stream');
 
 // found by @security: `tmux new-session` starts a shell that inherits the caller's env (the panel) —
@@ -76,6 +77,22 @@ function sendJson(res, code, obj) {
 // opts: { status=200, headers, start, end } (start/end inclusive, as in createReadStream).
 // Resolves true when the whole file was sent, false otherwise; never rejects.
 const NOT_FOUND_CODES = new Set(['ENOENT', 'ENOTDIR', 'EISDIR', 'ELOOP']);
+// Panel state files (keys, people, push devices): atomic write, 0600. After a config restore wrote
+// the files on disk, freezeState() stops every write until the panel restarts, so the old
+// in-memory state of a module never lands over the restored file.
+let stateFrozen = false;
+const freezeState = () => { stateFrozen = true; };
+function writeState(file, obj) {
+  if (stateFrozen) return false;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = file + '.' + process.pid + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(obj, null, 1), { mode: 0o600 });
+    fs.renameSync(tmp, file);
+    return true;
+  } catch (e) { log('error', 'could not save state', { file: path.basename(file), err: e.message }); return false; }
+}
+
 // a file with single byte-range support (iOS plays video only with Range): 206 for "bytes=a-b",
 // 416 when out of the file, else the whole file. HEAD answers the headers only.
 function sendRange(req, res, file, size, headers) {
@@ -169,4 +186,4 @@ async function typeText(sess, text) {
   return (await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-m'])).ok;
 }
 
-module.exports = { TMUX_STRIP_ENV, sh, readJson, readRaw, sendJson, sendStream, sendRange, truthy, validName, sessionName, paneOf, clampInt, log, typeLine, typeText };
+module.exports = { writeState, freezeState, TMUX_STRIP_ENV, sh, readJson, readRaw, sendJson, sendStream, sendRange, truthy, validName, sessionName, paneOf, clampInt, log, typeLine, typeText };

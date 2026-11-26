@@ -29,7 +29,6 @@ export function FileViewer({ items, index, onIndex, onClose }) {
   const [loaded, setLoaded] = useState(false)
   useEffect(() => { setFailed(false); setLoaded(false) }, [index])
   const go = (d) => { const n = index + d; if (n >= 0 && n < items.length) onIndex(n) }
-  // focus: on Close while open, back to where it was when closed
   useEffect(() => {
     const before = document.activeElement
     closeBtn.current?.focus()
@@ -55,7 +54,6 @@ export function FileViewer({ items, index, onIndex, onClose }) {
     document.body.style.overflow = 'hidden'
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev }
   }) // eslint-disable-line react-hooks/exhaustive-deps
-  // the neighbours of an image are loaded in the background: the next tap is instant
   useEffect(() => {
     for (const d of [-1, 1]) { const n = items[index + d]; if (n && viewKind(n.name) === 'image') { const im = new Image(); im.src = api.fsViewUrl(n.path) } }
   }, [index, items])
@@ -69,6 +67,13 @@ export function FileViewer({ items, index, onIndex, onClose }) {
     const p = e.changedTouches[0], dx = p.clientX - s.x, dy = p.clientY - s.y
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? 1 : -1)
   }
+  // previous / next: in the top bar, or on the sides of the picture (`sides`)
+  const nav = (place, icon, sides) => [[-1, ChevronLeft, 'viewer.prev', 'left-2'], [1, ChevronRight, 'viewer.next', 'right-2']].map(([d, Icon, label, side]) => (
+    <button key={d} type="button" onClick={() => go(d)} disabled={d < 0 ? index === 0 : index === items.length - 1}
+      className={`${btn} ${place} ${sides ? side : ''}`} aria-label={t(label)} title={t(label)} data-testid={d < 0 ? 'viewer-prev' : 'viewer-next'}>
+      <Icon className={icon} />
+    </button>
+  ))
   const btn = 'inline-flex size-10 shrink-0 items-center justify-center rounded-full text-white/90 hover:bg-white/15 disabled:opacity-30'
   // on <body>, above everything of the panel (its phone tab bar included)
   return createPortal(
@@ -79,13 +84,8 @@ export function FileViewer({ items, index, onIndex, onClose }) {
           <div className="truncate text-sm font-medium" data-testid="viewer-name">{item.name}</div>
           <div className="text-xs text-white/60">{t('viewer.position', { i: index + 1, n: items.length })}{item.size ? ` · ${fmtSize(item.size)}` : ''}</div>
         </div>
-        {kind === 'pdf' && (
-          // a PDF uses the whole area (and scrolls by touch on a phone): its arrows go up here
-          <>
-            <button type="button" onClick={() => go(-1)} disabled={index === 0} className={btn} aria-label={t('viewer.prev')} title={t('viewer.prev')} data-testid="viewer-prev"><ChevronLeft className="size-6" /></button>
-            <button type="button" onClick={() => go(1)} disabled={index === items.length - 1} className={btn} aria-label={t('viewer.next')} title={t('viewer.next')} data-testid="viewer-next"><ChevronRight className="size-6" /></button>
-          </>
-        )}
+        {/* a PDF uses the whole area (and scrolls by touch on a phone): its arrows go up here */}
+        {kind === 'pdf' && nav('', 'size-6')}
         <a href={src} target="_blank" rel="noreferrer" className={btn} aria-label={t('viewer.newTab')} title={t('viewer.newTab')}><ExternalLink className="size-5" /></a>
         <a href={api.fsDownloadUrl(item.path)} className={btn} aria-label={t('files.download')} title={t('files.download')}><Download className="size-5" /></a>
       </div>
@@ -108,10 +108,7 @@ export function FileViewer({ items, index, onIndex, onClose }) {
           <audio key={src} src={src} controls onError={() => setFailed(true)} data-testid="viewer-audio" className="w-full max-w-md" />
         )}
         {kind === 'image' && !loaded && !failed && <Loader2 aria-hidden className="pointer-events-none absolute size-8 animate-spin text-white/60" />}
-        {kind !== 'pdf' && <>
-        <button type="button" onClick={() => go(-1)} disabled={index === 0} className={`absolute left-2 top-1/2 -translate-y-1/2 bg-black/40 ${btn} size-12`} aria-label={t('viewer.prev')} title={t('viewer.prev')} data-testid="viewer-prev"><ChevronLeft className="size-7" /></button>
-        <button type="button" onClick={() => go(1)} disabled={index === items.length - 1} className={`absolute right-2 top-1/2 -translate-y-1/2 bg-black/40 ${btn} size-12`} aria-label={t('viewer.next')} title={t('viewer.next')} data-testid="viewer-next"><ChevronRight className="size-7" /></button>
-        </>}
+        {kind !== 'pdf' && nav('absolute top-1/2 -translate-y-1/2 bg-black/40 size-12', 'size-7', true)}
       </div>
     </div>,
     document.body,

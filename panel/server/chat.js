@@ -35,9 +35,10 @@ const path = require('path');
 const crypto = require('crypto');
 const cfg = require('./config');
 const { tr } = require('./i18n');
-const { readJson, sendJson, sendStream, sendRange, validName, sessionName, paneOf, clampInt, log, sh, typeText } = require('./util');
+const { readJson, sendJson, sendStream, sendRange, writeState, validName, sessionName, paneOf, clampInt, log, sh, typeText } = require('./util');
 const { audit } = require('./audit');
 const auth = require('./auth');
+const bearer = require('./bearer');
 const files = require('./files');
 const jsonl = require('./jsonl');
 const screen = require('./screen');
@@ -54,7 +55,6 @@ const MAX_STREAMS_PER_PROJECT = 10;
 const projectDir = (name) => path.join(cfg.PROJECTS_DIR, name);
 const histDir = (name) => require('./history').dirOf(name);
 const convFile = (project, id) => path.join(histDir(project), id + '.jsonl');
-const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const validId = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -73,23 +73,9 @@ function load() {
   if (store.keys.length !== before || legacy) save();
   return store;
 }
-function save() {
-  if (require('./restore').frozen()) return; // a config restore just wrote the file: the old state must not overwrite it
-  try {
-    fs.mkdirSync(path.dirname(KEYS_FILE), { recursive: true });
-    const tmp = KEYS_FILE + '.' + process.pid + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(store, null, 1), { mode: 0o600 });
-    fs.renameSync(tmp, KEYS_FILE);
-  } catch (e) { log('error', 'chat keys: could not save', { err: e.message }); }
-}
+const save = () => writeState(KEYS_FILE, store);
 const pub = (k) => ({ id: k.id, label: k.label, createdAt: k.createdAt, lastUsedAt: k.lastUsedAt || null });
 
-function linkBase(req) {
-  const host = auth.hostOf(req);
-  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim()
-    || (/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host) ? 'http' : 'https');
-  return `${proto}://${host}`;
-}
 function listKeys(name) {
   if (!validName(name)) return { ok: false, msg: tr('srv.badName') };
   return { ok: true, keys: load().keys.filter((k) => k.project === name && !k.revokedAt).map(pub) };
@@ -100,12 +86,12 @@ function createKey(b, req) {
   // the "limited" role was removed: a request for anything but an owner link is refused
   if (b.role != null && b.role !== 'owner') return { ok: false, msg: tr('srv.badParams') };
   const label = String(b.label || '').trim().slice(0, 60) || 'owner';
-  const key = crypto.randomBytes(32).toString('base64url');
-  const rec = { id: crypto.randomBytes(6).toString('hex'), hash: sha(key), project: name, label, role: 'owner', createdAt: new Date().toISOString(), lastUsedAt: null, revokedAt: null };
+  const key = bearer.newKey();
+  const rec = { id: crypto.randomBytes(6).toString('hex'), hash: bearer.sha(key), project: name, label, role: 'owner', createdAt: new Date().toISOString(), lastUsedAt: null, revokedAt: null };
   load().keys.push(rec);
   save();
   audit('chat.key.create', { ip: auth.clientIp(req), name, id: rec.id });
-  return { ok: true, id: rec.id, key, url: `${linkBase(req)}/remote/${encodeURIComponent(name)}?key=${key}` };
+  return { ok: true, id: rec.id, key, url: `${bearer.linkBase(req)}/remote/${encodeURIComponent(name)}?key=${key}` };
 }
 // a person of the remote hub was removed: its chats close and its phones stop getting pushes
 function onHubRevoke(keyId) {
@@ -142,36 +128,27 @@ function onDelete(name) {
 }
 
 // ---------------------------------------------------------------- auth of /chat-api
-const limiter = auth.makeLimiter();
 const bearerOf = (req, u) => {
   const m = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || ''));
   if (m) return m[1];
   return u && u.pathname === '/chat-api/file' ? (u.searchParams.get('key') || '') : '';
 };
-// -> {key} | {status, msg}. `project`: the project named by the link (/remote/<project>); a key of
-// the remote hub (server/hub.js) opens the chat of that project, a chat key only its own.
-// A valid key always passes: the limiter only slows down WRONG keys (behind a proxy that hides the
-// client IP every caller shares one IP, and a flood of bad keys must not lock the owner out).
+// -> {key} | {status, msg}. `project`: the project named by the link (/remote/<project>). A chat key
+// opens its own project; the key of a person of the remote hub (server/hub.js) opens any project
+// of this server, and a project that is gone (renamed, deleted) is then a 404, not a guess.
 function keyFor(req, plain, project) {
-  const h = plain && plain.length <= 128 ? sha(plain) : '';
-  const k = h && load().keys.find((x) => x.hash === h && !x.revokedAt);
-  if (!k && h) {
-    const hub = require('./hub');
-    const hk = project ? hub.chatKeyOf(plain, project) : null;
-    if (hk) return { key: hk };
-    // a real hub key on a project that is gone (renamed, deleted): not a guess, never counted
-    if (hub.isPersonKey(plain)) return { status: 404, msg: tr('srv.noProject') };
+  const h = bearer.hashOf(plain);
+  const k = h && load().keys.find((x) => x.hash === h && !x.revokedAt && fs.existsSync(projectDir(x.project)));
+  if (k) {
+    if (!k.lastUsedAt || Date.now() - Date.parse(k.lastUsedAt) > 60000) { k.lastUsedAt = new Date().toISOString(); save(); }
+    return { key: k };
   }
-  const ip = auth.clientIp(req);
-  if (!k || !fs.existsSync(projectDir(k.project))) {
-    const wait = limiter.limited(ip);
-    if (wait) return { status: 429, msg: tr('srv.tooManyTries', { s: wait }) };
-    limiter.fail(ip);
-    return { status: 401, msg: tr('srv.notAuthed') };
+  const person = h ? require('./hub').personOf(plain) : null;
+  if (person) {
+    if (!validName(project) || !fs.existsSync(projectDir(project))) return { status: 404, msg: tr('srv.noProject') };
+    return { key: { id: 'hub:' + person.id, project, label: person.label, hub: true } };
   }
-  // lastUsedAt written at most once a minute (no disk write per request)
-  if (!k.lastUsedAt || Date.now() - Date.parse(k.lastUsedAt) > 60000) { k.lastUsedAt = new Date().toISOString(); save(); }
-  return { key: k };
+  return bearer.check(req, null);
 }
 
 // never log a key: /c/<key>... and ?key= are masked
@@ -689,7 +666,7 @@ function serveFile(k, q, req, res) {
 // ---------------------------------------------------------------- HTTP entry points
 // /chat-api/* (no panel cookie; Bearer key)
 async function handleApi(req, res, u) {
-  if (require('./hub').cors(req, res)) return undefined; // Bearer only: callable from the hub of another server
+  if (bearer.cors(req, res)) return undefined;
   const url = u.pathname;
   const linkProject = String(req.headers['x-chat-project'] || u.searchParams.get('project') || '');
   const a = keyFor(req, bearerOf(req, u), linkProject);
@@ -726,20 +703,8 @@ async function handleApi(req, res, u) {
 // (/c/<key>/manifest.webmanifest, /remote/<project>/manifest.webmanifest?key=<key>)
 function manifestOf(req, res, plain, project, startUrl, scope) {
   const a = keyFor(req, plain, project);
-  if (!a.key || (project && a.key.project !== project)) { res.writeHead(a.status === 429 ? 429 : 404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('not found'); }
-  const body = JSON.stringify({
-    name: `Claude · ${a.key.project}`, short_name: a.key.project, start_url: startUrl, scope,
-    display: 'standalone', background_color: '#0b0d12', theme_color: '#0b0d12',
-    icons: [
-      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-      { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
-      { src: '/icon-maskable.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
-    ],
-  });
-  res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8', 'Cache-Control': 'no-store' });
-  return res.end(body);
+  if (!a.key || (project && a.key.project !== project)) return bearer.notFound(res, a.status === 429 ? 429 : 404);
+  return bearer.sendManifest(res, { name: `Claude · ${a.key.project}`, shortName: a.key.project, startUrl, scope });
 }
 function handlePage(req, res, url, u) {
   const m = /^\/c\/([^/]+)(\/.*)?$/.exec(url);
@@ -775,5 +740,5 @@ const routes = {
   POST: { '/api/chat/keys/create': (b, req) => createKey(b, req), '/api/chat/keys/revoke': (b, req) => revokeKey(b, req) },
 };
 
-const isChatKey = (plain) => { const h = plain && plain.length <= 128 ? sha(plain) : ''; return !!h && load().keys.some((x) => x.hash === h && !x.revokedAt); };
+const isChatKey = (plain) => { const h = bearer.hashOf(plain); return !!h && load().keys.some((x) => x.hash === h && !x.revokedAt); };
 module.exports = { isChatKey, routes, handleApi, handlePage, redactUrl, onRename, onDelete, onHubRevoke, stopAll, start: startChat, parseLines, splitAttachments, currentConv, ingestHook };

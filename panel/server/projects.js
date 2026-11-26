@@ -143,7 +143,6 @@ async function restartProject(name) {
 async function setPower(name, on) {
   if (!projectExists(name)) return { ok: false, msg: tr('srv.noProject') };
   const val = truthy(on);
-  if (val && require('./restore').restoring(name)) return { ok: false, msg: tr('srv.restore.busy') };
   if (!setProjConfig(name, { enabled: val })) return { ok: false, msg: tr('srv.saveConfigFailed') };
   if (val) await ensureSession(name);
   else await killSession(name);

@@ -7,21 +7,21 @@
  *    owner (there are no limited guests): the hub opens the chat of any project of this server,
  *    switches the Claude account of a project, and shows usage, limits, report and server data.
  *  - A person's hub key also opens the project chats: /remote/<project>?key=<hub key>. The chat
- *    API (server/chat.js) asks keyFor() here for a key that is not a chat key, with the project
- *    taken from the link (X-Chat-Project header or ?project=).
+ *    (server/chat.js) asks personOf() here for a key that is not a chat key; the project comes
+ *    from the link (X-Chat-Project header or ?project=).
  *  - Each person keeps a list of links (projects or hubs of THIS or OTHER servers). The list is
  *    stored here, so it follows the person to any device. The page reads the state of a link on
- *    another server straight from that server (CORS on /hub-api and /chat-api: Bearer keys only,
- *    never cookies, so any origin may call them).
+ *    another server straight from that server (server/bearer.js: CORS on these APIs).
  */
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const cfg = require('./config');
 const { tr } = require('./i18n');
-const { readJson, sendJson, sendStream, validName, log } = require('./util');
+const { readJson, sendJson, sendStream, writeState } = require('./util');
 const { audit } = require('./audit');
 const auth = require('./auth');
+const bearer = require('./bearer');
 
 // lazy: these modules require a lot (and some of them require chat.js, which requires this one)
 const projects = () => require('./projects');
@@ -34,7 +34,6 @@ const chat = () => require('./chat');
 
 const FILE = cfg.HUB_FILE;
 const MAX_LINKS = 200;
-const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 
 // ---------------------------------------------------------------- store
 // { people: [{id, hash, label, createdAt, lastUsedAt, revokedAt, links: [{id, label, url, addedAt}]}] }
@@ -46,36 +45,21 @@ function load() {
   for (const p of store.people) if (!Array.isArray(p.links)) p.links = [];
   return store;
 }
-function save() {
-  if (require('./restore').frozen()) return; // a config restore just wrote the file: the old state must not overwrite it
-  try {
-    fs.mkdirSync(path.dirname(FILE), { recursive: true });
-    const tmp = FILE + '.' + process.pid + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(store, null, 1), { mode: 0o600 });
-    fs.renameSync(tmp, FILE);
-  } catch (e) { log('error', 'hub: could not save', { err: e.message }); }
-}
+const save = () => writeState(FILE, store);
 const pub = (p) => ({ id: p.id, label: p.label, createdAt: p.createdAt, lastUsedAt: p.lastUsedAt || null, links: p.links.length });
 const live = () => load().people.filter((p) => !p.revokedAt);
-
-function linkBase(req) {
-  const host = auth.hostOf(req);
-  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim()
-    || (/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host) ? 'http' : 'https');
-  return `${proto}://${host}`;
-}
 
 // ---------------------------------------------------------------- admin side (panel cookie)
 function listPeople() { return { ok: true, people: live().map(pub) }; }
 function createPerson(b, req) {
   const label = String((b && b.label) || '').trim().slice(0, 60);
   if (!label) return { ok: false, msg: tr('srv.badParams') };
-  const key = crypto.randomBytes(32).toString('base64url');
-  const rec = { id: crypto.randomBytes(6).toString('hex'), hash: sha(key), label, createdAt: new Date().toISOString(), lastUsedAt: null, revokedAt: null, links: [] };
+  const key = bearer.newKey();
+  const rec = { id: crypto.randomBytes(6).toString('hex'), hash: bearer.sha(key), label, createdAt: new Date().toISOString(), lastUsedAt: null, revokedAt: null, links: [] };
   load().people.push(rec);
   save();
   audit('hub.person.create', { ip: auth.clientIp(req), id: rec.id });
-  return { ok: true, id: rec.id, key, url: `${linkBase(req)}/remote?key=${key}` };
+  return { ok: true, id: rec.id, key, url: `${bearer.linkBase(req)}/remote?key=${key}` };
 }
 function revokePerson(b, req) {
   const p = live().find((x) => x.id === (b && b.id));
@@ -88,30 +72,16 @@ function revokePerson(b, req) {
   return { ok: true };
 }
 
-// ---------------------------------------------------------------- auth of /hub-api (and of the chat)
-const limiter = auth.makeLimiter();
+// ---------------------------------------------------------------- the person of a key
 const bearerOf = (req) => { const m = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || '')); return m ? m[1] : ''; };
-// the person of a plain key, or null (no limiter here: callers count the failure)
+const findPerson = (plain) => { const h = bearer.hashOf(plain); return (h && live().find((x) => x.hash === h)) || null; };
+// the person of a key, marked as used (at most one disk write a minute), or null. The chat
+// (server/chat.js) asks it too: a hub key opens the chat of any project of this server.
 function personOf(plain) {
-  const h = plain && plain.length <= 128 ? sha(plain) : '';
-  const p = h && live().find((x) => x.hash === h);
-  if (!p) return null;
-  if (!p.lastUsedAt || Date.now() - Date.parse(p.lastUsedAt) > 60000) { p.lastUsedAt = new Date().toISOString(); save(); }
+  const p = findPerson(plain);
+  if (p && (!p.lastUsedAt || Date.now() - Date.parse(p.lastUsedAt) > 60000)) { p.lastUsedAt = new Date().toISOString(); save(); }
   return p;
 }
-// -> {person} | {status, msg}
-// A valid key always passes: the limiter only slows down WRONG keys (behind a proxy that hides the
-// client IP every caller shares one IP, and a flood of bad keys must not lock the owner out).
-function authOf(req) {
-  const p = personOf(bearerOf(req));
-  if (p) return { person: p };
-  const ip = auth.clientIp(req);
-  const wait = limiter.limited(ip);
-  if (wait) return { status: 429, msg: tr('srv.tooManyTries', { s: wait }) };
-  limiter.fail(ip);
-  return { status: 401, msg: tr('srv.notAuthed') };
-}
-const isPersonKey = (plain) => { const h = plain && plain.length <= 128 ? sha(plain) : ''; return !!h && live().some((x) => x.hash === h); };
 // a project of this server was renamed: the saved links of every person follow it
 function onRename(oldName, newName) {
   let changed = false;
@@ -122,19 +92,13 @@ function onRename(oldName, newName) {
       if (u.pathname !== `/remote/${encodeURIComponent(oldName)}`) continue;
       // only links of THIS server: the key of the link is a key of this server
       const k = u.searchParams.get('key') || '';
-      if (!isPersonKey(k) && !chat().isChatKey(k)) continue;
+      if (!findPerson(k) && !chat().isChatKey(k)) continue;
       u.pathname = `/remote/${encodeURIComponent(newName)}`;
       l.url = u.toString();
       changed = true;
     }
   }
   if (changed) save();
-}
-// for server/chat.js: a hub key opens the chat of any project of this server
-function chatKeyOf(plain, project) {
-  if (!validName(project) || !fs.existsSync(path.join(cfg.PROJECTS_DIR, project))) return null;
-  const p = personOf(plain);
-  return p ? { id: 'hub:' + p.id, project, label: p.label, hub: true } : null;
 }
 
 // ---------------------------------------------------------------- links
@@ -181,13 +145,14 @@ function moveLink(p, b) {
 }
 
 // ---------------------------------------------------------------- what the hub shows
+const serverInfo = () => ({ name: cfg.HUB_NAME || require('os').hostname(), version: cfg.PANEL_VERSION });
 const claudeState = (x) => (!x.enabled ? 'off' : x.paused ? 'paused' : !x.up ? 'down' : x.claudeRunning ? 'on' : 'shell');
 async function projectList() {
   const st = await events().currentState();
   const act = (x) => { try { return events().activityOf(x.session) || 'off'; } catch { return 'off'; } };
   return {
     ok: true,
-    server: { name: cfg.HUB_NAME || require('os').hostname(), version: cfg.PANEL_VERSION },
+    server: serverInfo(),
     projects: (st && st.projects ? st.projects : []).map((x) => ({
       name: x.name, claude: claudeState(x), account: x.account || accounts().DEFAULT,
       activity: act(x), autoResumeAt: x.autoResumeAt || 0,
@@ -206,30 +171,15 @@ function accountList() {
 }
 
 // ---------------------------------------------------------------- HTTP entry points
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Chat-Project',
-  'Access-Control-Max-Age': '600',
-};
-// Bearer-only APIs (/hub-api, /chat-api): any origin may call them, the key is the only proof
-function cors(req, res) {
-  for (const [k, v] of Object.entries(CORS)) res.setHeader(k, v);
-  if (req.method !== 'OPTIONS') return false;
-  res.writeHead(204);
-  res.end();
-  return true;
-}
-
 async function handleApi(req, res, u) {
-  if (cors(req, res)) return undefined;
-  const a = authOf(req);
-  if (!a.person) return sendJson(res, a.status, { ok: false, msg: a.msg });
-  const p = a.person;
+  if (bearer.cors(req, res)) return undefined;
+  const a = bearer.check(req, personOf(bearerOf(req)));
+  if (!a.ok) return sendJson(res, a.status, { ok: false, msg: a.msg });
+  const p = a.ok;
   const url = u.pathname, q = u.searchParams;
   const reply = (r) => sendJson(res, (r && r.status) || 200, r);
   if (req.method === 'GET') {
-    if (url === '/hub-api/me') return reply({ ok: true, id: p.id, label: p.label, server: { name: cfg.HUB_NAME || require('os').hostname(), version: cfg.PANEL_VERSION } });
+    if (url === '/hub-api/me') return reply({ ok: true, id: p.id, label: p.label, server: serverInfo() });
     if (url === '/hub-api/projects') return reply(await projectList());
     if (url === '/hub-api/links') return reply({ ok: true, links: p.links });
     if (url === '/hub-api/accounts') return reply(accountList());
@@ -266,19 +216,9 @@ const PAGE_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsaf
 function handlePage(req, res, u) {
   if (u.pathname === '/remote/manifest.webmanifest') {
     const key = u.searchParams.get('key') || '';
-    const ip = auth.clientIp(req);
-    const p = personOf(key);
-    if (!p) { if (!limiter.limited(ip)) limiter.fail(ip); res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('not found'); }
-    res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8', 'Cache-Control': 'no-store' });
-    return res.end(JSON.stringify({
-      name: 'Claude Remote', short_name: 'Claude Remote', start_url: `/remote?key=${encodeURIComponent(key)}`, scope: '/remote',
-      display: 'standalone', background_color: '#0b0d12', theme_color: '#0b0d12',
-      icons: [
-        { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-        { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-        { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-      ],
-    }));
+    const a = bearer.check(req, personOf(key));
+    if (!a.ok) return bearer.notFound(res, a.status === 429 ? 429 : 404);
+    return bearer.sendManifest(res, { name: 'Claude Remote', shortName: 'Claude Remote', startUrl: `/remote?key=${encodeURIComponent(key)}`, scope: '/remote' });
   }
   const file = path.join(cfg.DIST, 'hub.html');
   let st = null;
@@ -295,4 +235,4 @@ const routes = {
   AUDITED: [],
 };
 
-module.exports = { routes, handleApi, handlePage, cors, chatKeyOf, isPersonKey, onRename, cleanUrl, _reset: () => { store = null; } };
+module.exports = { routes, handleApi, handlePage, personOf, onRename, cleanUrl };

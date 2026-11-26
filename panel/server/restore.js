@@ -18,8 +18,8 @@
  *
  * Project restore: into a new folder, or over an existing project that is OFF (its folder is moved
  * aside to ~/.claude-backups/replaced/<name>-<date>, never deleted). The files are first unpacked /
- * copied into a stage folder; only then is the old folder moved aside, and it is moved back if the
- * last step fails. While a project is being restored it cannot be turned on (restoring(name)).
+ * copied into a stage folder; only then is the old folder moved aside (after checking again that
+ * the project is off), and it is moved back if the last step fails.
  *
  * Every archive is listed with tar before anything is written: absolute paths and '..' are refused,
  * and a config tarball may only hold the config paths above.
@@ -29,7 +29,7 @@ const path = require('path');
 const crypto = require('crypto');
 const cfg = require('./config');
 const { tr } = require('./i18n');
-const { sh, validName, log } = require('./util');
+const { sh, validName, log, freezeState } = require('./util');
 const files = require('./files');
 
 const projects = () => require('./projects');
@@ -44,8 +44,8 @@ const SNAP_RX = /^20\d{6}-\d{6}$/; // backup.sh --volume: <YYYYMMDD-HHMMSS>/
 // never restored (see the header): the panel login state and run flags, and every ACCESS list of
 // the panel (hub people, chat keys, push devices): an old backup must not bring back a key that
 // was revoked since, and a backup from someone else must not bring in a key they know.
-const KEEP = ['.claude/.panel-secret', '.claude/.panel-sessions.json', '.claude/.panel-totp.json', '.claude/run',
-  '.claude/.panel-hub.json', '.claude/.panel-chat-keys.json', '.claude/.panel-push.json'];
+const KEEP = [cfg.SECRET_FILE, cfg.SESSIONS_FILE, cfg.TOTP_FILE, cfg.RUN_DIR, cfg.HUB_FILE, cfg.CHAT_KEYS_FILE, cfg.PUSH_FILE]
+  .map((f) => path.relative(cfg.HOME, f)).filter((f) => f && !f.startsWith('..'));
 const stamp = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const rand = () => crypto.randomBytes(3).toString('hex');
 
@@ -128,8 +128,6 @@ function removeImport(b) {
 
 // ---------------------------------------------------------------- restore
 let busy = false;
-let restoringName = '';
-const restoring = (name) => !!restoringName && restoringName === name;
 const once = async (fn) => {
   if (busy) return { ok: false, msg: tr('srv.restore.busy') };
   busy = true;
@@ -140,13 +138,9 @@ const extract = (file, dest, extra = []) => sh('tar', ['-xzf', file, '-C', dest,
 
 // the panel reloads everything it caches (keys, accounts, settings...) by restarting; start.sh
 // brings it back. PANEL_NO_SELF_RESTART=1 (tests) leaves it running.
-// From the moment a restored config is written until the restart, the panel must not write its
-// old in-memory state over it (hub people, chat keys, push devices: their save() checks this).
-let freeze = false;
-const frozen = () => freeze;
 function restartPanel() {
   if (process.env.PANEL_NO_SELF_RESTART === '1') return;
-  freeze = true;
+  freezeState();
   log('info', 'restore: restarting the panel to load the restored config');
   setTimeout(() => process.exit(0), 1500).unref();
 }
@@ -175,7 +169,6 @@ function restoreConfig(b) {
       const x = await extract(file, out, KEEP.map((k) => `--exclude=${k}`));
       if (!x.ok) return { ok: false, msg: tr('srv.restore.extractFailed') + ' ' + x.stderr.trim().slice(-300) };
       for (const k of KEEP) fs.rmSync(path.join(out, k), { recursive: true, force: true });
-      // merge over the home: existing files are replaced, nothing else is deleted
       const c = await sh('cp', ['-a', out + '/.', cfg.HOME + '/'], { timeout: 30 * 60 * 1000 });
       if (!c.ok) return { ok: false, msg: tr('srv.restore.copyFailed') + ' ' + c.stderr.trim().slice(-300) };
       restartPanel();
@@ -220,10 +213,8 @@ function restoreProject(b) {
       return projects().projConfig(name).enabled || !!(live && live.up);
     };
     if (exists && await isOn()) return { ok: false, msg: tr('srv.restore.turnOff', { name }) };
-    restoringName = name;
     const stage = stageDir();
     try {
-      // 1) the new files, complete, in the stage folder (the project is untouched so far)
       const ready = path.join(stage, 'project');
       if (from) {
         const c = await sh('cp', ['-a', from, ready], { timeout: 60 * 60 * 1000 });
@@ -233,16 +224,15 @@ function restoreProject(b) {
         if (!x.ok) return { ok: false, msg: tr('srv.restore.extractFailed') + ' ' + x.stderr.trim().slice(-300) };
         fs.renameSync(path.join(stage, top), ready);
       }
-      // 2) the old folder aside (checked again: it may have been turned on meanwhile)
+      // checked again: it may have been turned on while the files were unpacked
       let replaced = '';
       if (fs.existsSync(target)) {
         if (await isOn()) return { ok: false, msg: tr('srv.restore.turnOff', { name }) };
         replaced = await moveAside(name);
         if (!replaced) return { ok: false, msg: tr('srv.restore.copyFailed') };
       }
-      // 3) the new folder in place, OFF: a restored project never starts Claude by itself (an
-      // unknown project would get the defaults, on + Claude), it is turned on by hand.
-      // On failure the old folder goes back.
+      // OFF: an unknown project would get the defaults (on + Claude in bypassPermissions) and
+      // start Claude by itself on imported code
       const conf = projects().loadConfig();
       conf.projects = conf.projects || {};
       conf.projects[name] = { ...(conf.projects[name] || {}), enabled: false };
@@ -255,7 +245,6 @@ function restoreProject(b) {
       try { events().poke(); } catch { /* */ }
       return { ok: true, name, replaced, msg: tr(replaced ? 'srv.restore.projectReplaced' : 'srv.restore.projectDone', { name, old: replaced }) };
     } finally {
-      restoringName = '';
       fs.rmSync(stage, { recursive: true, force: true });
     }
   });
@@ -274,4 +263,4 @@ const routes = {
 // stage folders left by a restore cut short (panel restart, crash): removed at boot
 try { for (const f of fs.readdirSync(DIR)) if (f.startsWith('stage-')) fs.rmSync(path.join(DIR, f), { recursive: true, force: true }); } catch { /* no dir yet */ }
 
-module.exports = { routes, upload, inspect, sources, restoring, frozen };
+module.exports = { routes, upload, inspect, sources };
