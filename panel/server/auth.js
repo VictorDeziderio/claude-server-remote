@@ -101,6 +101,13 @@ function isAuthed(req) {
   if (sid) sessions.touch(sid, clientIp(req));
   return !!sid;
 }
+const sessionCookie = (req, sid, exp) => `${COOKIE}=${issueToken(sid, exp)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.max(0, Math.round(exp - Date.now() / 1000))}${secureAttr(req)}`;
+// signed-in request: renews the session (sliding expiry, sessions.extend) and sends the new cookie
+function renew(req, res) {
+  const sid = sessionId(req);
+  const exp = sid ? sessions.extend(sid) : 0;
+  if (exp && !res.headersSent) res.setHeader('Set-Cookie', sessionCookie(req, sid, exp));
+}
 
 const isHttps = (req) => String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
 const clientIp = (req) => (String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || (req.socket && req.socket.remoteAddress) || '?';
@@ -155,8 +162,7 @@ function doLogin(body, req, res) {
   }
   loginLimiter.clear(ip);
   const s = sessions.create(ip, req.headers['user-agent']);
-  res.setHeader('Set-Cookie',
-    `${COOKIE}=${issueToken(s.id, s.exp)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${cfg.SESSION_DAYS * 86400}${secureAttr(req)}`);
+  res.setHeader('Set-Cookie', sessionCookie(req, s.id, s.exp));
   audit('login.ok', { ip, ua: String(req.headers['user-agent'] || '').slice(0, 120), twofa: totp.isEnabled() });
   return { ok: true, msg: tr('srv.signedIn') };
 }
@@ -198,4 +204,4 @@ function sameOrigin(req) {
   return false; // no signal at all: do not assume same origin
 }
 
-module.exports = { isAuthed, doLogin, doLogout, sameOrigin, clientIp, hostOf, sessionId, listSessions, revokeSession, revokeOthers, makeLimiter, COOKIE };
+module.exports = { isAuthed, renew, doLogin, doLogout, sameOrigin, clientIp, hostOf, sessionId, listSessions, revokeSession, revokeOthers, makeLimiter, COOKIE };

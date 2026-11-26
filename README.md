@@ -107,7 +107,7 @@ All variables have defaults; only `PANEL_PASSWORD` is required. Full list with c
 | `PANEL_DOMAIN` | — | public domain for automatic HTTPS |
 | `TRUSTED_PROXIES` | — | reverse proxy IPs, so the real client IP is used |
 | `GATEWAY_PORT` | `8080` | public port of the gateway |
-| `PANEL_SESSION_DAYS` | `30` | panel session lifetime |
+| `PANEL_SESSION_DAYS` | `365` | panel session lifetime, renewed while the device uses the panel |
 | `PROJECT_FOLDER` | `claude` | default project created on the first start |
 | `GH_TOKEN` | — | GitHub token (repo scope): `gh` login + backup pushes |
 | `BACKUP_ENABLED` / `BACKUP_INTERVAL` | `true` / `3600` | project backups (git commit + push) |

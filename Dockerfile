@@ -181,7 +181,7 @@ ENV \
     # (fail-closed in panel/server/auth.js). Right place: /root/.devbox-secrets.env on the volume
     # (KEY=value; see start.sh) -- on platforms that pass the Environment as --build-arg they leak into the build log.
     PANEL_LOGIN=admin \
-    PANEL_SESSION_DAYS=30
+    PANEL_SESSION_DAYS=365
 
 # GLOBAL Claude Code policy (managed settings) — permission for EVERYTHING in the whole
 # container, for any user/project. Lives in /etc (not hidden by the /root volume)

@@ -53,6 +53,17 @@ function touch(id, ip) {
   const now = Math.floor(Date.now() / 1000);
   if (now - (s.last || 0) >= 60) { s.last = now; if (ip) s.ip = ip; dirty = true; }
 }
+// sliding expiry: a session in use is pushed to SESSION_DAYS from now again, at most once a day
+// (a device used at least once a year never has to sign in again). -> new exp, or 0 when unchanged
+function extend(id, nowMs = Date.now()) {
+  const s = store[id];
+  if (!s) return 0;
+  const now = Math.floor(nowMs / 1000);
+  const full = now + cfg.SESSION_DAYS * 86400;
+  if (full - s.exp < 86400) return 0;
+  s.exp = full; dirty = true; save();
+  return full;
+}
 function revoke(id) { if (store[id]) { delete store[id]; dirty = true; save(); return true; } return false; }
 function revokeAll(exceptId) {
   let n = 0;
@@ -75,4 +86,4 @@ function resolve(prefix) {
 load();
 setInterval(() => { prune(); save(); }, 30000).unref();
 
-module.exports = { create, get, touch, revoke, revokeAll, list, resolve };
+module.exports = { create, get, touch, revoke, revokeAll, list, resolve, extend };

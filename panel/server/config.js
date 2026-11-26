@@ -30,7 +30,7 @@ const cfg = {
   DIST: path.join(__dirname, '..', 'dist'),
   PANEL_LOGIN: process.env.PANEL_LOGIN || 'admin',
   PANEL_PASSWORD: process.env.PANEL_PASSWORD || '',
-  SESSION_DAYS: Math.max(1, parseInt(process.env.PANEL_SESSION_DAYS || '30', 10) || 30),
+  SESSION_DAYS: Math.max(1, parseInt(process.env.PANEL_SESSION_DAYS || '365', 10) || 365),
   SHELL_SESSION: 'cr-shell',                                   // "shell in /root" tmux session
   FS_BASE: HOME,                                               // sandbox of the file manager
   WATCH_INTERVAL_MS: 2000,                                     // activity/state watcher (SSE)

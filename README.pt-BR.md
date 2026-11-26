@@ -107,7 +107,7 @@ Todas as variáveis têm valor padrão; só `PANEL_PASSWORD` é obrigatória. Li
 | `PANEL_DOMAIN` | — | domínio público para HTTPS automático |
 | `TRUSTED_PROXIES` | — | IPs do seu proxy reverso, para usar o IP real do cliente |
 | `GATEWAY_PORT` | `8080` | porta pública do gateway |
-| `PANEL_SESSION_DAYS` | `30` | validade da sessão do painel |
+| `PANEL_SESSION_DAYS` | `365` | validade da sessão do painel, renovada enquanto o aparelho usa o painel |
 | `PROJECT_FOLDER` | `claude` | projeto padrão criado na primeira subida |
 | `GH_TOKEN` | — | token do GitHub (escopo repo): login do `gh` + push dos backups |
 | `BACKUP_ENABLED` / `BACKUP_INTERVAL` | `true` / `3600` | backup dos projetos (git commit + push) |

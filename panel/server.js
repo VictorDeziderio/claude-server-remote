@@ -169,6 +169,7 @@ async function handle(req, res) {
     // --- API protegida ---
     if (url.startsWith('/api/')) {
       if (!auth.isAuthed(req)) return sendJson(res, 401, { ok: false, msg: tr('srv.notAuthed') });
+      auth.renew(req, res);
       if (req.method === 'GET') {
         if (url === '/api/events') return events.attach(req, res, auth.sessionId(req));
         if (url === '/api/fs/download') return files.fsDownload(u.searchParams.get('path') || '', res);
