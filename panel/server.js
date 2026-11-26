@@ -12,6 +12,8 @@
  * Runs as the ubuntu user (HOME=/root), always behind the Caddy gateway.
  */
 const http = require('http');
+// changes at every start: a page waiting for a restart knows when the NEW process answers
+const BOOT_ID = require('crypto').randomBytes(6).toString('hex');
 const fs = require('fs');
 const cfg = require('./server/config');
 const REQUEST_TIMEOUT_MS = 3 * 3600 * 1000;
@@ -170,7 +172,7 @@ async function handle(req, res) {
     const u = new URL(req.url, 'http://x');
     const url = u.pathname;
 
-    if (url === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok'); }
+    if (url === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain', 'X-Panel-Boot': BOOT_ID }); return res.end('ok'); }
 
     // --- endpoints livres ---
     if (req.method === 'POST' && url === '/api/login') {

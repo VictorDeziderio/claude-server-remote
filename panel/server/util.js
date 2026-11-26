@@ -77,13 +77,9 @@ function sendJson(res, code, obj) {
 // opts: { status=200, headers, start, end } (start/end inclusive, as in createReadStream).
 // Resolves true when the whole file was sent, false otherwise; never rejects.
 const NOT_FOUND_CODES = new Set(['ENOENT', 'ENOTDIR', 'EISDIR', 'ELOOP']);
-// Panel state files (keys, people, push devices): atomic write, 0600. After a config restore wrote
-// the files on disk, freezeState() stops every write until the panel restarts, so the old
-// in-memory state of a module never lands over the restored file.
-let stateFrozen = false;
-const freezeState = () => { stateFrozen = true; };
+// Panel state files (keys, people, push devices): atomic write, 0600. A config restore never
+// writes them (restore.KEEP), so the in-memory copy stays the truth until the restart.
 function writeState(file, obj) {
-  if (stateFrozen) return false;
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = file + '.' + process.pid + '.tmp';
@@ -186,4 +182,4 @@ async function typeText(sess, text) {
   return (await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-m'])).ok;
 }
 
-module.exports = { writeState, freezeState, TMUX_STRIP_ENV, sh, readJson, readRaw, sendJson, sendStream, sendRange, truthy, validName, sessionName, paneOf, clampInt, log, typeLine, typeText };
+module.exports = { writeState, TMUX_STRIP_ENV, sh, readJson, readRaw, sendJson, sendStream, sendRange, truthy, validName, sessionName, paneOf, clampInt, log, typeLine, typeText };

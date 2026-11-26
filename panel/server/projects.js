@@ -180,6 +180,7 @@ async function renameProject(oldName, newName) {
     saveConfig(c);
   }
   require('./chat').onRename(oldName, newName); // lazy: avoids a require cycle
+  require('./hub').onRename(oldName, newName);
   await ensureSession(newName);
   events.poke();
   return { ok: true, msg: `"${oldName}" -> "${newName}"` + (histMoved ? tr('srv.histMoved') : '') + tr('srv.sessionRecreated') };

@@ -29,7 +29,7 @@ const path = require('path');
 const crypto = require('crypto');
 const cfg = require('./config');
 const { tr } = require('./i18n');
-const { sh, validName, log, freezeState } = require('./util');
+const { sh, validName, log } = require('./util');
 const files = require('./files');
 
 const projects = () => require('./projects');
@@ -44,6 +44,8 @@ const SNAP_RX = /^20\d{6}-\d{6}$/; // backup.sh --volume: <YYYYMMDD-HHMMSS>/
 // never restored (see the header): the panel login state and run flags, and every ACCESS list of
 // the panel (hub people, chat keys, push devices): an old backup must not bring back a key that
 // was revoked since, and a backup from someone else must not bring in a key they know.
+// what a config backup (backup.sh) holds: the Claude folder, its settings file and the accounts
+const CONFIG_TOPS = [cfg.CLAUDE_DIR, path.join(cfg.HOME, '.claude.json'), cfg.ACCOUNTS_DIR].map((f) => path.relative(cfg.HOME, f));
 const KEEP = [cfg.SECRET_FILE, cfg.SESSIONS_FILE, cfg.TOTP_FILE, cfg.RUN_DIR, cfg.HUB_FILE, cfg.CHAT_KEYS_FILE, cfg.PUSH_FILE]
   .map((f) => path.relative(cfg.HOME, f)).filter((f) => f && !f.startsWith('..'));
 const stamp = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -58,7 +60,7 @@ async function inspect(file) {
   if (!names.length) return { ok: false, msg: tr('srv.restore.empty') };
   if (names.some((n) => n.startsWith('/') || n.split('/').includes('..'))) return { ok: false, msg: tr('srv.restore.unsafe') };
   const tops = new Set(names.map((n) => n.split('/')[0]));
-  const isConfig = [...tops].every((t) => ['.claude', '.claude.json', '.claude-accounts'].includes(t));
+  const isConfig = [...tops].every((t) => CONFIG_TOPS.includes(t));
   if (isConfig) return { ok: true, kind: 'config', entries: names.length, hasAccounts: tops.has('.claude-accounts') };
   if (tops.size === 1) {
     const top = [...tops][0];
@@ -138,11 +140,12 @@ const extract = (file, dest, extra = []) => sh('tar', ['-xzf', file, '-C', dest,
 
 // the panel reloads everything it caches (keys, accounts, settings...) by restarting; start.sh
 // brings it back. PANEL_NO_SELF_RESTART=1 (tests) leaves it running.
+// -> whether it restarts
 function restartPanel() {
-  if (process.env.PANEL_NO_SELF_RESTART === '1') return;
-  freezeState();
+  if (process.env.PANEL_NO_SELF_RESTART === '1') return false;
   log('info', 'restore: restarting the panel to load the restored config');
   setTimeout(() => process.exit(0), 1500).unref();
+  return true;
 }
 
 function restoreConfig(b) {
@@ -171,8 +174,8 @@ function restoreConfig(b) {
       for (const k of KEEP) fs.rmSync(path.join(out, k), { recursive: true, force: true });
       const c = await sh('cp', ['-a', out + '/.', cfg.HOME + '/'], { timeout: 30 * 60 * 1000 });
       if (!c.ok) return { ok: false, msg: tr('srv.restore.copyFailed') + ' ' + c.stderr.trim().slice(-300) };
-      restartPanel();
-      return { ok: true, restart: process.env.PANEL_NO_SELF_RESTART !== '1', safety: fresh.file, msg: tr('srv.restore.configDone', { n: info.entries, safety: fresh.file }) };
+      const restart = restartPanel();
+      return { ok: true, restart, safety: fresh.file, msg: tr('srv.restore.configDone', { n: info.entries, safety: fresh.file }) };
     } finally { fs.rmSync(stage, { recursive: true, force: true }); }
   });
 }

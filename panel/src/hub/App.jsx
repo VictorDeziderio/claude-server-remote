@@ -190,7 +190,13 @@ function AccountsSection({ acc, onChanged }) {
   const [busy, setBusy] = useState('')
   const [msg, setMsg] = useState(null)
   const [pending, setPending] = useState(null) // { name, account }: switch waiting for a yes
-  const refresh = async () => { setBusy('limits'); await api.refreshLimits().catch(() => {}); setBusy(''); reload() }
+  const refresh = async () => {
+    setBusy('limits'); setMsg(null)
+    const r = await api.refreshLimits().catch((e) => ({ ok: false, msg: e.message }))
+    setBusy('')
+    if (r && r.ok === false) setMsg(r)
+    reload()
+  }
   const switchTo = async (name, account) => {
     setBusy(name); setMsg(null)
     const r = await api.setAccount(name, account).catch((e) => ({ ok: false, msg: e.message }))

@@ -67,20 +67,18 @@ function revokePerson(b, req) {
   p.revokedAt = new Date().toISOString();
   p.links = [];
   save();
-  chat().onHubRevoke('hub:' + p.id); // its open chats close and its phones stop getting pushes
+  chat().onHubRevoke(p.id);
   audit('hub.person.revoke', { ip: auth.clientIp(req), id: p.id });
   return { ok: true };
 }
 
 // ---------------------------------------------------------------- the person of a key
-const bearerOf = (req) => { const m = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || '')); return m ? m[1] : ''; };
 const findPerson = (plain) => { const h = bearer.hashOf(plain); return (h && live().find((x) => x.hash === h)) || null; };
 // the person of a key, marked as used (at most one disk write a minute), or null. The chat
 // (server/chat.js) asks it too: a hub key opens the chat of any project of this server.
 function personOf(plain) {
   const p = findPerson(plain);
-  if (p && (!p.lastUsedAt || Date.now() - Date.parse(p.lastUsedAt) > 60000)) { p.lastUsedAt = new Date().toISOString(); save(); }
-  return p;
+  return p && bearer.touch(p, save);
 }
 // a project of this server was renamed: the saved links of every person follow it
 function onRename(oldName, newName) {
@@ -173,7 +171,7 @@ function accountList() {
 // ---------------------------------------------------------------- HTTP entry points
 async function handleApi(req, res, u) {
   if (bearer.cors(req, res)) return undefined;
-  const a = bearer.check(req, personOf(bearerOf(req)));
+  const a = bearer.check(req, personOf(bearer.fromHeader(req)));
   if (!a.ok) return sendJson(res, a.status, { ok: false, msg: a.msg });
   const p = a.ok;
   const url = u.pathname, q = u.searchParams;
@@ -235,4 +233,4 @@ const routes = {
   AUDITED: [],
 };
 
-module.exports = { routes, handleApi, handlePage, personOf, onRename, cleanUrl };
+module.exports = { routes, handleApi, handlePage, personOf, onRename };

@@ -18,6 +18,13 @@ const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const hashOf = (plain) => (plain && String(plain).length <= 128 ? sha(plain) : '');
 const newKey = () => crypto.randomBytes(32).toString('base64url');
 
+const fromHeader = (req) => { const m = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || '')); return m ? m[1] : ''; };
+// a key record was used: lastUsedAt, written at most once a minute (no disk write per request)
+function touch(rec, save) {
+  if (!rec.lastUsedAt || Date.now() - Date.parse(rec.lastUsedAt) > 60000) { rec.lastUsedAt = new Date().toISOString(); save(); }
+  return rec;
+}
+
 const limiter = auth.makeLimiter();
 // found: whatever the caller resolved from the key (null/undefined = wrong key) -> {ok: found} | {status, msg}
 function check(req, found) {
@@ -68,4 +75,4 @@ function sendManifest(res, { name, shortName, startUrl, scope }) {
 }
 const notFound = (res, status = 404) => { res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('not found'); };
 
-module.exports = { sha, hashOf, newKey, check, linkBase, cors, sendManifest, notFound };
+module.exports = { sha, hashOf, newKey, fromHeader, touch, check, linkBase, cors, sendManifest, notFound };

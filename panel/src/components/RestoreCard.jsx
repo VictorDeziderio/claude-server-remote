@@ -45,9 +45,11 @@ export function RestoreCard({ onFlash, onDone }) {
     if (r.ok && r.restart) {
       setRestarting(true)
       const t0 = Date.now()
-      await new Promise((res) => setTimeout(res, 2500)) // the old process is still up for ~1.5 s
+      const boot = async () => { try { const h = await fetch('/healthz', { cache: 'no-store' }); return h.ok ? h.headers.get('x-panel-boot') : null } catch { return null } }
+      const before = await boot()
       for (;;) {
-        try { if ((await fetch('/healthz', { cache: 'no-store' })).ok) break } catch { /* still down */ }
+        const now = await boot()
+        if (now && now !== before) break
         if (Date.now() - t0 > 120000) break
         await new Promise((res) => setTimeout(res, 1000))
       }

@@ -93,24 +93,24 @@ function createKey(b, req) {
   audit('chat.key.create', { ip: auth.clientIp(req), name, id: rec.id });
   return { ok: true, id: rec.id, key, url: `${bearer.linkBase(req)}/remote/${encodeURIComponent(name)}?key=${key}` };
 }
-// a person of the remote hub was removed: its chats close and its phones stop getting pushes
-function onHubRevoke(keyId) {
+// a key is gone (revoked here, or its hub person removed): its chats close, its phones stop getting pushes
+function dropKey(keyId) {
   push.removeWhere((d) => !!d.chat && d.chat.keyId === keyId);
   for (const w of watchers.values()) for (const c of w.clients) if (c.keyId === keyId) c.end();
 }
+const hubKeyId = (personId) => 'hub:' + personId;
+const onHubRevoke = (personId) => dropKey(hubKeyId(personId));
 function revokeKey(b, req) {
   const k = load().keys.find((x) => x.id === (b && b.id) && !x.revokedAt);
   if (!k) return { ok: false, msg: tr('srv.notFound') };
   k.revokedAt = new Date().toISOString();
   save();
-  push.removeWhere((d) => !!d.chat && d.chat.keyId === k.id); // its phone stops getting pushes
-  for (const w of watchers.values()) for (const c of w.clients) if (c.keyId === k.id) c.end();
+  dropKey(k.id);
   audit('chat.key.revoke', { ip: auth.clientIp(req), name: k.project, id: k.id });
   return { ok: true };
 }
 // project renamed / deleted (server/projects.js): keys and chat devices follow / are removed
 function onRename(oldName, newName) {
-  require('./hub').onRename(oldName, newName);
   const s = load();
   closeWatcher(oldName);
   for (const k of s.keys) if (k.project === oldName) k.project = newName;
@@ -128,25 +128,18 @@ function onDelete(name) {
 }
 
 // ---------------------------------------------------------------- auth of /chat-api
-const bearerOf = (req, u) => {
-  const m = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || ''));
-  if (m) return m[1];
-  return u && u.pathname === '/chat-api/file' ? (u.searchParams.get('key') || '') : '';
-};
+const bearerOf = (req, u) => bearer.fromHeader(req) || (u && u.pathname === '/chat-api/file' ? (u.searchParams.get('key') || '') : '');
 // -> {key} | {status, msg}. `project`: the project named by the link (/remote/<project>). A chat key
 // opens its own project; the key of a person of the remote hub (server/hub.js) opens any project
 // of this server, and a project that is gone (renamed, deleted) is then a 404, not a guess.
 function keyFor(req, plain, project) {
   const h = bearer.hashOf(plain);
   const k = h && load().keys.find((x) => x.hash === h && !x.revokedAt && fs.existsSync(projectDir(x.project)));
-  if (k) {
-    if (!k.lastUsedAt || Date.now() - Date.parse(k.lastUsedAt) > 60000) { k.lastUsedAt = new Date().toISOString(); save(); }
-    return { key: k };
-  }
+  if (k) return { key: bearer.touch(k, save) };
   const person = h ? require('./hub').personOf(plain) : null;
   if (person) {
     if (!validName(project) || !fs.existsSync(projectDir(project))) return { status: 404, msg: tr('srv.noProject') };
-    return { key: { id: 'hub:' + person.id, project, label: person.label, hub: true } };
+    return { key: { id: hubKeyId(person.id), project, label: person.label, hub: true } };
   }
   return bearer.check(req, null);
 }
@@ -638,7 +631,6 @@ async function upload(k, q, req) {
   return { ok: true, att: attOf(r.path) };
 }
 const INLINE = new Set(['image', 'video', 'audio']);
-const EXTRA_MIME = { '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.m4v': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.heic': 'image/heic', '.avif': 'image/avif' };
 function serveFile(k, q, req, res) {
   const raw = q.get('path') || '';
   const dir = projectDir(k.project);
@@ -650,7 +642,7 @@ function serveFile(k, q, req, res) {
   if (!st || !st.isFile()) return sendJson(res, 404, { ok: false, msg: tr('srv.fileNotFound') });
   const ext = path.extname(full).toLowerCase();
   const kind = kindOf(full);
-  const type = EXTRA_MIME[ext] || files.MIME[ext] || 'application/octet-stream';
+  const type = files.MIME[ext] || 'application/octet-stream';
   const inline = (INLINE.has(kind) && ext !== '.svg') || ext === '.pdf';
   const headers = {
     'Content-Type': type,
