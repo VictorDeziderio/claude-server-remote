@@ -4,6 +4,13 @@
 export const THEME_KEY = 'cr.theme'
 export const THEMES = ['system', 'light', 'dark']
 export const THEME_COLOR = { light: '#ffffff', dark: '#0a0a0a' }
+// iPhone home-screen status bar: black-translucent = white text over the page (dark only);
+// default = dark text on a light bar. public/theme-init.js applies the same before painting.
+export const STATUS_BAR = { light: 'default', dark: 'black-translucent' }
+export function setStatusBar(mode) {
+  if (typeof document === 'undefined') return
+  document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')?.setAttribute('content', STATUS_BAR[mode] || STATUS_BAR.light)
+}
 
 export const normTheme = (v) => (THEMES.includes(v) ? v : 'system')
 export const resolveTheme = (pref, prefersDark) => {
@@ -20,6 +27,7 @@ export function applyTheme(pref) {
   el.classList.toggle('dark', mode === 'dark')
   const meta = document.querySelector('meta[name="theme-color"]')
   if (meta) meta.setAttribute('content', THEME_COLOR[mode])
+  setStatusBar(mode)
   return mode
 }
 export function saveTheme(pref) {

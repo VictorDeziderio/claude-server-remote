@@ -57,3 +57,7 @@ html[data-kb] .hide-on-kb { display: none !important; }
 .cm-editor .cm-activeLine { background: rgba(255,255,255,.03); }
 .cm-editor .cm-selectionBackground, .cm-editor.cm-focused .cm-selectionBackground { background: rgba(240,168,60,.25) !important; }
 .cm-editor .cm-cursor { border-left-color: #F0A83C; }
+/* finger: the editable area at 16px, below that iOS zooms the page when the editor gets focus */
+@media (pointer: coarse) {
+  .cm-editor, .cm-editor .cm-content { font-size: 16px; }
+}

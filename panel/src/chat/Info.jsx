@@ -18,7 +18,7 @@ function TabBody({ tab, st, onView }) {
   if (st.loaded && !st.items.length) return <div data-testid="tab-empty" className="px-6 py-12 text-center text-sm text-muted-foreground">{emptyText(tab)}</div>
   if (tab === 'media') return (
     <div data-testid="media-grid" className="grid grid-cols-3 gap-0.5">
-      {st.items.map((a, i) => <Thumb key={a.path || i} att={a} testid="media-item" onOpen={() => onView(a, st.items)} className="aspect-square w-full" />)}
+      {st.items.map((a, i) => <Thumb key={a.path || i} att={a} testid="media-item" onOpen={() => onView(a)} className="aspect-square w-full" />)}
     </div>
   )
   if (tab === 'files') return (

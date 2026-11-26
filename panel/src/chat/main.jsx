@@ -5,10 +5,11 @@ import { createRoot } from 'react-dom/client'
 import App from './App.jsx'
 import './chat.css'
 import { installViewport } from '../lib/viewport.js'
+import { setStatusBar } from '../lib/theme.js'
 
-// light/dark follows the system (the first pass already ran in /chat-theme.js, before painting)
+// light/dark follows the system (the first pass already ran in /theme-init.js, before painting)
 const mq = window.matchMedia?.('(prefers-color-scheme: dark)')
-const applyScheme = () => document.documentElement.classList.toggle('dark', !!mq?.matches)
+const applyScheme = () => { document.documentElement.classList.toggle('dark', !!mq?.matches); setStatusBar(mq?.matches ? 'dark' : 'light') }
 applyScheme()
 mq?.addEventListener?.('change', applyScheme)
 

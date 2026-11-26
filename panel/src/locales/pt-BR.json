@@ -844,5 +844,12 @@
   "term.dropHere": "Solte para enviar ao terminal",
   "term.uploading": "Enviando {n}…",
   "term.uploaded": "{n} arquivo(s) enviado(s): caminho digitado no terminal",
-  "term.uploadFailed": "Não foi possível enviar {name}: {msg}"
+  "term.uploadFailed": "Não foi possível enviar {name}: {msg}",
+  "files.discardAsk": "\"{name}\" tem alterações não salvas. Sair e descartar?",
+  "files.discard": "Descartar",
+  "files.rename": "renomear",
+  "files.delete": "excluir",
+  "dash.projectPlaceholder": "meu-projeto",
+  "dash.backupGit": "Backup (git)",
+  "chatlink.copyFailed": "Não deu para copiar: o link está selecionado, copie à mão"
 }

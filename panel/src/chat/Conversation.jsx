@@ -159,7 +159,8 @@ export function Conversation({ id: initialId, item, onBack, onInfo, onCreated, o
       // the stream may have delivered messages before this page arrived: keep them after it
       setMsgs((prev) => mergeById(r.items || [], prev)); setNext(r.next || null)
     }).catch(() => toast(t('chat.loadFailed'))).finally(() => { if (live) setLoading(false) })
-    if (item?.running !== false) connect(initialId, { expect: !!item?.running })
+    // always attach: the list item may be stale (a run started since); idle -> the server answers done at once
+    connect(initialId, { expect: !!item?.running })
     return () => { live = false }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

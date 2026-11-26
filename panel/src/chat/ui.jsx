@@ -20,7 +20,7 @@ export function IconButton({ label, variant = 'ghost', className, children, ...r
   )
 }
 
-// Top bar. chat-top adds the status-bar safe area (black-translucent: the page draws under it).
+// Top bar. chat-top adds the status-bar safe area (notch / status bar of the home-screen app).
 export function Header({ left, right, children, testid }) {
   return (
     <header data-testid={testid} className="chat-top relative z-10 shrink-0 border-b bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/75">
@@ -49,7 +49,9 @@ export function Sentinel({ onHit, enabled, rootRef, margin = '300px', testid }) 
   return <div ref={ref} data-testid={testid} aria-hidden className="h-px w-full" />
 }
 
-// Toasts: toast('text') from anywhere; <Toasts/> renders them above the composer.
+// Toasts: toast('text') from anywhere; <Toasts/> renders them above the composer. Absolute inside the
+// app box (.chat-app, which follows the visible area above the iOS keyboard), not fixed to the
+// layout viewport: fixed, they sat behind the keyboard.
 const TOAST = 'chat-toast'
 export const toast = (msg) => { try { window.dispatchEvent(new CustomEvent(TOAST, { detail: String(msg) })) } catch { /* no DOM */ } }
 export function Toasts() {
@@ -66,7 +68,7 @@ export function Toasts() {
   }, [])
   if (!list.length) return null
   return (
-    <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-28 z-50 flex flex-col items-center gap-2 px-4">
+    <div role="status" aria-live="polite" data-testid="toasts" className="pointer-events-none absolute inset-x-0 bottom-28 z-50 flex flex-col items-center gap-2 px-4">
       {list.map((x) => <div key={x.id} data-testid="toast" className="max-w-sm rounded-full bg-foreground px-4 py-2 text-center text-sm text-background shadow-lg animate-fade-up">{x.msg}</div>)}
     </div>
   )
