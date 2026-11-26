@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
+const { sendStream } = require('./util');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -27,14 +28,14 @@ function serveStatic(req, res, pathname) {
   }
   const ext = path.extname(file).toLowerCase();
   const hashed = /\/assets\//.test(file.split(path.sep).join('/'));
-  res.writeHead(200, {
+  const headers = {
     'Content-Type': MIME[ext] || 'application/octet-stream',
     'Content-Length': st.size,
     // sw.js too: a cached service worker would keep old push/click handlers alive
     'Cache-Control': ext === '.html' || path.basename(file) === 'sw.js' ? 'no-store' : (hashed ? 'public, max-age=31536000, immutable' : 'public, max-age=3600'),
-  });
-  if (req.method === 'HEAD') return res.end();
-  fs.createReadStream(file).pipe(res);
+  };
+  if (req.method === 'HEAD') { res.writeHead(200, headers); return res.end(); }
+  return sendStream(res, file, { headers });
 }
 
 module.exports = { serveStatic };

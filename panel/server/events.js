@@ -20,6 +20,7 @@ const crypto = require('crypto');
 const cfg = require('./config');
 const { sh, sessionName, paneOf, log } = require('./util');
 const { listProjects } = require('./projects-list');
+const sessions = require('./sessions');
 
 const clients = new Set();           // res of each connected EventSource
 // found by @security: with no limit, a panel session (sid) reconnecting in a loop (client bug
@@ -68,10 +69,18 @@ function attach(req, res, sid) {
   send(res, 'activity', activitySnapshot());
   poke(); // the watcher pauses with no clients: refreshes state/activity right on reconnect
   const hb = setInterval(() => send(res, 'ping', { t: Date.now() }), 20000);
-  req.on('close', () => {
-    clearInterval(hb); clients.delete(res);
+  let cleaned = false;
+  let untrack = () => {};
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    clearInterval(hb); clients.delete(res); untrack();
     if (sid) { const n = (sidCounts.get(sid) || 1) - 1; if (n <= 0) sidCounts.delete(sid); else sidCounts.set(sid, n); }
-  });
+  };
+  // panel session revoked/expired: the stream ends now (EventSource reconnects and gets 401)
+  untrack = sessions.track(sid, () => { cleanup(); try { res.end(); } catch { /* */ } try { res.socket && res.socket.destroy(); } catch { /* */ } });
+  req.on('close', cleanup);
+  res.on('close', cleanup);
 }
 
 const activitySnapshot = () => {

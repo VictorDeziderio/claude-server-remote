@@ -26,6 +26,7 @@ const { sh, validName, sessionName, paneOf, clampInt, log } = require('./util');
 const fs = require('fs');
 const path = require('path');
 const { ensureSession, projConfig } = require('./projects');
+const sessions = require('./sessions');
 
 let pty = null;
 try { pty = require('node-pty'); }
@@ -230,6 +231,14 @@ function attach(ws, params, ip, sid) {
   };
   ws.on('close', bye);
   ws.on('error', bye);
+  // panel session revoked (sign out / sign out everywhere / expired): the PTY goes NOW and the socket
+  // closes with a 4xxx code (the client does not reconnect; a new attempt gets 401 anyway)
+  const untrack = sessions.track(sid, () => {
+    bye();
+    closeWith(4001, tr('srv.panelSignedOut'));
+    setTimeout(() => { try { ws.terminate(); } catch { /* */ } }, 2000).unref();
+  });
+  ws.on('close', untrack);
 
   // keepalive (proxies derrubam WS ocioso)
   const hb = setInterval(() => { if (ws.readyState === ws.OPEN) ws.ping(); else clearInterval(hb); }, 25000);

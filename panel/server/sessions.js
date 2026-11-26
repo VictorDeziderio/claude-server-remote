@@ -10,6 +10,28 @@ const { log } = require('./util');
 
 let store = {}; // id -> { iat, exp, ip, ua, last }
 let dirty = false;
+// open long-lived connections of each session (terminal WebSockets, SSE streams): id -> Set<close fn>.
+// A revoked/expired session must lose them AT ONCE — the cookie check happens only when a connection
+// opens, so without this a "sign out everywhere" left a stolen device with a live shell.
+const closers = new Map();
+// registers `close` for the session `id` -> untrack() (call it when the connection ends by itself)
+function track(id, close) {
+  if (!id || typeof close !== 'function') return () => {};
+  let set = closers.get(id);
+  if (!set) { set = new Set(); closers.set(id, set); }
+  set.add(close);
+  return () => { set.delete(close); if (!set.size && closers.get(id) === set) closers.delete(id); };
+}
+function closeConnections(id) {
+  const set = closers.get(id);
+  if (!set) return 0;
+  closers.delete(id);
+  for (const fn of set) { try { fn(); } catch (e) { log('error', 'closing a revoked session connection', { err: e.message }); } }
+  return set.size;
+}
+const openConnections = (id) => (closers.get(id) || { size: 0 }).size;
+// removes a session from the store AND closes its open connections
+function drop(id) { delete store[id]; dirty = true; closeConnections(id); }
 
 function load() {
   try {
@@ -30,7 +52,7 @@ function save() {
 }
 function prune() {
   const now = Date.now() / 1000;
-  for (const [id, s] of Object.entries(store)) if (!s || s.exp < now) { delete store[id]; dirty = true; }
+  for (const [id, s] of Object.entries(store)) if (!s || s.exp < now) drop(id);
 }
 
 function create(ip, ua) {
@@ -43,7 +65,7 @@ function create(ip, ua) {
 function get(id) {
   const s = store[id];
   if (!s) return null;
-  if (s.exp < Date.now() / 1000) { delete store[id]; dirty = true; return null; }
+  if (s.exp < Date.now() / 1000) { drop(id); return null; }
   return s;
 }
 // updates "last seen" at most 1x per minute (avoids writing on every request)
@@ -64,10 +86,10 @@ function extend(id, nowMs = Date.now()) {
   s.exp = full; dirty = true; save();
   return full;
 }
-function revoke(id) { if (store[id]) { delete store[id]; dirty = true; save(); return true; } return false; }
+function revoke(id) { if (store[id]) { drop(id); save(); return true; } return false; }
 function revokeAll(exceptId) {
   let n = 0;
-  for (const id of Object.keys(store)) if (id !== exceptId) { delete store[id]; n++; }
+  for (const id of Object.keys(store)) if (id !== exceptId) { drop(id); n++; }
   dirty = true; save();
   return n;
 }
@@ -86,4 +108,4 @@ function resolve(prefix) {
 load();
 setInterval(() => { prune(); save(); }, 30000).unref();
 
-module.exports = { create, get, touch, revoke, revokeAll, list, resolve, extend };
+module.exports = { create, get, touch, revoke, revokeAll, list, resolve, extend, track, openConnections };

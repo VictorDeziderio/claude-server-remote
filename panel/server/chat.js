@@ -27,7 +27,7 @@ const { spawn } = require('child_process');
 const readline = require('readline');
 const cfg = require('./config');
 const { tr } = require('./i18n');
-const { readJson, sendJson, validName, clampInt, log, TMUX_STRIP_ENV } = require('./util');
+const { readJson, sendJson, sendStream, validName, clampInt, log, TMUX_STRIP_ENV } = require('./util');
 const { audit } = require('./audit');
 const auth = require('./auth');
 const files = require('./files');
@@ -524,13 +524,13 @@ function serveFile(k, q, req, res) {
     let start = m[1] ? parseInt(m[1], 10) : Math.max(0, st.size - parseInt(m[2], 10));
     let end = m[1] && m[2] ? Math.min(parseInt(m[2], 10), st.size - 1) : st.size - 1;
     if (start > end || start >= st.size) { res.writeHead(416, { 'Content-Range': `bytes */${st.size}` }); return res.end(); }
-    res.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${st.size}`, 'Content-Length': end - start + 1 });
-    if (req.method === 'HEAD') return res.end();
-    return fs.createReadStream(full, { start, end }).pipe(res);
+    const partial = { ...headers, 'Content-Range': `bytes ${start}-${end}/${st.size}`, 'Content-Length': end - start + 1 };
+    if (req.method === 'HEAD') { res.writeHead(206, partial); return res.end(); }
+    return sendStream(res, full, { status: 206, headers: partial, start, end });
   }
-  res.writeHead(200, { ...headers, 'Content-Length': st.size });
-  if (req.method === 'HEAD') return res.end();
-  fs.createReadStream(full).pipe(res);
+  const whole = { ...headers, 'Content-Length': st.size };
+  if (req.method === 'HEAD') { res.writeHead(200, whole); return res.end(); }
+  return sendStream(res, full, { headers: whole });
 }
 
 // ---------------------------------------------------------------- HTTP entry points
@@ -597,9 +597,9 @@ function handlePage(req, res, url, u) {
   try { st = fs.statSync(file); } catch { /* not built */ }
   if (!st) { res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Claude Remote: chat page not built (run "npm run build" in panel/).'); }
   // the key is in the URL: never send it on as a Referer
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': st.size, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
-  if (req.method === 'HEAD') return res.end();
-  fs.createReadStream(file).pipe(res);
+  const headers = { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': st.size, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
+  if (req.method === 'HEAD') { res.writeHead(200, headers); return res.end(); }
+  return sendStream(res, file, { headers });
 }
 
 const routes = {
