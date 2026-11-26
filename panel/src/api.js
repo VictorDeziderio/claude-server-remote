@@ -112,6 +112,25 @@ export const backupStatus = () => get('/api/backup/status')
 export const backupRun = (name) => post('/api/backup/run', { name: name || '' })
 export const backupConfig = () => post('/api/backup/config', {})
 export const backupDownloadUrl = (file, full) => '/api/backup/download?' + q({ file: file || '', full: full ? '1' : '0' })
+// import / restore (server/restore.js)
+export const backupSources = () => get('/api/backup/sources')
+export const restoreConfig = (source, file) => post('/api/backup/restore/config', { source, file })
+export const restoreProject = (b) => post('/api/backup/restore/project', b)
+export const importRemove = (file) => post('/api/backup/import/remove', { file })
+// upload of a backup .tgz with progress (XHR: fetch has no upload progress) -> { promise, abort }
+export function backupImport(file, onProgress) {
+  const xhr = new XMLHttpRequest()
+  const promise = new Promise((resolve) => {
+    xhr.open('POST', '/api/backup/import?' + q({ name: file.name || '' }))
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress?.(e.loaded / e.total) }
+    xhr.onload = () => { let j = null; try { j = JSON.parse(xhr.responseText) } catch { /* not JSON */ } resolve(j || { ok: false, msg: `HTTP ${xhr.status}` }) }
+    xhr.onerror = () => resolve({ ok: false, msg: 'network error' })
+    xhr.onabort = () => resolve({ ok: false, msg: 'aborted' })
+    xhr.send(file)
+  })
+  return { promise, abort: () => xhr.abort() }
+}
 export const settings = () => get('/api/settings')
 export const setDefaults = (patch) => post('/api/settings/defaults', patch)
 export const setSettings = (patch) => post('/api/settings', patch)

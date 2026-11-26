@@ -41,6 +41,7 @@ const i18n = require('./server/i18n');
 const chat = require('./server/chat');
 const accounts = require('./server/accounts');
 const hub = require('./server/hub');
+const restore = require('./server/restore');
 const { tr } = i18n;
 const { serveStatic } = require('./server/static');
 
@@ -151,6 +152,9 @@ Object.assign(POST, chat.routes.POST);
 // remote hub people (admin side; the hub itself is /remote + /hub-api/*, server/hub.js)
 Object.assign(GET, hub.routes.GET);
 Object.assign(POST, hub.routes.POST);
+// import / restore a backup (server/restore.js)
+Object.assign(GET, restore.routes.GET);
+Object.assign(POST, restore.routes.POST);
 // actions that go into the audit log (reads do not)
 const AUDITED = new Set(['/api/create', '/api/rename', '/api/delete', '/api/config', '/api/initline', '/api/restart', '/api/power', '/api/remote',
   '/api/fs/save', '/api/fs/create', '/api/fs/delete', '/api/fs/rename', '/api/term/exit', '/api/term/window', '/api/claude/logout',
@@ -158,7 +162,7 @@ const AUDITED = new Set(['/api/create', '/api/rename', '/api/delete', '/api/conf
   '/api/sessions/revoke', '/api/sessions/revoke-others', '/api/totp/enable', '/api/totp/disable',
   '/api/session-mode', '/api/pause', '/api/unpause', '/api/alerts/clear', '/api/disk/clean', '/api/update',
   '/api/accounts/create', '/api/accounts/rename', '/api/accounts/remove', '/api/accounts/login', '/api/accounts/logout', '/api/accounts/token', '/api/project/account',
-  ...notify.routes.AUDITED]);
+  ...notify.routes.AUDITED, ...restore.routes.AUDITED]);
 
 async function handle(req, res) {
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
@@ -204,6 +208,11 @@ async function handle(req, res) {
         if (url === '/api/fs/upload') {
           const r = await files.fsUploadStream(u.searchParams.get('path') || '', req, u.searchParams.get('overwrite') === '1');
           audit('fs.upload', { ip: auth.clientIp(req), path: u.searchParams.get('path') || '', ok: r.ok, size: r.size || 0 });
+          return sendJson(res, r.status || 200, r);
+        }
+        if (url === '/api/backup/import') {
+          const r = await restore.upload(req, u.searchParams.get('name') || '');
+          audit('backup.import', { ip: auth.clientIp(req), ok: r.ok, size: r.size || 0, kind: r.kind || '' });
           return sendJson(res, r.status || 200, r);
         }
         if (url === '/api/term/upload') {

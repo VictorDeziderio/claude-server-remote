@@ -26,6 +26,7 @@ const cfg = {
   CHAT_KEYS_FILE: path.join(CLAUDE_DIR, '.panel-chat-keys.json'),     // chat link keys (sha256 only), server/chat.js
   AUDIT_LOG: path.join(CLAUDE_DIR, 'logs', 'audit.log'),
   CONFIG_BACKUP_DIR: path.join(HOME, '.claude-backups'),
+  RESTORE_DIR: path.join(HOME, '.claude-restore'),                    // uploaded backups to restore (server/restore.js)
   // extra Claude accounts (server/accounts.js): one config dir each, used as CLAUDE_CONFIG_DIR.
   // Same path as ACCOUNTS_DIR in devbox-lib.sh. The registry (ids + labels) is a panel state file.
   ACCOUNTS_DIR: path.join(HOME, '.claude-accounts'),

@@ -106,7 +106,7 @@ backup_volume() {
   prev="$(find "$dest" -mindepth 1 -maxdepth 1 -type d -name '20[0-9][0-9]*' ! -name '*.partial' | sort | tail -n 1)"
   local args=(-aH --delete --numeric-ids --one-file-system
     --exclude=node_modules/ --exclude=.cache/ --exclude=.npm/ --exclude=.gradle/ --exclude=.bun/install/cache/
-    --exclude=.claude/worktrees/ --exclude=/.claude-backups/ --exclude=/.claude/run/ --exclude=/.claude/logs/)
+    --exclude=.claude/worktrees/ --exclude=/.claude-backups/ --exclude=/.claude-restore/ --exclude=/.claude/run/ --exclude=/.claude/logs/)
   IFS=',' read -r -a ex <<< "${VOLUME_BACKUP_EXCLUDE:-}"
   for e in "${ex[@]}"; do [ -n "${e// /}" ] && args+=("--exclude=${e// /}"); done
   [ -n "$prev" ] && args+=("--link-dest=$prev")

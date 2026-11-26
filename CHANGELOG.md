@@ -9,6 +9,10 @@
   Claude version). Each person keeps a list of links of project chats or hubs of other servers,
   saved on the server; other servers are read live (`/hub-api` and `/chat-api` allow any origin:
   Bearer keys only). Works on a computer (sidebar) and as an iPhone home-screen app (tab bar).
+- Backup → Import / restore: send a `.tgz` (a config tarball or one project folder) or pick a
+  config backup of the server or a project of a copy of the volume, then restore. The config is
+  merged after a safety backup (the panel login is kept, the panel restarts by itself); a project
+  is restored as a new one or over one that is off (the old folder is moved aside, never deleted).
 
 ## 4.0.0 — 2026-11-26
 

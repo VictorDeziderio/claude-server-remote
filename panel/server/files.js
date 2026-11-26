@@ -237,6 +237,7 @@ function streamUpload(full, req, overwrite, opts = {}) {
   }
   activeUploads++;
   const idleMs = opts.idleMs || UPLOAD_IDLE_MS;
+  const max = opts.max || MAX_UPLOAD;
   const tmp = full + '.upload-' + crypto.randomBytes(8).toString('hex') + '.tmp';
   return new Promise((resolve) => {
     let size = 0, over = false, writeErr = null, out = null, done = false, ended = false, paused = false, idle = null;
@@ -282,14 +283,14 @@ function streamUpload(full, req, overwrite, opts = {}) {
       arm();
       if (over || writeErr) return;
       size += chunk.length;
-      if (size > MAX_UPLOAD) { over = true; return; } // stops writing, but lets the body drain
+      if (size > max) { over = true; return; } // stops writing, but lets the body drain
       if (!out.write(chunk)) { paused = true; req.pause(); arm(); }
     });
     req.on('end', () => {
       ended = true;
       if (idle) clearTimeout(idle);
       if (writeErr) return finish({ ok: false, msg: writeErr.message });
-      if (over) return finish({ ok: false, msg: tr('srv.uploadTooBig', { mb: MAX_UPLOAD / 1024 / 1024 }) });
+      if (over) return finish({ ok: false, msg: tr('srv.uploadTooBig', { mb: max / 1024 / 1024 }) });
       out.end(); // -> 'close' above
     });
     req.on('error', () => finish({ ok: false, msg: tr('srv.uploadBroken') }));

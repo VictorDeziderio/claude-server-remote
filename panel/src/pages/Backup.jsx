@@ -3,6 +3,7 @@ import { DatabaseBackup, Download, RefreshCw, GitBranch, AlertTriangle, CheckCir
 import { Btn, Card, Empty, Skeleton } from '../components/ui.jsx'
 import { fmtSize, fmtDate, fmtUptime } from '../lib/format.js'
 import * as api from '../api.js'
+import { RestoreCard } from '../components/RestoreCard.jsx'
 import { t } from '../lib/i18n.js'
 import { TR } from '../lib/i18n-rich.jsx'
 
@@ -158,6 +159,7 @@ export default function BackupPage({ onFlash }) {
           <TR k="backup.restore" />
         </p>
       </Card>
+      <RestoreCard onFlash={onFlash} onDone={load} />
       {busy && (
         <div className="fixed bottom-4 right-4 inline-flex items-center gap-2 rounded-lg bg-background px-3 py-2 text-xs text-foreground/80 border">
           <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> {t('common.running')}
