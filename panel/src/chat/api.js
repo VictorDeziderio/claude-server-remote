@@ -38,7 +38,9 @@ export const chatKey = () => KEY
 // project named in a /remote/<project> link ('' for /c/<key>): it must be the key's project
 export const linkProject = () => LINK.project
 export const manifestHref = () => LINK.manifest
-const auth =() => ({ Authorization: `Bearer ${KEY}` })
+// X-Chat-Project: the project of a /remote/<project> link. A hub key (server/hub.js) opens any
+// project of the server, so the server needs to know which one.
+const auth = () => ({ Authorization: `Bearer ${KEY}`, ...(LINK.project ? { 'X-Chat-Project': LINK.project } : {}) })
 
 export class ApiError extends Error {
   constructor(status, msg) { super(msg || `HTTP ${status}`); this.status = status }
@@ -84,7 +86,7 @@ export function upload(file, onProgress) {
   const xhr = new XMLHttpRequest()
   const promise = new Promise((resolve, reject) => {
     xhr.open('POST', '/chat-api/upload?' + qs({ name: file.name || 'file' }))
-    xhr.setRequestHeader('Authorization', `Bearer ${KEY}`)
+    for (const [h, v] of Object.entries(auth())) xhr.setRequestHeader(h, v)
     xhr.setRequestHeader('Content-Type', 'application/octet-stream')
     xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress?.(e.loaded / e.total) }
     xhr.onload = () => {
@@ -102,7 +104,7 @@ export function upload(file, onProgress) {
 
 // <img>/<video> cannot send a header, so file URLs carry the key as ?key= (the server accepts it
 // on /chat-api/file only, and supports Range requests for iOS video).
-export const fileUrl = (path) => '/chat-api/file?' + qs({ path, key: KEY })
+export const fileUrl = (path) => '/chat-api/file?' + qs({ path, key: KEY, project: LINK.project })
 
 // Minimal SSE parser over fetch (EventSource cannot send an Authorization header).
 // Calls onEvent(name, data) for each event; resolves when the stream ends.

@@ -106,6 +106,11 @@ function createKey(b, req) {
   audit('chat.key.create', { ip: auth.clientIp(req), name, id: rec.id });
   return { ok: true, id: rec.id, key, url: `${linkBase(req)}/remote/${encodeURIComponent(name)}?key=${key}` };
 }
+// a person of the remote hub was removed: its chats close and its phones stop getting pushes
+function onHubRevoke(keyId) {
+  push.removeWhere((d) => !!d.chat && d.chat.keyId === keyId);
+  for (const w of watchers.values()) for (const c of w.clients) if (c.keyId === keyId) c.end();
+}
 function revokeKey(b, req) {
   const k = load().keys.find((x) => x.id === (b && b.id) && !x.revokedAt);
   if (!k) return { ok: false, msg: tr('srv.notFound') };
@@ -141,13 +146,18 @@ const bearerOf = (req, u) => {
   if (m) return m[1];
   return u && u.pathname === '/chat-api/file' ? (u.searchParams.get('key') || '') : '';
 };
-// -> {key} | {status, msg}
-function keyFor(req, plain) {
+// -> {key} | {status, msg}. `project`: the project named by the link (/remote/<project>); a key of
+// the remote hub (server/hub.js) opens the chat of that project, a chat key only its own.
+function keyFor(req, plain, project) {
   const ip = auth.clientIp(req);
   const wait = limiter.limited(ip);
   if (wait) return { status: 429, msg: tr('srv.tooManyTries', { s: wait }) };
   const h = plain && plain.length <= 128 ? sha(plain) : '';
   const k = h && load().keys.find((x) => x.hash === h && !x.revokedAt);
+  if (!k) {
+    const hk = project ? require('./hub').chatKeyOf(plain, project) : null;
+    if (hk) return { key: hk };
+  }
   if (!k || !fs.existsSync(projectDir(k.project))) { limiter.fail(ip); return { status: 401, msg: tr('srv.notAuthed') }; }
   // lastUsedAt written at most once a minute (no disk write per request)
   if (!k.lastUsedAt || Date.now() - Date.parse(k.lastUsedAt) > 60000) { k.lastUsedAt = new Date().toISOString(); save(); }
@@ -681,8 +691,10 @@ function serveFile(k, q, req, res) {
 // ---------------------------------------------------------------- HTTP entry points
 // /chat-api/* (no panel cookie; Bearer key)
 async function handleApi(req, res, u) {
+  if (require('./hub').cors(req, res)) return undefined; // Bearer only: callable from the hub of another server
   const url = u.pathname;
-  const a = keyFor(req, bearerOf(req, u));
+  const linkProject = String(req.headers['x-chat-project'] || u.searchParams.get('project') || '');
+  const a = keyFor(req, bearerOf(req, u), linkProject);
   if (!a.key) return sendJson(res, a.status, { ok: false, msg: a.msg });
   const k = a.key;
   const q = u.searchParams;
@@ -715,7 +727,7 @@ async function handleApi(req, res, u) {
 // chat page: /c/<key> or /remote/<project>?key=<key>, and the manifest of each link
 // (/c/<key>/manifest.webmanifest, /remote/<project>/manifest.webmanifest?key=<key>)
 function manifestOf(req, res, plain, project, startUrl, scope) {
-  const a = keyFor(req, plain);
+  const a = keyFor(req, plain, project);
   if (!a.key || (project && a.key.project !== project)) { res.writeHead(a.status === 429 ? 429 : 404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('not found'); }
   const body = JSON.stringify({
     name: `Claude · ${a.key.project}`, short_name: a.key.project, start_url: startUrl, scope,
@@ -765,4 +777,4 @@ const routes = {
   POST: { '/api/chat/keys/create': (b, req) => createKey(b, req), '/api/chat/keys/revoke': (b, req) => revokeKey(b, req) },
 };
 
-module.exports = { routes, handleApi, handlePage, redactUrl, onRename, onDelete, stopAll, start: startChat, parseLines, splitAttachments, currentConv, ingestHook };
+module.exports = { routes, handleApi, handlePage, redactUrl, onRename, onDelete, onHubRevoke, stopAll, start: startChat, parseLines, splitAttachments, currentConv, ingestHook };

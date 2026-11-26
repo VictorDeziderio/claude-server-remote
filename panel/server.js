@@ -4,6 +4,7 @@
  * Claude Remote — server of the dev box panel.
  *  - SPA (React/Vite) built into ./dist, with a fallback for the react-router routes
  *  - JSON API at /api/*  (projects, config, files, report, account, history, logs, health, backup)
+ *  - Remote hub of a person: page /remote?key=<key>, API /hub-api/* (Bearer key; server/hub.js)
  *  - Project chat behind a link + key: page /c/<key>, API /chat-api/* (Bearer key, no cookie; server/chat.js)
  *  - Real time at /api/events (SSE: state, Claude activity, notifications)
  *  - Real terminal at /ws/term (WebSocket <-> PTY <-> tmux attach)
@@ -39,6 +40,7 @@ const notify = require('./server/notify');
 const i18n = require('./server/i18n');
 const chat = require('./server/chat');
 const accounts = require('./server/accounts');
+const hub = require('./server/hub');
 const { tr } = i18n;
 const { serveStatic } = require('./server/static');
 
@@ -146,6 +148,9 @@ Object.assign(POST, notify.routes.POST);
 // chat link keys (admin side; the chat itself is /chat-api/*, server/chat.js)
 Object.assign(GET, chat.routes.GET);
 Object.assign(POST, chat.routes.POST);
+// remote hub people (admin side; the hub itself is /remote + /hub-api/*, server/hub.js)
+Object.assign(GET, hub.routes.GET);
+Object.assign(POST, hub.routes.POST);
 // actions that go into the audit log (reads do not)
 const AUDITED = new Set(['/api/create', '/api/rename', '/api/delete', '/api/config', '/api/initline', '/api/restart', '/api/power', '/api/remote',
   '/api/fs/save', '/api/fs/create', '/api/fs/delete', '/api/fs/rename', '/api/term/exit', '/api/term/window', '/api/claude/logout',
@@ -176,6 +181,9 @@ async function handle(req, res) {
     }
     // --- project chat: own auth (Bearer key from the link), never the panel cookie ---
     if (url.startsWith('/chat-api/')) return await chat.handleApi(req, res, u);
+    // --- remote hub: page /remote?key=<person key>, API /hub-api/* (Bearer key of the person) ---
+    if (url.startsWith('/hub-api/')) return await hub.handleApi(req, res, u);
+    if ((req.method === 'GET' || req.method === 'HEAD') && /^\/remote(\/|\/manifest\.webmanifest)?$/.test(url)) return hub.handlePage(req, res, u);
     if ((req.method === 'GET' || req.method === 'HEAD') && /^\/(c|remote)\/[^/]+/.test(url)) return chat.handlePage(req, res, url, u);
     if (req.method === 'GET' && url === '/api/login/info') return sendJson(res, 200, { ok: true, twofa: totp.isEnabled(), panelVersion: cfg.PANEL_VERSION });
 

@@ -21,6 +21,7 @@ const chatDevFallback = {
   configureServer(server) {
     server.middlewares.use((req, _res, next) => {
       if (/^\/c\/[^/]+\/?(\?.*)?$/.test(req.url || '')) req.url = '/chat.html'
+      else if (/^\/remote\/?(\?.*)?$/.test(req.url || '')) req.url = '/hub.html'
       next()
     })
   },
@@ -43,6 +44,7 @@ export default defineConfig({
       input: {
         index: path.resolve(__dirname, 'index.html'),
         chat: path.resolve(__dirname, 'chat.html'),
+        hub: path.resolve(__dirname, 'hub.html'),
       },
     },
     // no manualChunks: a forced "xterm" chunk was preloaded on EVERY page (index.html
@@ -52,6 +54,7 @@ export default defineConfig({
     proxy: {
       '/api': 'http://127.0.0.1:7001',
       '/chat-api': 'http://127.0.0.1:7001',
+      '/hub-api': 'http://127.0.0.1:7001',
       '/ws': { target: 'ws://127.0.0.1:7001', ws: true },
     },
   },

@@ -21,6 +21,8 @@ const cfg = {
   SECRET_FILE: process.env.PANEL_SECRET_FILE || path.join(CLAUDE_DIR, '.panel-secret'),
   SESSIONS_FILE: path.join(CLAUDE_DIR, '.panel-sessions.json'),
   TOTP_FILE: path.join(CLAUDE_DIR, '.panel-totp.json'),
+  HUB_FILE: path.join(CLAUDE_DIR, '.panel-hub.json'),               // remote hub people (sha256 keys) + their links, server/hub.js
+  HUB_NAME: process.env.HUB_NAME || '',                              // name of this server on the hub (default: hostname)
   CHAT_KEYS_FILE: path.join(CLAUDE_DIR, '.panel-chat-keys.json'),     // chat link keys (sha256 only), server/chat.js
   AUDIT_LOG: path.join(CLAUDE_DIR, 'logs', 'audit.log'),
   CONFIG_BACKUP_DIR: path.join(HOME, '.claude-backups'),

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+**New**
+- Remote hub: one link per person (`/remote?key=…`, made in Settings → Remote hub) that opens the
+  chat of every project of the server, the Claude accounts (plans, limits, which account each
+  project uses, switch by hand), usage and a report by dates, and the server (CPU, memory, disk,
+  Claude version). Each person keeps a list of links of project chats or hubs of other servers,
+  saved on the server; other servers are read live (`/hub-api` and `/chat-api` allow any origin:
+  Bearer keys only). Works on a computer (sidebar) and as an iPhone home-screen app (tab bar).
+
 ## 4.0.0 — 2026-11-26
 
 **Breaking**

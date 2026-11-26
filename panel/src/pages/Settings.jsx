@@ -5,6 +5,7 @@ import { Btn, Card, Skeleton, inputCls } from '../components/ui.jsx'
 import * as api from '../api.js'
 import { t, getLang, setLang, languages } from '../lib/i18n.js'
 import { TR } from '../lib/i18n-rich.jsx'
+import { HubPeopleCard } from '../components/HubPeople.jsx'
 
 function Toggle({ on, onChange, label, hint, icon: Icon, busy }) {
   return (
@@ -107,6 +108,8 @@ export default function SettingsPage({ onFlash, refresh, notif, onToggleNotif })
   return (
     <div className="space-y-5">
       <UpdateCard onFlash={onFlash} />
+
+      <HubPeopleCard onFlash={onFlash} />
 
       <Card title={t('settings.lang')} subtitle={t('settings.langSub')}>
         <select value={getLang()} onChange={(e) => setLang(e.target.value)} className={inputCls} aria-label={t('settings.lang')}>
