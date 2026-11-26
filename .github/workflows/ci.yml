@@ -26,6 +26,7 @@ jobs:
         working-directory: panel
         run: |
           npm ci
+          npm run check
           npm run build
           npm test
       - name: Supervisor tests
@@ -34,6 +35,10 @@ jobs:
         run: bash tests/gateway.test.sh
       - name: Volume backup tests
         run: bash tests/backup-volume.test.sh
+      - name: Git backup tests
+        run: bash tests/backup-git.test.sh
+      - name: Entrypoint helper tests
+        run: bash tests/start.test.sh
       - name: Repo hygiene
         run: bash tests/repo-hygiene.test.sh
   docker:

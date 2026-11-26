@@ -48,7 +48,7 @@ RUN npm run build \
 # language rules shared with the browser), so those two stay; the rest of src/ is in dist/.
 
 # ============================================================================
-# Stage 2: imagem final (Ubuntu 24.04 + toolchain + Claude Code + Playwright + tmux + Caddy)
+# Stage 2: final image (Ubuntu 24.04 + toolchain + Claude Code + Playwright + tmux + Caddy)
 # ============================================================================
 FROM ubuntu:24.04
 ARG CLAUDE_CODE_VERSION
@@ -149,9 +149,9 @@ RUN set -e; V="${CLAUDE_CODE_VERSION}"; \
     for i in 1 2 3; do \
       npm install -g --include=optional "@anthropic-ai/claude-code@${V}" \
         && claude --version >/dev/null 2>&1 && break; \
-      echo ">> tentativa $i: binario nativo do Claude Code ausente — reinstalando"; sleep 5; \
+      echo ">> attempt $i: Claude Code native binary missing — reinstalling"; sleep 5; \
     done; \
-    claude --version || { echo ">> ERRO: Claude Code ${V} sem binario nativo"; exit 1; }; \
+    claude --version || { echo ">> ERROR: Claude Code ${V} has no native binary"; exit 1; }; \
     npm cache clean --force; rm -f /tmp/claude-code-latest.json
 
 # ============================================================================
@@ -207,8 +207,10 @@ RUN chmod +x /usr/local/bin/start.sh /usr/local/bin/claude-loop.sh \
 WORKDIR /root
 EXPOSE 8080
 
-# Healthcheck: hits the GATEWAY (Caddy answers /healthz with "ok", no auth and always
-# up). Generous start-period for Caddy/panel to come up.
+# Healthcheck: hits the GATEWAY on GATEWAY_PORT, which proxies /healthz to the panel's own
+# /healthz (no auth) -> a dead/hung panel or a dead Caddy both make the container unhealthy.
+# GATEWAY_PORT keeps a plain-HTTP /healthz site also when PANEL_DOMAIN is set (devbox-lib.sh).
+# Generous start-period for Caddy/panel to come up.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
   CMD curl -fsS "http://localhost:${GATEWAY_PORT:-8080}/healthz" || exit 1
 

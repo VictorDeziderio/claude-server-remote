@@ -2,8 +2,10 @@
 # Then open http://localhost:8080 (or https://$PANEL_DOMAIN when PANEL_DOMAIN is set).
 services:
   claude:
+    # Built locally from this repo (no prebuilt image is published). Update: git pull && docker compose up -d --build
     build: .
-    # image: ghcr.io/victordeziderio/claude-server-remote:latest
+    # If you publish your own image, use it instead of `build:`:
+    # image: ghcr.io/<you>/claude-server-remote:latest
     restart: unless-stopped
     env_file: .env
     ports:

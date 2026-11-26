@@ -23,8 +23,9 @@ Your projects and your Claude login live in a volume, so nothing is lost on rebu
   login needed, usage limit, crash loop).
 - **Continues by itself after the usage limit:** when a project hits the plan limit, the panel waits
   for the reset and types `continue` in that session, only if nobody typed since and the screen is idle.
-- **Updates without cutting work:** tasks interrupted by a restart continue by themselves, and
-  Settings → *Update the panel* (with `DEPLOY_WEBHOOK_URL`) can wait until every project is idle.
+- **Updates without cutting work:** Settings → *Update the panel* (with `DEPLOY_WEBHOOK_URL`) can wait
+  until every project is idle. A task cut by a restart continues by itself only in projects whose
+  session mode is *continue* or *pinned* (the default, *new*, starts a fresh conversation after a restart).
 - **Claude Code stays up to date:** the panel checks npm every 6 hours and installs new versions
   (goes back to the old one if the new one does not run). A switch in Settings; `CLAUDE_AUTO_UPDATE=0` turns it off.
 - **Disk use per project:** see how much each project and each agent work copy uses, and remove
@@ -84,6 +85,42 @@ Claude subscription (or set `ANTHROPIC_API_KEY`). Create a project on the Dashbo
 Everything you keep must be inside `/root` (the volume): projects, the Claude login (`~/.claude`),
 panel settings and backups. The rest of the image is rebuilt on each deploy.
 
+`docker compose` builds the image locally from this repo (no prebuilt image is published).
+
+### Secrets file
+
+Instead of the environment (some hosting panels print it in the build log), the secrets can live in
+**`/root/.devbox-secrets.env`** on the volume. `start.sh` reads it at every start, it wins over the
+environment, and only these keys are used: `PANEL_LOGIN`, `PANEL_PASSWORD`, `GH_TOKEN`,
+`ANTHROPIC_ADMIN_KEY`, `DEPLOY_WEBHOOK_URL`. One `KEY=value` per line; surrounding quotes and Windows
+line ends are removed; the file is never executed and is kept `root`-only (600).
+
+```bash
+docker compose exec claude sh -c 'printf "PANEL_PASSWORD=%s\n" "a-long-random-password" > /root/.devbox-secrets.env'
+docker compose restart claude
+```
+
+### Updating
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+The volume (projects, Claude login, panel settings) is kept. Running tmux sessions are restarted with
+the container; see the session mode note above about what continues by itself.
+
+### Restoring
+
+- **Config only** (Claude login, panel settings, sessions): download a config tarball in **Backup**
+  (or take one from `/root/.claude-backups/config-*.tgz`), then on the new volume:
+  `docker compose cp config-XXXX.tgz claude:/tmp/ && docker compose exec claude tar xzf /tmp/config-XXXX.tgz -C /root && docker compose restart claude`.
+- **Projects:** each project with an `origin` is pushed by the hourly backup; `git clone` it again
+  into `/root/projects/<name>`.
+- **Whole volume** (with `VOLUME_BACKUP_DIR`): each copy in `VOLUME_BACKUP_DIR/<date>/` (or `latest`)
+  is a complete folder of `/root`. Stop the container, copy it back into the volume
+  (e.g. `rsync -aH --delete <backup>/latest/ <volume path>/`), then start it again.
+
 ## How it works
 
 ```
@@ -139,7 +176,8 @@ cd panel
 npm install
 npm run dev        # Vite on :5173, proxying /api and /ws to `node server.js` on :7001 (needs tmux)
 npm run check && npm run build && npm test
-cd .. && bash tests/claude-loop.test.sh && bash tests/gateway.test.sh && bash tests/backup-volume.test.sh && shellcheck -S error *.sh tests/*.sh
+cd .. && for t in claude-loop gateway backup-volume backup-git start repo-hygiene; do bash "tests/$t.test.sh" || break; done
+shellcheck -S error *.sh tests/*.sh
 ```
 
 - Panel: React + Tailwind v4 + shadcn/ui + xterm.js + CodeMirror, built with Vite. Server: Node

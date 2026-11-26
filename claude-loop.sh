@@ -19,8 +19,8 @@ LIB="${DEVBOX_LIB:-/usr/local/lib/devbox/lib.sh}"
 # shellcheck source=devbox-lib.sh
 . "$LIB"
 
-SESS="${1:?uso: claude-loop.sh <sessao> <projeto>}"
-PROJ_NAME="${2:?uso: claude-loop.sh <sessao> <projeto>}"
+SESS="${1:?usage: claude-loop.sh <session> <project>}"
+PROJ_NAME="${2:?usage: claude-loop.sh <session> <project>}"
 DELAY="${CLAUDE_AUTOCMD_DELAY:-15}"
 RUN_FLAG="$RUN_DIR/$SESS.running"
 RESUME_FLAG="$RUN_DIR/$SESS.resume"
@@ -78,7 +78,7 @@ accept_trust_prompt() {
 # Waits for the TUI to be ready (reads the screen instead of a fixed sleep), sends /remote-control
 # (text and Enter in two steps: the TUI must process the text before the Enter), confirms
 # through the link on screen and tries up to 3x. Not logged in: does not send.
-send_remote_when_ready() {  # $1 = comando
+send_remote_when_ready() {  # $1 = command
   local cmd="$1" waited=0 attempt
   sleep "$DELAY"
   is_logged_in || { slog "remote: Claude is not logged in — did not send $cmd"; return 0; }
