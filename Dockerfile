@@ -22,7 +22,7 @@ ARG CADDY_VERSION=2.11.7
 # ============================================================================
 # Stage 1: panel build (dist/ + runtime-only node_modules: ws + compiled node-pty)
 # ============================================================================
-FROM node:22-bookworm-slim AS panel-build
+FROM node:25-bookworm-slim AS panel-build
 # flaky network (ECONNRESET in the middle of a download broke a rebuild on 2026-10-10): npm
 # retries each package with a growing wait instead of giving up at the first drop
 ENV npm_config_fetch_retries=5 \
