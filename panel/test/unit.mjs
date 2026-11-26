@@ -113,6 +113,9 @@ console.log('\n== chat: key from the URL and the SSE parser (src/chat/api.js)')
 eq('key from /c/<key>', CA.keyFromPath('/c/AbC-_09xyz'), 'AbC-_09xyz')
 eq('key from /c/<key>/ (trailing slash)', CA.keyFromPath('/c/AbC/'), 'AbC')
 eq('no key outside /c/', CA.keyFromPath('/dashboard'), '')
+eq('key from /remote/<project>?key=<key>', CA.linkOf('/remote/jet-pilot', '?key=AbC-_09'), { key: 'AbC-_09', project: 'jet-pilot', manifest: '/remote/jet-pilot/manifest.webmanifest?key=AbC-_09' })
+eq('/remote/<project> without a key -> no key', CA.keyFromPath('/remote/jet-pilot', ''), '')
+eq('/remote/<project>/other/path -> no key', CA.keyFromPath('/remote/a/b', '?key=AbC'), '')
 {
   const got = []
   const rest = CA.parseSse('event: delta\ndata: {"text":"Hel"}\n\n: keep-alive\n\nevent: done\r\ndata: {"id":"s1"}\r\n\r\nevent: delta\ndata: {"te', (e, d) => got.push([e, d]))

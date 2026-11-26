@@ -43,7 +43,7 @@ notificações push. Os projetos e o login do Claude ficam num volume, então na
   para pôr na tela de início do iPhone. Todas as conversas do projeto, 20 por vez; fotos e arquivos;
   página de dados da conversa com Mídia / Arquivos / Links. A key de dono tem poder total; keys limitadas
   (para outras pessoas) só veem as próprias conversas, e o Claude só usa ferramentas de arquivo dentro do
-  projeto. Configurar → *Link de chat* cria e revoga as keys.
+  projeto. Configurar → *Link de chat* cria e revoga as keys; o link é `/remote/<projeto>?key=<key>`.
 - **Paleta de comandos** (Ctrl/⌘ + K): vai para qualquer página, terminal ou arquivos de um projeto pelo teclado.
 - **Tema claro/escuro** (shadcn/ui com Tailwind v4) e **vários idiomas** (inglês e português; um idioma novo é só copiar um arquivo JSON).
 - **Qualquer Docker:** amd64 e arm64, `docker compose` simples, HTTPS automático opcional.

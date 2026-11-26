@@ -44,7 +44,7 @@ Your projects and your Claude login live in a volume, so nothing is lost on rebu
   add to the iPhone home screen. All the project conversations, 20 at a time; photos and files; a
   conversation info page with Media / Files / Links. Owner keys have full power; limited keys (for other
   people) only see their own conversations and Claude only gets file tools inside the project.
-  Configure → *Chat link* creates and revokes keys.
+  Configure → *Chat link* creates and revokes keys; the link is `/remote/<project>?key=<key>`.
 - **Command palette** (Ctrl/⌘ + K): jump to any page, project terminal or files from the keyboard.
 - **Light/dark theme** (shadcn/ui on Tailwind v4) and **multiple languages** (English and Português; adding one is copying a JSON file).
 - **Any Docker host:** amd64 and arm64, plain `docker compose`, optional automatic HTTPS.

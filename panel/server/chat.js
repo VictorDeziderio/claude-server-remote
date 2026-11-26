@@ -84,7 +84,7 @@ function createKey(b, req) {
   load().keys.push(rec);
   save();
   audit('chat.key.create', { ip: auth.clientIp(req), name, id: rec.id, role });
-  return { ok: true, id: rec.id, key, url: `${linkBase(req)}/c/${key}` };
+  return { ok: true, id: rec.id, key, url: `${linkBase(req)}/remote/${encodeURIComponent(name)}?key=${key}` };
 }
 function revokeKey(b, req) {
   const k = load().keys.find((x) => x.id === (b && b.id) && !x.revokedAt);
@@ -575,22 +575,30 @@ async function handleApi(req, res, u) {
   return sendJson(res, 405, { ok: false, msg: 'method not allowed' });
 }
 
-// /c/<key> (chat page) and /c/<key>/manifest.webmanifest
-function handlePage(req, res, url) {
+// chat page: /c/<key> or /remote/<project>?key=<key>, and the manifest of each link
+// (/c/<key>/manifest.webmanifest, /remote/<project>/manifest.webmanifest?key=<key>)
+function manifestOf(req, res, plain, project, start, scope) {
+  const a = keyFor(req, plain);
+  if (!a.key || (project && a.key.project !== project)) { res.writeHead(a.status === 429 ? 429 : 404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('not found'); }
+  const body = JSON.stringify({
+    name: `Claude · ${a.key.project}`, short_name: a.key.project, start_url: start, scope,
+    display: 'standalone', background_color: '#0b0d12', theme_color: '#0b0d12',
+    icons: [
+      { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+      { src: '/icon-maskable.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
+    ],
+  });
+  res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8', 'Cache-Control': 'no-store' });
+  return res.end(body);
+}
+function handlePage(req, res, url, u) {
   const m = /^\/c\/([^/]+)(\/.*)?$/.exec(url);
-  if (m && m[2] === '/manifest.webmanifest') {
-    const a = keyFor(req, m[1]);
-    if (!a.key) { res.writeHead(a.status === 429 ? 429 : 404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('not found'); }
-    const body = JSON.stringify({
-      name: `Claude · ${a.key.project}`, short_name: a.key.project, start_url: `/c/${m[1]}`, scope: `/c/${m[1]}`,
-      display: 'standalone', background_color: '#0b0d12', theme_color: '#0b0d12',
-      icons: [
-        { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
-        { src: '/icon-maskable.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
-      ],
-    });
-    res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8', 'Cache-Control': 'no-store' });
-    return res.end(body);
+  if (m && m[2] === '/manifest.webmanifest') return manifestOf(req, res, m[1], '', `/c/${m[1]}`, `/c/${m[1]}`);
+  const r = /^\/remote\/([^/]+)(\/manifest\.webmanifest)?\/?$/.exec(url);
+  if (!m && !r) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('not found'); }
+  if (r && r[2]) {
+    const key = (u && u.searchParams.get('key')) || '';
+    return manifestOf(req, res, key, decodeURIComponent(r[1]), `/remote/${r[1]}?key=${encodeURIComponent(key)}`, `/remote/${r[1]}`);
   }
   const file = path.join(cfg.DIST, 'chat.html');
   let st = null;

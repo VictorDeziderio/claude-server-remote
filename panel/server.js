@@ -163,7 +163,7 @@ async function handle(req, res) {
     }
     // --- project chat: own auth (Bearer key from the link), never the panel cookie ---
     if (url.startsWith('/chat-api/')) return await chat.handleApi(req, res, u);
-    if ((req.method === 'GET' || req.method === 'HEAD') && /^\/c\/[^/]+/.test(url)) return chat.handlePage(req, res, url);
+    if ((req.method === 'GET' || req.method === 'HEAD') && /^\/(c|remote)\/[^/]+/.test(url)) return chat.handlePage(req, res, url, u);
     if (req.method === 'GET' && url === '/api/login/info') return sendJson(res, 200, { ok: true, twofa: totp.isEnabled(), panelVersion: cfg.PANEL_VERSION });
 
     // --- API protegida ---

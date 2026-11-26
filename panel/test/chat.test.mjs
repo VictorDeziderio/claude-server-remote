@@ -146,7 +146,7 @@ try {
   r = await j('POST', '/api/chat/keys/create', { name: 'demo', label: 'x', role: 'admin' }); ok('keys: unknown role refused', r.data.ok === false)
   r = await j('POST', '/api/chat/keys/create', { name: 'demo', label: 'Me', role: 'owner' })
   const OWNER = r.data.key
-  ok('keys: create owner -> key + url', r.data.ok && /^[A-Za-z0-9_-]{43}$/.test(OWNER) && r.data.url === `http://127.0.0.1:${PORT}/c/${OWNER}`, JSON.stringify(r.data))
+  ok('keys: create owner -> key + url', r.data.ok && /^[A-Za-z0-9_-]{43}$/.test(OWNER) && r.data.url === `http://127.0.0.1:${PORT}/remote/demo?key=${OWNER}`, JSON.stringify(r.data))
   r = await j('POST', '/api/chat/keys/create', { name: 'demo', label: 'Guest', role: 'limited' })
   const LIM = r.data.key, LIM_ID = r.data.id
   r = await j('POST', '/api/chat/keys/create', { name: 'demo', label: 'Gone', role: 'limited' })
@@ -180,6 +180,10 @@ try {
   r = await fetch(`${BASE}/c/${OWNER}/manifest.webmanifest`); const man = await r.json().catch(() => null)
   ok('manifest per link', r.status === 200 && man && man.name === 'Claude · demo' && man.start_url === `/c/${OWNER}` && man.display === 'standalone', JSON.stringify(man))
   r = await fetch(`${BASE}/c/not-a-key/manifest.webmanifest`); ok('manifest with a bad key -> 404', r.status === 404)
+  r = await fetch(`${BASE}/remote/demo?key=${OWNER}`); ok('page /remote/<project>?key=<key>', hasChatHtml ? r.status === 200 && r.headers.get('referrer-policy') === 'no-referrer' : r.status === 503)
+  r = await fetch(`${BASE}/remote/demo/manifest.webmanifest?key=${OWNER}`); const man2 = await r.json().catch(() => null)
+  ok('manifest of a /remote link starts at that link', r.status === 200 && man2 && man2.start_url === `/remote/demo?key=${OWNER}` && man2.scope === '/remote/demo', JSON.stringify(man2))
+  r = await fetch(`${BASE}/remote/other/manifest.webmanifest?key=${OWNER}`); ok('manifest: key of another project -> 404', r.status === 404)
 
   // ---- conversations (pagination) ----
   r = await c(OWNER, 'GET', '/chat-api/conversations')
@@ -329,7 +333,7 @@ try {
       page.on('pageerror', (e) => errors.push(e.message))
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
       page.on('response', (r) => { if (r.status() >= 400) errors.push(r.status() + ' ' + r.url().replace(OWNER, '[key]')) })
-      await page.goto(`${BASE}/c/${OWNER}`)
+      await page.goto(`${BASE}/remote/demo?key=${OWNER}`)
       await page.getByTestId('screen-list').waitFor({ timeout: 10000 }).catch(async (e) => { throw new Error(e.message + ' | page errors: ' + errors.join(' | ') + ' | body: ' + (await page.evaluate(() => document.body.innerText.slice(0, 300)))) })
       await page.getByTestId('conv-row').first().waitFor({ timeout: 10000 }).catch(() => {})
       ok('e2e: the link opens the conversation list', await page.getByTestId('conv-row').count() > 0)
@@ -350,6 +354,12 @@ try {
       await page.getByTestId('screen-list').waitFor()
       ok('e2e: the new conversation is first in the list', /e2e hello/.test(await page.getByTestId('conv-row').first().innerText()))
       ok('e2e: no errors in the page (CSP, scripts)', errors.length === 0, errors.join(' | '))
+      await page.goto(`${BASE}/remote/not-this-project?key=${OWNER}`)
+      await page.getByTestId('blocked').waitFor({ timeout: 10000 }).catch(() => {})
+      ok('e2e: a /remote link with another project name is refused', await page.getByTestId('blocked').count() === 1)
+      await page.goto(`${BASE}/c/${OWNER}`)
+      await page.getByTestId('screen-list').waitFor({ timeout: 10000 }).catch(() => {})
+      ok('e2e: the short /c/<key> link still works', await page.getByTestId('screen-list').count() === 1)
       if (process.env.CHAT_E2E_SHOT) await page.screenshot({ path: process.env.CHAT_E2E_SHOT })
     } finally { await browser.close() }
   }

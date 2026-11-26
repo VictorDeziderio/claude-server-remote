@@ -6,7 +6,7 @@
 // The list stays mounted (hidden) under a conversation, so going back keeps its scroll and pages.
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { KeyRound } from 'lucide-react'
-import { UNAUTHORIZED, api, chatKey } from './api.js'
+import { UNAUTHORIZED, api, chatKey, linkProject, manifestHref } from './api.js'
 import { mergeById } from './format.js'
 import { ConversationList } from './ConversationList.jsx'
 import { Conversation } from './Conversation.jsx'
@@ -69,7 +69,7 @@ export default function App() {
   const loadMe = useCallback(() => {
     if (!chatKey()) return
     setStatus('loading')
-    api.me().then((r) => { setMe(r); setStatus('ok') }).catch((e) => setStatus(e?.status === 401 || e?.status === 403 || e?.status === 404 ? 'invalid' : 'error'))
+    api.me().then((r) => { if (linkProject() && linkProject() !== r.project) return setStatus('invalid'); setMe(r); setStatus('ok') }).catch((e) => setStatus(e?.status === 401 || e?.status === 403 || e?.status === 404 ? 'invalid' : 'error'))
   }, [])
   useEffect(loadMe, [loadMe])
   // the key was revoked while the app was open
@@ -85,7 +85,7 @@ export default function App() {
     if (key && !document.querySelector('link[rel="manifest"]')) {
       const l = document.createElement('link')
       l.rel = 'manifest'
-      l.href = `/c/${key}/manifest.webmanifest`
+      l.href = manifestHref()
       document.head.appendChild(l)
     }
     if (me?.project) {

@@ -2,12 +2,22 @@
 // cookies with Safari, so the saved link carries it. Every call sends it as a Bearer token.
 // No panel cookie is used here (credentials: 'omit').
 
-export const keyFromPath = (pathname) => {
-  const m = /^\/c\/([A-Za-z0-9_-]+)/.exec(pathname || '')
-  return m ? m[1] : ''
+// the link: /c/<key> or /remote/<project>?key=<key> -> { key, project, manifest }
+export const linkOf = (pathname, search) => {
+  const c = /^\/c\/([A-Za-z0-9_-]+)/.exec(pathname || '')
+  if (c) return { key: c[1], project: '', manifest: `/c/${c[1]}/manifest.webmanifest` }
+  const r = /^\/remote\/([^/?#]+)\/?$/.exec(pathname || '')
+  const k = new URLSearchParams(search || '').get('key') || ''
+  if (r && /^[A-Za-z0-9_-]+$/.test(k)) return { key: k, project: decodeURIComponent(r[1]), manifest: `/remote/${r[1]}/manifest.webmanifest?key=${k}` }
+  return { key: '', project: '', manifest: '' }
 }
-const KEY = typeof location !== 'undefined' ? keyFromPath(location.pathname) : ''
+export const keyFromPath = (pathname, search) => linkOf(pathname, search).key
+const LINK = typeof location !== 'undefined' ? linkOf(location.pathname, location.search) : { key: '', project: '', manifest: '' }
+const KEY = LINK.key
 export const chatKey = () => KEY
+// project named in a /remote/<project> link ('' for /c/<key>): it must be the key's project
+export const linkProject = () => LINK.project
+export const manifestHref = () => LINK.manifest
 const auth = () => ({ Authorization: `Bearer ${KEY}` })
 
 export class ApiError extends Error {
