@@ -77,6 +77,15 @@ export function Composer({ running, onSend, onStop, autoFocus }) {
   }
   useEffect(grow, [text])
   useEffect(() => { if (autoFocus && finePointer()) ta.current?.focus() }, [autoFocus])
+  // leaving the conversation: stop the uploads still running and free the image previews
+  const attsRef = useRef(atts)
+  attsRef.current = atts
+  useEffect(() => () => {
+    for (const a of attsRef.current) {
+      if (a.status === 'up') a.abort?.()
+      if (a.preview) URL.revokeObjectURL(a.preview)
+    }
+  }, [])
 
   const patch = (lid, p) => setAtts((l) => l.map((a) => (a.lid === lid ? { ...a, ...p } : a)))
   const addFiles = (files) => {

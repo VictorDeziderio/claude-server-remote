@@ -841,5 +841,12 @@
   "term.dropHere": "Drop to send to the terminal",
   "term.uploading": "Sending {n}…",
   "term.uploaded": "{n} file(s) sent: path typed in the terminal",
-  "term.uploadFailed": "Could not send {name}: {msg}"
+  "term.uploadFailed": "Could not send {name}: {msg}",
+  "files.discardAsk": "\"{name}\" has unsaved changes. Leave and discard them?",
+  "files.discard": "Discard",
+  "files.rename": "rename",
+  "files.delete": "delete",
+  "dash.projectPlaceholder": "my-project",
+  "dash.backupGit": "Backup (git)",
+  "chatlink.copyFailed": "Could not copy: the link is selected, copy it by hand"
 }

@@ -46,6 +46,7 @@ export default function App() {
   const active = useRef(route.kind === 'list' ? undefined : route.id)
   const [convKey, setConvKey] = useState(0)
   const listBusy = useRef(false)
+  const listAgain = useRef(false) // a refresh asked while a load was running: done right after it
 
   const applyRoute = useCallback((r) => {
     if (r.kind !== 'list' && r.id !== active.current) { active.current = r.id; setConvKey((k) => k + 1); setMeta(null) }
@@ -95,7 +96,7 @@ export default function App() {
   }, [me])
 
   const loadList = useCallback(async (more) => {
-    if (listBusy.current) return
+    if (listBusy.current) { if (!more) listAgain.current = true; return }
     listBusy.current = true
     setList((l) => ({ ...l, loading: true, error: false }))
     try {
@@ -105,8 +106,11 @@ export default function App() {
         next: more ? r.next || null : l.items.length > (r.items || []).length ? l.next : r.next || null,
         loading: false, error: false,
       }))
-    } catch { setList((l) => ({ ...l, loading: false, error: true })) } finally { listBusy.current = false }
-  }, [])
+    } catch { setList((l) => ({ ...l, loading: false, error: true })) } finally {
+      listBusy.current = false
+      if (listAgain.current) { listAgain.current = false; loadList() }
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- calls itself
   useEffect(() => { if (status === 'ok') loadList() }, [status, loadList])
   // the list is live data: refresh when coming back to it or to the app
   useEffect(() => { if (status === 'ok' && route.kind === 'list') loadList() }, [route.kind]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -128,7 +132,7 @@ export default function App() {
   const item = route.id ? list.items.find((x) => x.id === route.id) : null
   const inConv = route.kind === 'conv' || route.kind === 'info'
   return (
-    <div className="chat-app mx-auto h-full max-w-[760px] overflow-hidden bg-background md:border-x">
+    <div className="chat-app relative mx-auto h-full max-w-[760px] overflow-hidden bg-background md:border-x">
       <div className={cx('h-full', route.kind !== 'list' && 'hidden')}>
         <ConversationList me={me} items={list.items} next={list.next} loading={list.loading} error={list.error}
           onMore={() => loadList(list.next)} onRetry={() => loadList()}

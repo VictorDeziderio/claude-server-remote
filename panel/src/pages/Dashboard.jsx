@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Cpu, Radio, RefreshCw, Activity, Plus, Power, Wifi, WifiOff, Save, UserRound, Tag, SquareTerminal, FolderOpen, Trash2, Settings2, History, DatabaseBackup, Pencil, HardDrive, MemoryStick, Gauge, Clock, ArrowUpCircle, CheckCircle2, ExternalLink, BarChart3, Pause, Play, ListTree, Pin, MessageSquare, Copy, Check } from 'lucide-react'
 import { Dot, Btn, Chip, Modal, Drawer, ActivityBadge, inputCls, Skeleton, useConfirm, StatCard } from '../components/ui.jsx'
@@ -8,6 +8,7 @@ import * as api from '../api.js'
 import { UsageWidget } from '../components/UsageLimits.jsx'
 import { t, getLang } from '../lib/i18n.js'
 import { TR } from '../lib/i18n-rich.jsx'
+import { copyText } from '../lib/clipboard.js'
 
 const SESSION_MODES = [
   ['new', 'smode.new'],
@@ -354,7 +355,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
               if (e.key === 'Enter') createNow()
             }}
             autoFocus
-            placeholder="meu-projeto"
+            placeholder={t('dash.projectPlaceholder')}
             pattern="[A-Za-z0-9._-]{1,64}"
             className={`w-full ${inputCls} px-3 py-2`}
           />
@@ -445,16 +446,24 @@ function ChatLinkSection({ name, onFlash }) {
   const [role, setRole] = useState('limited')
   const [busy, setBusy] = useState(false)
   const [fresh, setFresh] = useState(null) // { id, url } just created
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState('') // '' | 'ok' | 'fail'
   const [confirmEl, ask] = useConfirm()
-  const load = () => api.chatKeys(name).then(setKeys).catch(() => setKeys({ ok: false }))
-  useEffect(() => { setFresh(null); load() }, [name]) // eslint-disable-line react-hooks/exhaustive-deps
+  const freshInput = useRef(null)
+  // only the newest request may set the list: switching project quickly must not show the
+  // keys of the previous one when its answer arrives late
+  const loadSeq = useRef(0)
+  const load = () => {
+    const n = ++loadSeq.current
+    const keep = (r) => { if (n === loadSeq.current) setKeys(r) }
+    return api.chatKeys(name).then(keep).catch(() => keep({ ok: false }))
+  }
+  useEffect(() => { setFresh(null); setKeys(null); load() }, [name]) // eslint-disable-line react-hooks/exhaustive-deps
   const create = async () => {
     setBusy(true)
     const r = await api.chatKeyCreate(name, label.trim(), role).catch((e) => ({ ok: false, msg: e.message }))
     setBusy(false)
     if (!r.ok) return onFlash?.(r)
-    setFresh({ id: r.id, url: r.url }); setCopied(false); setLabel('')
+    setFresh({ id: r.id, url: r.url }); setCopied(''); setLabel('')
     load()
   }
   const revoke = async (k) => {
@@ -465,7 +474,12 @@ function ChatLinkSection({ name, onFlash }) {
     load()
   }
   const copy = async () => {
-    try { await navigator.clipboard.writeText(fresh.url); setCopied(true) } catch { /* the field below stays selectable */ }
+    if (await copyText(fresh.url)) return setCopied('ok')
+    // no clipboard (plain HTTP, denied): select the link so it can be copied by hand
+    setCopied('fail')
+    onFlash?.({ ok: false, msg: t('chatlink.copyFailed') })
+    freshInput.current?.focus()
+    freshInput.current?.select()
   }
   return (
     <Section title={t('chatlink.title')} icon={MessageSquare}>
@@ -483,8 +497,8 @@ function ChatLinkSection({ name, onFlash }) {
           <div className="space-y-1 rounded-lg border border-warning/40 bg-warning/10 p-2" data-testid="chatlink-fresh">
             <p className="text-foreground">{t('chatlink.copyOnce')}</p>
             <div className="flex items-center gap-2">
-              <input readOnly value={fresh.url} onFocus={(e) => e.target.select()} className={`min-w-0 flex-1 font-mono ${inputCls}`} />
-              <Btn onClick={copy}>{copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {copied ? t('chatlink.copied') : t('chatlink.copy')}</Btn>
+              <input ref={freshInput} readOnly value={fresh.url} onFocus={(e) => e.target.select()} data-testid="chatlink-url" className={`min-w-0 flex-1 font-mono ${inputCls}`} />
+              <Btn onClick={copy}>{copied === 'ok' ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {copied === 'ok' ? t('chatlink.copied') : t('chatlink.copy')}</Btn>
               <a href={fresh.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline"><ExternalLink className="h-3.5 w-3.5" /> {t('chatlink.open')}</a>
             </div>
           </div>
@@ -614,7 +628,7 @@ function ProjectDrawer({ p, data, busy, run, onClose, onFlash }) {
 
         <DiskSection name={p.name} onFlash={onFlash} />
 
-        <Section title="Backup (git)" icon={DatabaseBackup}>
+        <Section title={t('dash.backupGit')} icon={DatabaseBackup}>
           <div className="mb-2 text-xs text-muted-foreground">
             {bk === null ? (
               t('common.loading')

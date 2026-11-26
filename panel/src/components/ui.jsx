@@ -157,7 +157,7 @@ export function Toast({ flash, onClose, position = 'bottom' }) {
       flash.ok ? 'border-success/30 bg-success/10 text-success' : 'border-destructive/30 bg-destructive/10 text-destructive')} role="status">
       {flash.ok ? <Check className="mt-0.5 size-4 shrink-0" /> : <X className="mt-0.5 size-4 shrink-0" />}
       <span className="min-w-0 flex-1 break-words text-foreground">{flash.msg}</span>
-      <button type="button" onClick={onClose} aria-label="fechar" className="rounded p-0.5 opacity-70 hover:opacity-100"><X className="size-3.5" /></button>
+      <button type="button" onClick={onClose} aria-label={t('common.close')} className="rounded p-0.5 opacity-70 hover:opacity-100"><X className="size-3.5" /></button>
     </div>
   )
 }

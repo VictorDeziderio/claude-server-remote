@@ -195,6 +195,36 @@ for (const f of walk(path.join(PANEL, 'src'))) {
   })
 }
 eq('no component declared inside another component', innerComp, [])
+// texts go through i18n: no hard-coded Portuguese in JSX text or in aria-label/placeholder/title/alt
+// (accented letters or common words are enough to catch it; "atualizar"/"fechar" slipped through before)
+{
+  const PT = /[ãõçáéíóúâêôàÃÕÇÁÉÍÓÚÂÊÔ]|\b(atualizar|baixar|renomear|excluir|fechar|salvar|cancelar|voltar|enviar|copiar|abrir|arquivos?|pasta|projetos?|nenhum|carregando|erro|sim|não|meu|minha)\b/i
+  const hard = []
+  for (const f of walk(path.join(PANEL, 'src')).filter((x) => x.endsWith('.jsx'))) {
+    const src = fs.readFileSync(f, 'utf8').replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
+    src.split('\n').forEach((l, i) => {
+      if (/^\s*\/\//.test(l)) return
+      const code = l.replace(/\s\/\/ .*$/, '')
+      for (const m of code.matchAll(/\b(?:aria-label|placeholder|title|alt)="([^"]*)"/g)) if (PT.test(m[1])) hard.push(`${path.basename(f)}:${i + 1} ${m[0]}`)
+      for (const m of code.matchAll(/>([^<>{}]*[A-Za-zÀ-ú][^<>{}]*)</g)) if (PT.test(m[1])) hard.push(`${path.basename(f)}:${i + 1} >${m[1].trim()}<`)
+    })
+  }
+  eq('no hard-coded Portuguese in JSX (use t())', hard, [])
+}
+// the PWA manifest is in English and lists PNG icons (192 + 512) that exist
+{
+  const man = JSON.parse(fs.readFileSync(path.join(PANEL, 'public', 'manifest.webmanifest'), 'utf8'))
+  const pngs = man.icons.filter((i) => i.type === 'image/png')
+  eq('manifest lists PNG icons 192x192 and 512x512', ['192x192', '512x512'].every((s) => pngs.some((i) => i.sizes === s && i.purpose.includes('any'))), true)
+  eq('manifest PNG icons exist in public/', pngs.filter((i) => !fs.existsSync(path.join(PANEL, 'public', i.src))).map((i) => i.src), [])
+  eq('manifest description has no Portuguese', /[ãõçáéíóúâêô]|\bpainel|arquivos|projetos\b/i.test(man.description), false)
+  const idx = fs.readFileSync(path.join(PANEL, 'index.html'), 'utf8')
+  eq('index.html apple-touch-icon is the PNG', /<link rel="apple-touch-icon"[^>]*href="\/apple-touch-icon\.png"/.test(idx), true)
+  eq('index.html: theme-init.js runs after the status-bar meta (it sets it)', idx.indexOf('/theme-init.js') > idx.indexOf('apple-mobile-web-app-status-bar-style'), true)
+  const chat = fs.readFileSync(path.join(PANEL, 'chat.html'), 'utf8')
+  eq('chat.html shares /theme-init.js (data-system), after the status-bar meta', /<script src="\/theme-init\.js" data-system><\/script>/.test(chat) && chat.indexOf('/theme-init.js') > chat.indexOf('apple-mobile-web-app-status-bar-style'), true)
+  eq('status bar: default on light, black-translucent on dark', [T.STATUS_BAR.light, T.STATUS_BAR.dark], ['default', 'black-translucent'])
+}
 eq('chaves usadas no codigo existem no en.json', [...used].filter((k) => !(k in (locs.en || {}))), [])
 
 // server notices translated in the browser (lib/notice.js): key + vars, English as the fallback
