@@ -113,25 +113,30 @@ const hostOf = (req) => String(req.headers['x-forwarded-host'] || req.headers.ho
 const TEST_INSECURE_COOKIE = process.env.PANEL_TEST_INSECURE_COOKIE === '1';
 const secureAttr = (req) => (TEST_INSECURE_COOKIE && !isHttps(req)) ? '' : '; Secure';
 
-// ---- login rate limit (per IP): 8 failures in 10 min -> blocks for 10 min ----
-const attempts = new Map(); // ip -> { n, first, until }
-const WINDOW = 10 * 60 * 1000, MAX_FAIL = 8;
-function limited(ip) {
-  const a = attempts.get(ip);
-  if (!a) return 0;
-  if (a.until && a.until > Date.now()) return Math.ceil((a.until - Date.now()) / 1000);
-  if (Date.now() - a.first > WINDOW) attempts.delete(ip);
-  return 0;
+// ---- per-IP failure limiter: 8 failures in 10 min -> blocks for 10 min ----
+// Used by the login and by the chat link keys (server/chat.js), each with its own counter.
+function makeLimiter(WINDOW = 10 * 60 * 1000, MAX_FAIL = 8) {
+  const attempts = new Map(); // ip -> { n, first, until }
+  const limited = (ip) => {
+    const a = attempts.get(ip);
+    if (!a) return 0;
+    if (a.until && a.until > Date.now()) return Math.ceil((a.until - Date.now()) / 1000);
+    if (Date.now() - a.first > WINDOW) attempts.delete(ip);
+    return 0;
+  };
+  const fail = (ip) => {
+    const now = Date.now();
+    const a = attempts.get(ip) || { n: 0, first: now, until: 0 };
+    if (now - a.first > WINDOW) { a.n = 0; a.first = now; }
+    a.n++;
+    if (a.n >= MAX_FAIL) { a.until = now + WINDOW; a.n = 0; a.first = now; }
+    attempts.set(ip, a);
+  };
+  setInterval(() => { const now = Date.now(); for (const [ip, a] of attempts) if (now - a.first > WINDOW && (!a.until || a.until < now)) attempts.delete(ip); }, 60000).unref();
+  return { limited, fail, clear: (ip) => attempts.delete(ip) };
 }
-function fail(ip) {
-  const now = Date.now();
-  const a = attempts.get(ip) || { n: 0, first: now, until: 0 };
-  if (now - a.first > WINDOW) { a.n = 0; a.first = now; }
-  a.n++;
-  if (a.n >= MAX_FAIL) { a.until = now + WINDOW; a.n = 0; a.first = now; }
-  attempts.set(ip, a);
-}
-setInterval(() => { const now = Date.now(); for (const [ip, a] of attempts) if (now - a.first > WINDOW && (!a.until || a.until < now)) attempts.delete(ip); }, 60000).unref();
+const loginLimiter = makeLimiter();
+const { limited, fail } = loginLimiter;
 
 function doLogin(body, req, res) {
   const ip = clientIp(req);
@@ -148,7 +153,7 @@ function doLogin(body, req, res) {
     if (!body.code) return { ok: false, need2fa: true, msg: tr('srv.need2fa') };
     if (!totp.check(body.code)) { fail(ip); audit('login.fail2fa', { ip }); return { ok: false, need2fa: true, msg: tr('srv.bad2fa') }; }
   }
-  attempts.delete(ip);
+  loginLimiter.clear(ip);
   const s = sessions.create(ip, req.headers['user-agent']);
   res.setHeader('Set-Cookie',
     `${COOKIE}=${issueToken(s.id, s.exp)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${cfg.SESSION_DAYS * 86400}${secureAttr(req)}`);
@@ -193,4 +198,4 @@ function sameOrigin(req) {
   return false; // no signal at all: do not assume same origin
 }
 
-module.exports = { isAuthed, doLogin, doLogout, sameOrigin, clientIp, hostOf, sessionId, listSessions, revokeSession, revokeOthers, COOKIE };
+module.exports = { isAuthed, doLogin, doLogout, sameOrigin, clientIp, hostOf, sessionId, listSessions, revokeSession, revokeOthers, makeLimiter, COOKIE };

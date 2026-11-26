@@ -21,6 +21,7 @@ const cfg = {
   SECRET_FILE: process.env.PANEL_SECRET_FILE || path.join(CLAUDE_DIR, '.panel-secret'),
   SESSIONS_FILE: path.join(CLAUDE_DIR, '.panel-sessions.json'),
   TOTP_FILE: path.join(CLAUDE_DIR, '.panel-totp.json'),
+  CHAT_KEYS_FILE: path.join(CLAUDE_DIR, '.panel-chat-keys.json'),     // chat link keys (sha256 only), server/chat.js
   AUDIT_LOG: path.join(CLAUDE_DIR, 'logs', 'audit.log'),
   CONFIG_BACKUP_DIR: path.join(HOME, '.claude-backups'),
   SESSION_SCRIPT: process.env.SESSION_SCRIPT || '/usr/local/bin/claude-session.sh',

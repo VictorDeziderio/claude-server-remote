@@ -4,6 +4,7 @@
  * Claude Remote — server of the dev box panel.
  *  - SPA (React/Vite) built into ./dist, with a fallback for the react-router routes
  *  - JSON API at /api/*  (projects, config, files, report, account, history, logs, health, backup)
+ *  - Project chat behind a link + key: page /c/<key>, API /chat-api/* (Bearer key, no cookie; server/chat.js)
  *  - Real time at /api/events (SSE: state, Claude activity, notifications)
  *  - Real terminal at /ws/term (WebSocket <-> PTY <-> tmux attach)
  * Auth: own login page + optional 2FA + signed session cookie (server/auth.js).
@@ -34,6 +35,7 @@ const alerts = require('./server/alerts');
 const limits = require('./server/limits');
 const notify = require('./server/notify');
 const i18n = require('./server/i18n');
+const chat = require('./server/chat');
 const { tr } = i18n;
 const { serveStatic } = require('./server/static');
 
@@ -129,6 +131,9 @@ const POST = {
 // Web Push / notifications tab (routes live in server/notify.js)
 Object.assign(GET, notify.routes.GET);
 Object.assign(POST, notify.routes.POST);
+// chat link keys (admin side; the chat itself is /chat-api/*, server/chat.js)
+Object.assign(GET, chat.routes.GET);
+Object.assign(POST, chat.routes.POST);
 // actions that go into the audit log (reads do not)
 const AUDITED = new Set(['/api/create', '/api/rename', '/api/delete', '/api/config', '/api/initline', '/api/restart', '/api/power', '/api/remote',
   '/api/fs/save', '/api/fs/create', '/api/fs/delete', '/api/fs/rename', '/api/term/exit', '/api/term/window', '/api/claude/logout',
@@ -155,6 +160,9 @@ async function handle(req, res) {
       if (!auth.sameOrigin(req)) return sendJson(res, 403, { ok: false, msg: tr('srv.badOrigin') });
       return sendJson(res, 200, auth.doLogout(req, res));
     }
+    // --- project chat: own auth (Bearer key from the link), never the panel cookie ---
+    if (url.startsWith('/chat-api/')) return await chat.handleApi(req, res, u);
+    if ((req.method === 'GET' || req.method === 'HEAD') && /^\/c\/[^/]+/.test(url)) return chat.handlePage(req, res, url);
     if (req.method === 'GET' && url === '/api/login/info') return sendJson(res, 200, { ok: true, twofa: totp.isEnabled(), panelVersion: cfg.PANEL_VERSION });
 
     // --- API protegida ---
@@ -190,7 +198,7 @@ async function handle(req, res) {
     if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(req, res, url);
     sendJson(res, 405, { ok: false, msg: 'method not allowed' });
   } catch (e) {
-    log('error', 'erro na request', { url: req.url, err: e.message });
+    log('error', 'erro na request', { url: chat.redactUrl(req.url), err: e.message });
     if (!res.headersSent) sendJson(res, 500, { ok: false, msg: tr('srv.internal') });
     else res.end();
   }
@@ -220,7 +228,7 @@ server.listen(cfg.PORT, cfg.BIND, () => {
 for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => {
     log('info', 'encerrando', { sig });
-    term.shutdown(); events.stop(); limits.stop(); notify.stop(); require('./server/autoresume').stop();
+    term.shutdown(); chat.stopAll(); events.stop(); limits.stop(); notify.stop(); require('./server/autoresume').stop();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();
   });

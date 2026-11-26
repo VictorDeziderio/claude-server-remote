@@ -164,6 +164,7 @@ async function renameProject(oldName, newName) {
     delete c.projects[oldName];
     saveConfig(c);
   }
+  require('./chat').onRename(oldName, newName); // lazy: avoids a require cycle
   await ensureSession(newName);
   events.poke();
   return { ok: true, msg: `"${oldName}" -> "${newName}"` + (histMoved ? tr('srv.histMoved') : '') + tr('srv.sessionRecreated') };
@@ -185,6 +186,7 @@ async function deleteProject(name) {
   }
   const c = loadConfig();
   if (c.projects && c.projects[name]) { delete c.projects[name]; saveConfig(c); }
+  require('./chat').onDelete(name); // chat link keys of the project are removed
   events.poke();
   return { ok: true, msg: tr('srv.deleted', { name }) };
 }
