@@ -72,7 +72,7 @@ function ClaudeStatus({ c, compact }) {
     <div className="flex flex-wrap items-center gap-2 text-xs text-amber-700 dark:text-amber-200">
       <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
       <span className={cn('min-w-0', compact && 'truncate')}>{c.message}</span>
-      {reconnect && <Link to="/account?login=1" className="inline-flex items-center gap-1 font-medium text-primary hover:underline"><LogIn className="h-3 w-3" /> {t('usage.reconnect')}</Link>}
+      {reconnect && <Link to="/accounts?login=1" className="inline-flex items-center gap-1 font-medium text-primary hover:underline"><LogIn className="h-3 w-3" /> {t('usage.reconnect')}</Link>}
     </div>
   )
 }
@@ -89,7 +89,7 @@ export function UsageWidget() {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <Link to="/account#usage" className="inline-flex items-center gap-1.5 hover:underline"><Gauge className="h-3.5 w-3.5" /> {t('usage.plan')}{c.plan ? ` · ${c.plan}` : ''}</Link>
+        <Link to="/accounts#usage" className="inline-flex items-center gap-1.5 hover:underline"><Gauge className="h-3.5 w-3.5" /> {t('usage.plan')}{c.plan ? ` · ${c.plan}` : ''}</Link>
         {c.fetchedAt ? <span>{fmtAgo(c.fetchedAt)}</span> : null}
       </div>
       <ClaudeStatus c={c} compact />

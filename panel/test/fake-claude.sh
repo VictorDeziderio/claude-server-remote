@@ -35,14 +35,25 @@ do_login() {
   mkdir -p "$CFG"; echo '{"ok":1}' > "$CFG/.credentials.json"
   cls; echo " Login successful. Press Enter to continue"; wait_enter; echo "login-success cfg=$CFG" >> "$PICKS"
 }
+# LOADING=<seconds>: like the real one right after it starts, keys typed meanwhile are lost
 repl() {
+  local until=$(( $(date +%s) + ${LOADING:-0} ))
   while :; do
     cls; echo " ▐▛███▜▌   Claude Code v9.9.9"; echo "────────"; echo "❯ "; echo "────────"
-    echo "  ⏵⏵ bypass permissions on (shift+tab to cycle)"
-    read -r line; [ "$line" = "/login" ] && { echo "repl=/login" >> "$PICKS"; do_login; }
+    if [ -s "$CFG/.credentials.json" ]; then echo "  ⏵⏵ bypass permissions on (shift+tab to cycle)"; else echo "  ⏵⏵ bypass permissions on (shift+tab to cycle)   Not logged in · run /login"; fi
+    read -r line
+    [ "$(date +%s)" -lt "$until" ] && { echo "repl-dropped=$line" >> "$PICKS"; continue; }
+    [ "$line" = "/login" ] && { echo "repl=/login" >> "$PICKS"; do_login; }
   done
 }
 if [ -s "$CFG/.credentials.json" ]; then repl; fi
+# an account dir seeded with the onboarding flags (a new account in the panel): no first-run
+# screens — the trust question, then the prompt saying "Not logged in", still loading for a moment
+JSON="$CFG/.claude.json"; [ -n "$CLAUDE_CONFIG_DIR" ] || JSON="$HOME/.claude.json"
+if grep -q '"hasCompletedOnboarding": *true' "$JSON" 2>/dev/null; then
+  CUR=0 menu trust " Accessing workspace:\n $PWD\n Quick safety check: Is this a project you created or one you trust?" "No, exit" "Yes, I trust this folder"
+  LOADING=4 repl
+fi
 CUR=0 menu theme " Let's get started.\n Choose the text style that looks best with your terminal\n To change this later, run /theme" \
   "✔ Auto (match terminal)" "Dark mode" "Light mode"
 do_login

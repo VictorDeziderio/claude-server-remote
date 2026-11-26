@@ -321,7 +321,7 @@ try {
     const onErr = (e) => pageErrors.push(e.message)
     page.on('pageerror', onErr)
     const broken = []
-    for (const route of ['/dashboard', '/terminal', '/files', '/history', '/report', '/logs', '/backup', '/settings', '/notifications', '/account']) {
+    for (const route of ['/dashboard', '/terminal', '/files', '/history', '/report', '/logs', '/backup', '/settings', '/notifications', '/accounts', '/account']) {
       pageErrors.length = 0
       await page.goto(BASE + route)
       await page.waitForTimeout(1200)
@@ -356,7 +356,11 @@ try {
 
   // ---- several Claude accounts: add one on /account, choose it in Configure, the card shows it
   await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto(BASE + '/account')
+  // the old address still works: /account -> /accounts (keeps ?login=1)
+  await page.goto(BASE + '/account?login=0')
+  await page.waitForURL(/\/accounts\?login=0$/, { timeout: 5000 }).catch(() => {})
+  ok('old /account address redirects to /accounts', /\/accounts\?login=0$/.test(page.url()), page.url())
+  await page.goto(BASE + '/accounts')
   await page.locator('[data-testid="account-new-label"]').fill('Work')
   await page.getByRole('button', { name: /add account/i }).click()
   const loginModal = page.getByRole('dialog', { name: /log in: work/i })
@@ -388,7 +392,7 @@ try {
   await page.waitForTimeout(400)
   const od = await overflowX()
   ok(`phone: dashboard with the account badge has no horizontal overflow (${od}px)`, od <= 0 && await badge.isVisible(), String(od))
-  await page.goto(BASE + '/account'); await page.locator('[data-testid="account-row"]').nth(1).waitFor({ timeout: 5000 }).catch(() => {})
+  await page.goto(BASE + '/accounts'); await page.locator('[data-testid="account-row"]').nth(1).waitFor({ timeout: 5000 }).catch(() => {})
   await page.waitForTimeout(400)
   const oa = await overflowX()
   ok(`phone: account page has no horizontal overflow (${oa}px)`, oa <= 0, String(oa))

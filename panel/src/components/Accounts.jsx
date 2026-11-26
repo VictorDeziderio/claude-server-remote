@@ -204,7 +204,7 @@ export function ProjectAccountSection({ p, accounts, onFlash, refresh }) {
           <option key={a.id} value={a.id}>{optText(a)}</option>
         ))}
       </select>
-      <Link to="/account" className="mt-2 inline-block text-xs text-primary hover:underline">{t('acct.manage')}</Link>
+      <Link to="/accounts" className="mt-2 inline-block text-xs text-primary hover:underline">{t('acct.manage')}</Link>
       {confirmEl}
     </section>
   )

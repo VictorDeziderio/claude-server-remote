@@ -103,7 +103,7 @@ export function HealthCard({ onFlash, compact }) {
               </span>
             )}
             {!compact && (
-              <Link to="/account" className="text-[11px] text-muted-foreground hover:text-foreground/80">
+              <Link to="/accounts" className="text-[11px] text-muted-foreground hover:text-foreground/80">
                 {t('dash.details')}
               </Link>
             )}
@@ -203,7 +203,7 @@ export default function Dashboard({ data, activity, refresh, onFlash, showNew, s
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
           <StatCard icon={UserRound} label={t('account.claude')} warn={!login.logged} className="col-span-2 sm:col-span-1"
             value={<span className="inline-flex max-w-full items-center gap-2"><Dot on={login.logged} /> <span className="truncate text-lg font-medium sm:text-xl">{login.logged ? login.account || t('account.loggedIn') : t('account.loggedOut')}</span></span>}>
-            <Link to={login.logged ? '/account' : '/account?login=1'} className="hover:text-foreground hover:underline">{login.logged ? t('dash.details') : t('dash.loggedOutClick')}</Link>
+            <Link to={login.logged ? '/accounts' : '/accounts?login=1'} className="hover:text-foreground hover:underline">{login.logged ? t('dash.details') : t('dash.loggedOutClick')}</Link>
           </StatCard>
           <StatCard icon={Cpu} label={t('dash.sessions')} value={<>{running}<span className="text-muted-foreground">/{projects.length}</span></>}>
             {t('dash.withClaude')}{off ? <span>{t('dash.offCount', { n: off })}</span> : ''}

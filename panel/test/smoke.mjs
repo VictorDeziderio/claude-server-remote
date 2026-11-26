@@ -576,7 +576,7 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
     hook({ ev: 'StopFailure', sid: 's9', err: 'rate_limit', cwd: path.join(ROOT, 'projects', 'other'), msg: '5-hour limit reached' })
     sl = await waitSink(before + 4)
     const fails2 = sl.slice(before + 2).map((x) => x.payload)
-    ok('StopFailure auth -> "needs login" (opens Account)', fails2.some((p) => p.event === 'login' && p.url === '/account'), JSON.stringify(fails2))
+    ok('StopFailure auth -> "needs login" (opens Account)', fails2.some((p) => p.event === 'login' && p.url === '/accounts'), JSON.stringify(fails2))
     ok('StopFailure rate_limit -> "usage limit" push', fails2.some((p) => p.event === 'usage' && /limit/.test(p.title)))
 
     // toggles
@@ -819,7 +819,8 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
         r = await j('POST', '/api/accounts/login', { id: 'nope' }); ok('accounts: login of an unknown account refused', r.data.ok === false)
         r = await j('POST', '/api/accounts/login', { id }); ok('accounts: login start', r.data.ok && r.data.phase === 'starting', JSON.stringify(r.data))
         ls = await waitPhase(['url', 'error', 'attention'], 40000)
-        ok('accounts: login reaches the link (first-run screens of a fresh config dir)', ls.phase === 'url' && ls.account === id, JSON.stringify({ phase: ls.phase, screen: ls.screen?.slice(-300) }))
+        ok('accounts: login reaches the link (new account: trust, then a prompt that drops early keys)', ls.phase === 'url' && ls.account === id, JSON.stringify({ phase: ls.phase, msg: ls.msg, screen: ls.screen?.slice(-300), picks: picks() }))
+        ok('accounts: /login typed again after the loading Claude dropped it', /repl=\/login/.test(picks()), picks())
         r = await j('POST', '/api/claude/login/code', { code: 'good-code' })
         ls = await waitPhase(['success', 'error', 'attention'], 60000)
         ok('accounts: login success', ls.phase === 'success' && ls.logged === true, JSON.stringify({ phase: ls.phase, msg: ls.msg, picks: picks() }))

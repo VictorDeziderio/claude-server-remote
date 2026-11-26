@@ -40,7 +40,10 @@ const ACT_GAP_MS = 1200; // pause between actions for the TUI to redraw
 const REPEAT_GAP_MS = 3000; // repeat the SAME key on the SAME screen only after this
 const UNKNOWN_STABLE_MS = 4000;
 const UNKNOWN_MAX_ENTERS = 3;
-const SAME_ACTION_MAX = 8; // same screen + same key N times with no change -> stuck -> attention
+const SAME_ACTION_MAX = 8;
+const REPL_SETTLE_MS = Number(process.env.LOGIN_REPL_SETTLE_MS) || 2500; // prompt still this long before typing /login
+const LOGIN_RETRY_MS = Number(process.env.LOGIN_RETRY_MS) || 7000;     // /login again when the menu did not open
+const LOGIN_TRIES = 3; // same screen + same key N times with no change -> stuck -> attention
 
 /*
  * Known interactive screens (Claude Code 2.1.x, checked live on 2.1.332). The first match
@@ -124,7 +127,7 @@ function safeScreen(screen) {
 function idle() {
   return {
     phase: 'idle', step: '', url: '', msg: '', screen: '', startedAt: 0, lastActAt: 0,
-    account: accounts.DEFAULT, wasLogged: false, loggedIn: false, sentLogin: false, sentLoginAt: 0, codeAt: 0,
+    account: accounts.DEFAULT, wasLogged: false, loggedIn: false, sentLogin: false, sentLoginAt: 0, loginTries: 0, codeAt: 0,
     sig: '', sigSince: 0, unknownEnters: {}, lastAction: '', sameCount: 0,
   };
 }
@@ -214,13 +217,21 @@ async function tick() {
   }
   if (c.kind === 'repl') {
     if (st.loggedIn) return finish();
-    // already logged in (switching account): opens /login once
-    if (!st.sentLogin) {
-      st.sentLogin = true; st.sentLoginAt = Date.now(); st.step = 'login-command'; st.phase = 'starting';
-      act(sig, '/login', async () => { await keys('-l', '/login'); setTimeout(() => keys('Enter'), 500); });
-    } else if (Date.now() - st.sentLoginAt > 20000) {
-      await fail('could not open /login in Claude Code — try again');
+    // at the prompt without the login menu (already logged in, or a new account whose onboarding
+    // flags were copied): type /login. Claude Code drops keys typed while it is still loading, so
+    // wait for the screen to stand still first, and type it again if the menu did not open.
+    if (Date.now() - st.sigSince < REPL_SETTLE_MS) return;
+    if (st.loginTries >= LOGIN_TRIES && Date.now() - st.sentLoginAt > LOGIN_RETRY_MS) {
+      return fail('could not open /login in Claude Code — try again');
     }
+    if (st.loginTries && Date.now() - st.sentLoginAt < LOGIN_RETRY_MS) return;
+    st.loginTries = (st.loginTries || 0) + 1; st.sentLogin = true; st.sentLoginAt = Date.now();
+    st.step = 'login-command'; st.phase = 'starting';
+    // clears whatever is on the input line, types the command, then Enter once the menu of
+    // commands is drawn (an Enter too early picks nothing)
+    await keys('C-u');
+    await keys('-l', '/login');
+    setTimeout(() => keys('Enter'), 1200);
     return;
   }
   if (c.kind === 'blank' || c.kind === 'url') return; // loading / old link leaving the screen

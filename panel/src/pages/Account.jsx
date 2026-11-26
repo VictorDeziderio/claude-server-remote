@@ -12,7 +12,7 @@ import { t } from '../lib/i18n.js'
 import { TR } from '../lib/i18n-rich.jsx'
 
 export default function Account({ data, onFlash, refresh }) {
-  // /account?login=1 (the Dashboard's "logged out — click to log in" link) opens the default account's login at once
+  // /accounts?login=1 (the Dashboard's "logged out — click to log in" link) opens the default account's login at once
   const [params, setParams] = useSearchParams()
   const [loginFor, setLoginFor] = useState(() => (params.get('login') === '1' ? 'default' : null)) // account id being logged in
   const [reloadKey, setReloadKey] = useState(0)

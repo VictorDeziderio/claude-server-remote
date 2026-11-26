@@ -122,7 +122,9 @@ export default function App() {
             <Route path="/backup" element={<BackupPage data={data} onFlash={setFlash} />} />
             <Route path="/settings" element={<SettingsPage data={data} onFlash={setFlash} refresh={refresh} notif={notifPerm} onToggleNotif={toggleNotif} />} />
             <Route path="/notifications" element={<NotificationsPage onFlash={setFlash} />} />
-            <Route path="/account" element={<Account data={data} onFlash={setFlash} refresh={refresh} />} />
+            <Route path="/accounts" element={<Account data={data} onFlash={setFlash} refresh={refresh} />} />
+            {/* old address (saved links, notifications already delivered) */}
+            <Route path="/account" element={<Navigate to={"/accounts" + window.location.search + window.location.hash} replace />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </Suspense>

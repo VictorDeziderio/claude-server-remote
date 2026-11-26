@@ -169,7 +169,7 @@ export default function SettingsPage({ onFlash, refresh, notif, onToggleNotif })
           <ShieldCheck className={`h-5 w-5 ${s.twofa.enabled ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'}`} />
           <span>
             {s.twofa.enabled ? t('settings.twofaOn') : t('settings.twofaOff')}{' '}
-            <Link to="/account" className="text-primary hover:underline">
+            <Link to="/accounts" className="text-primary hover:underline">
               {t('nav.account')}
             </Link>
           </span>

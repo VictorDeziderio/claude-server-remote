@@ -25,7 +25,7 @@ export const NAV = [
   { to: '/backup', get label() { return t('nav.backup') }, icon: DatabaseBackup, group: 'system' },
   { to: '/settings', get label() { return t('nav.settings') }, icon: Settings, group: 'system' },
   { to: '/notifications', get label() { return t('nav.notifications') }, icon: BellRing, group: 'system' },
-  { to: '/account', get label() { return t('nav.account') }, icon: UserRound, group: 'system' },
+  { to: '/accounts', get label() { return t('nav.account') }, icon: UserRound, group: 'system' },
 ]
 const NAV_GROUPS = [...new Set(NAV.map((n) => n.group))]
 // Phone: navigation at the BOTTOM (thumb reach) with the 3 most used screens + "More" (a sheet
@@ -187,7 +187,7 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
           ))}
         </nav>
         <div className="space-y-1 pt-2">
-          <NavLink to="/account" title={login.logged ? (login.account || t('account.loggedIn')) : t('account.loggedOut')}
+          <NavLink to="/accounts" title={login.logged ? (login.account || t('account.loggedIn')) : t('account.loggedOut')}
             className={cn('flex items-center gap-2.5 rounded-md p-2 transition-colors hover:bg-sidebar-accent', collapsed && 'justify-center p-1.5')}>
             <span className="relative grid size-8 shrink-0 place-items-center rounded-lg bg-sidebar-accent text-sm font-medium">
               {initial}
@@ -235,7 +235,7 @@ export default function Layout({ data, live, onLogout, onRefresh, actions, notif
           <div className="flex shrink-0 items-center gap-1">
             <Btn variant="ghost" size="sm" className="lg:hidden" onClick={() => setCmdOpen(true)} title={t('cmd.search')}><Search className="size-3.5" /></Btn>
             {health && (
-              <Link to={health.claude?.updateAvailable ? '/account' : '/dashboard'} className={cn('mr-1 hidden h-8 items-center gap-3 rounded-md border px-2.5 text-xs xl:flex', health.claude?.updateAvailable ? 'border-brand/40 text-brand' : 'text-muted-foreground')} title={health.claude?.updateAvailable ? t('header.updateTitle', { latest: health.claude.latest, current: health.claude.currentNum }) : t('header.healthTitle')}>
+              <Link to={health.claude?.updateAvailable ? '/accounts' : '/dashboard'} className={cn('mr-1 hidden h-8 items-center gap-3 rounded-md border px-2.5 text-xs xl:flex', health.claude?.updateAvailable ? 'border-brand/40 text-brand' : 'text-muted-foreground')} title={health.claude?.updateAvailable ? t('header.updateTitle', { latest: health.claude.latest, current: health.claude.currentNum }) : t('header.healthTitle')}>
                 <span className={cn('inline-flex items-center gap-1 tabular-nums', pctCls(health.disk?.pct || 0))}><HardDrive className="size-3" /> {health.disk?.pct ?? '?'}%</span>
                 <span className={cn('inline-flex items-center gap-1 tabular-nums', pctCls(health.mem?.pct || 0))}><MemoryStick className="size-3" /> {health.mem?.pct ?? '?'}%</span>
                 <span className="inline-flex items-center gap-1 tabular-nums"><Gauge className="size-3" /> {health.load?.[0] ?? '?'}</span>

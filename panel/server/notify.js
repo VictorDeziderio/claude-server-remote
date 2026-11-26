@@ -159,7 +159,7 @@ function handleHook(h, now = Date.now()) {
     const err = String(h.err || '');
     const ar = autoresume.onHook({ ev: h.ev, err }, project, t); // schedules "continue" after the reset
     if (h.ev === 'StopFailure' && AUTH_ERR.has(err)) {
-      return { event: 'login', project, url: '/account', title: L('srv.push.needLogin'), body: `${name}: ${clip(h.msg || err.replace(/_/g, ' '), 160)}` };
+      return { event: 'login', project, url: '/accounts', title: L('srv.push.needLogin'), body: `${name}: ${clip(h.msg || err.replace(/_/g, ' '), 160)}` };
     }
     if (h.ev === 'StopFailure' && LIMIT_ERR.has(err)) {
       return { event: 'usage', project, key: 'limit', url: urlFor(project), title: L('srv.push.limit'), body: ar ? L('srv.push.limitResume', { name, msg: clip(h.msg || err.replace(/_/g, ' '), 160), time: new Date(ar.at).toISOString().slice(0, 16).replace('T', ' ') }) : `${name}: ${clip(h.msg || err.replace(/_/g, ' '), 160)}` };
@@ -241,7 +241,7 @@ let wasLogged = null;
 function checkLogin() {
   let logged = true;
   try { logged = !!require('./claude').loginInfo().logged; } catch { return; }
-  if (wasLogged !== false && !logged) notify({ event: 'login', url: '/account', title: L('srv.push.loggedOut'), body: L('srv.push.loggedOutBody') }).catch(() => {});
+  if (wasLogged !== false && !logged) notify({ event: 'login', url: '/accounts', title: L('srv.push.loggedOut'), body: L('srv.push.loggedOutBody') }).catch(() => {});
   wasLogged = logged;
 }
 
