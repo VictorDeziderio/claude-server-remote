@@ -18,6 +18,29 @@ const iconFor = (name) => {
 
 // File manager. `path` + `onNavigate` come from outside (URL on the page, local state when
 // embedded in the terminal). Folder -> list; file -> editor (CodeMirror, loaded on demand).
+// path breadcrumb of the file browser
+function Crumbs({ parts, go, embedded }) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-0.5 text-sm">
+      <button type="button" onClick={() => go('')} title="/root" className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition hover:bg-accent ${parts.length === 0 ? 'text-foreground font-medium' : 'text-muted-foreground hover:text-foreground/80'}`}>
+        <Home className="h-3.5 w-3.5 text-primary" /> {!embedded && 'root'}
+      </button>
+      {parts.map((seg, i) => (
+        <span key={i} className="inline-flex items-center gap-0.5">
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+          {i === parts.length - 1 ? (
+            <span className="max-w-[12rem] truncate px-1.5 py-0.5 font-medium text-foreground">{seg}</span>
+          ) : (
+            <button type="button" onClick={() => go(parts.slice(0, i + 1).join('/'))} className="max-w-[10rem] truncate rounded px-1.5 py-0.5 text-muted-foreground transition hover:bg-accent hover:text-foreground/80">
+              {seg}
+            </button>
+          )}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export default function Files({ path: cur = '', onNavigate, onFlash, embedded = false }) {
   const go = useCallback((p) => onNavigate(p.replace(/^\/+|\/+$/g, '')), [onNavigate])
   const [kind, setKind] = useState('') // '' | dir | file
@@ -151,25 +174,6 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
   }
 
   const parts = cur ? cur.split('/') : []
-  const Crumbs = () => (
-    <div className="flex min-w-0 flex-wrap items-center gap-0.5 text-sm">
-      <button type="button" onClick={() => go('')} title="/root" className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition hover:bg-accent ${parts.length === 0 ? 'text-foreground font-medium' : 'text-muted-foreground hover:text-foreground/80'}`}>
-        <Home className="h-3.5 w-3.5 text-primary" /> {!embedded && 'root'}
-      </button>
-      {parts.map((seg, i) => (
-        <span key={i} className="inline-flex items-center gap-0.5">
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-          {i === parts.length - 1 ? (
-            <span className="max-w-[12rem] truncate px-1.5 py-0.5 font-medium text-foreground">{seg}</span>
-          ) : (
-            <button type="button" onClick={() => go(parts.slice(0, i + 1).join('/'))} className="max-w-[10rem] truncate rounded px-1.5 py-0.5 text-muted-foreground transition hover:bg-accent hover:text-foreground/80">
-              {seg}
-            </button>
-          )}
-        </span>
-      ))}
-    </div>
-  )
 
   if (kind === 'file' && file) {
     return (
@@ -179,7 +183,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
             <Btn size="sm" onClick={() => go(parentOf(cur))}>
               <ArrowLeft className="h-3.5 w-3.5" /> {!embedded && t('common.back')}
             </Btn>
-            <Crumbs />
+            <Crumbs parts={parts} go={go} embedded={embedded} />
             {dirty && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-300">{t('files.unsaved')}</span>}
             {!embedded && (
               <span className="font-mono text-xs text-muted-foreground">
@@ -210,7 +214,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
   return (
     <div className={`flex min-h-0 flex-col rounded-lg bg-card border ${embedded ? 'h-full' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <Crumbs />
+        <Crumbs parts={parts} go={go} embedded={embedded} />
         <div className="flex items-center gap-1">
           <input
             ref={uploadRef}

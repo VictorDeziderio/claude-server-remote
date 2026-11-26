@@ -437,6 +437,20 @@ function DiskSection({ name, onFlash }) {
   )
 }
 
+// a block of the "Configure project" drawer. Defined at module level: a component created inside
+// another one is a new type on every render, so React remounts it and the inputs inside lose focus
+// (typing the name to delete jumped the drawer back to the top).
+function Section({ title, icon: Icon, children, danger }) {
+  return (
+    <section className={`rounded-xl p-4 ${danger ? 'border border-rose-500/20 bg-rose-500/5' : 'border border-border bg-sidebar'}`}>
+      <h4 className={`mb-2 flex items-center gap-2 text-xs font-medium ${danger ? 'text-destructive' : 'text-muted-foreground'}`}>
+        <Icon className="h-3.5 w-3.5" /> {title}
+      </h4>
+      {children}
+    </section>
+  )
+}
+
 // "Configure project" drawer: first line, remote, rename, history, backup, delete
 function ProjectDrawer({ p, data, busy, run, onClose, onFlash }) {
   const [initLine, setInitLine] = useState(p.initLine || '')
@@ -452,15 +466,6 @@ function ProjectDrawer({ p, data, busy, run, onClose, onFlash }) {
       })
       .catch(() => {})
   }, [p.name])
-
-  const Section = ({ title, icon: Icon, children, danger }) => (
-    <section className={`rounded-xl p-4 ${danger ? 'border border-rose-500/20 bg-rose-500/5' : 'border border-border bg-sidebar'}`}>
-      <h4 className={`mb-2 flex items-center gap-2 text-xs font-medium ${danger ? 'text-destructive' : 'text-muted-foreground'}`}>
-        <Icon className="h-3.5 w-3.5" /> {title}
-      </h4>
-      {children}
-    </section>
-  )
 
   return (
     <Drawer title={t('dash.configureTitle', { name: p.name })} icon={Settings2} onClose={onClose}>
@@ -612,7 +617,7 @@ function ProjectDrawer({ p, data, busy, run, onClose, onFlash }) {
             {t('dash.deleteHint')}
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <input value={delTyped} onChange={(e) => setDelTyped(e.target.value)} placeholder={p.name} className={`w-48 ${inputCls}`} />
+            <input data-testid="delete-confirm" value={delTyped} onChange={(e) => setDelTyped(e.target.value)} placeholder={p.name} className={`w-48 ${inputCls}`} />
             <Btn
               variant="danger"
               busy={busy === `delete:${p.name}`}

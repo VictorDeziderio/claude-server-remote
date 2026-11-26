@@ -147,6 +147,17 @@ for (const f of walk(path.join(PANEL, 'src'))) {
   })
 }
 eq('altura em % tem pai com altura (h-*)', pctNoParent, [])
+// a component declared INSIDE another one (`  const Section = (...) => (<...>)`) is a new type on every
+// render: React remounts it, inputs inside lose focus and the scroll jumps (the delete field of the
+// "Configure" drawer). Components go at module level, data comes in props.
+const innerComp = []
+for (const f of walk(path.join(PANEL, 'src'))) {
+  if (f.includes(path.join('components', 'ui') + path.sep)) continue
+  fs.readFileSync(f, 'utf8').split('\n').forEach((l, i) => {
+    if (/^\s+const [A-Z]\w* = \([^)]*\) => \($/.test(l) || /^\s+function [A-Z]\w*\(/.test(l)) innerComp.push(path.basename(f) + ':' + (i + 1))
+  })
+}
+eq('no component declared inside another component', innerComp, [])
 eq('chaves usadas no codigo existem no en.json', [...used].filter((k) => !(k in (locs.en || {}))), [])
 
 // server notices translated in the browser (lib/notice.js): key + vars, English as the fallback
