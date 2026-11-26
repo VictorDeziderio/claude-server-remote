@@ -163,6 +163,35 @@ trim_log() {  # $1 = file
   rm -f "$tmp"
 }
 
+# One KEY=value line of the secrets file (start.sh) -> ENV_KEY / ENV_VAL. Never executes it.
+# Forgiving with what people actually type: a trailing \r (file saved on Windows) is dropped and
+# ONE pair of surrounding quotes ("x" or 'x') is removed — otherwise PANEL_PASSWORD="x" became the
+# password `"x"` (quotes included) and the login silently never matched. A line with no '=' gives
+# an empty ENV_KEY (ignored by the caller).
+parse_env_line() {  # $1 = line
+  local line="${1%$'\r'}"
+  ENV_KEY="" ENV_VAL=""
+  [[ "$line" == *=* ]] || return 0
+  ENV_KEY="${line%%=*}"; ENV_VAL="${line#*=}"
+  if [ "${#ENV_VAL}" -ge 2 ]; then
+    case "$ENV_VAL" in
+      \"*\"|\'*\') ENV_VAL="${ENV_VAL:1:${#ENV_VAL}-2}" ;;
+    esac
+  fi
+}
+
+# Exports the KNOWN keys of a secrets file (start.sh: /root/.devbox-secrets.env); anything else
+# in it is ignored.
+load_secrets_file() {  # $1 = file
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    parse_env_line "$line"
+    case "$ENV_KEY" in
+      PANEL_LOGIN|PANEL_PASSWORD|GH_TOKEN|ANTHROPIC_ADMIN_KEY|DEPLOY_WEBHOOK_URL) export "$ENV_KEY=$ENV_VAL" ;;
+    esac
+  done < "$1"
+}
+
 # ---------------------------------------------------------------------------
 # backoff for respawn loops (claude-loop.sh, start.sh#run_bg)
 # ---------------------------------------------------------------------------
@@ -205,32 +234,53 @@ backoff_sleep() {
 #  - PANEL_DOMAIN set: Caddy gets an HTTPS certificate by itself (Let's Encrypt) for that
 #    domain -> publish ports 80 and 443. Empty: HTTP on GATEWAY_PORT (use it behind a proxy
 #    with TLS, or on a VPN/Tailscale).
-write_caddyfile() {  # $1 = path of the Caddyfile; uses GATEWAY_PORT, PANEL_PORT, TRUSTED_PROXIES, PANEL_DOMAIN
-  local CADDY_TRUST CADDY_HTTPS CADDY_SITE
-if [ -n "${TRUSTED_PROXIES:-}" ]; then
-  CADDY_TRUST="	servers {
+#  - /healthz (Docker HEALTHCHECK) ALWAYS has a plain-HTTP site on GATEWAY_PORT, also with
+#    PANEL_DOMAIN (otherwise nothing listens there and the container is unhealthy forever). In
+#    domain mode that extra site answers ONLY /healthz: the panel is never served without TLS.
+#  - /healthz is proxied to the panel's own /healthz (a tiny route, no auth): a crashed or hung
+#    panel makes the healthcheck fail, instead of Caddy always answering "ok". With
+#    PANEL_ENABLED=false there is no panel to ask, so Caddy answers it itself.
+write_caddyfile() {  # $1 = path of the Caddyfile; uses GATEWAY_PORT, PANEL_PORT, TRUSTED_PROXIES, PANEL_DOMAIN, PANEL_ENABLED
+  local CADDY_TRUST CADDY_HTTPS CADDY_HEALTH
+  if [ -n "${TRUSTED_PROXIES:-}" ]; then
+    CADDY_TRUST="	servers {
 		trusted_proxies static ${TRUSTED_PROXIES}
 	}"
-else
-  CADDY_TRUST=""
-fi
-if [ -n "${PANEL_DOMAIN:-}" ]; then
-  CADDY_HTTPS=""; CADDY_SITE="${PANEL_DOMAIN}"
-else
-  CADDY_HTTPS="	auto_https off"; CADDY_SITE=":${GATEWAY_PORT}"
-fi
-cat > "$1" <<CADDY
+  else
+    CADDY_TRUST=""
+  fi
+  if [ "${PANEL_ENABLED:-true}" = "false" ]; then
+    CADDY_HEALTH='respond "ok" 200'
+  else
+    CADDY_HEALTH="reverse_proxy 127.0.0.1:${PANEL_PORT}"
+  fi
+  if [ -n "${PANEL_DOMAIN:-}" ]; then CADDY_HTTPS=""; else CADDY_HTTPS="	auto_https off"; fi
+  {
+    cat <<CADDY
 {
 ${CADDY_HTTPS}
 	admin off
 ${CADDY_TRUST}
 }
-${CADDY_SITE} {
+${PANEL_DOMAIN:-:${GATEWAY_PORT}} {
 	route {
-		@health path /healthz
-		respond @health "ok" 200
+		handle /healthz {
+			${CADDY_HEALTH}
+		}
 		reverse_proxy 127.0.0.1:${PANEL_PORT}
 	}
 }
 CADDY
+    # domain mode: health-only HTTP site on GATEWAY_PORT (80/443 are already the domain's own)
+    if [ -n "${PANEL_DOMAIN:-}" ] && [ "${GATEWAY_PORT}" != 80 ] && [ "${GATEWAY_PORT}" != 443 ]; then
+      cat <<CADDY
+http://:${GATEWAY_PORT} {
+	handle /healthz {
+		${CADDY_HEALTH}
+	}
+	respond 404
+}
+CADDY
+    fi
+  } > "$1"
 }

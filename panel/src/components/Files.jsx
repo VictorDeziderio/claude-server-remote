@@ -22,7 +22,7 @@ const iconFor = (name) => {
 function Crumbs({ parts, go, embedded }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-0.5 text-sm">
-      <button type="button" onClick={() => go('')} title="/root" className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition hover:bg-accent ${parts.length === 0 ? 'text-foreground font-medium' : 'text-muted-foreground hover:text-foreground/80'}`}>
+      <button type="button" onClick={() => go('')} title="/root" aria-label="/root" className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition hover:bg-accent ${parts.length === 0 ? 'text-foreground font-medium' : 'text-muted-foreground hover:text-foreground/80'}`}>
         <Home className="h-3.5 w-3.5 text-primary" /> {!embedded && 'root'}
       </button>
       {parts.map((seg, i) => (
@@ -101,6 +101,11 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
   }, [load])
 
   const dirty = kind === 'file' && draft !== orig
+  // leaving the editor with unsaved edits (back, breadcrumb) asks first in the panel's modal
+  const leave = useCallback(async (p) => {
+    if (dirty && !(await ask(t('files.discardAsk', { name: file?.path || cur }), { yes: t('files.discard'), danger: true }))) return
+    go(p)
+  }, [dirty, ask, go, file, cur])
   const save = useCallback(async () => {
     if (!dirty) return
     setBusy('save')
@@ -180,10 +185,10 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
       <div className={`flex h-full min-h-0 flex-col rounded-lg bg-card border ${embedded ? '' : 'min-h-[60vh]'}`}>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
-            <Btn size="sm" onClick={() => go(parentOf(cur))}>
+            <Btn size="sm" onClick={() => leave(parentOf(cur))} title={t('common.back')}>
               <ArrowLeft className="h-3.5 w-3.5" /> {!embedded && t('common.back')}
             </Btn>
-            <Crumbs parts={parts} go={go} embedded={embedded} />
+            <Crumbs parts={parts} go={leave} embedded={embedded} />
             {dirty && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-300">{t('files.unsaved')}</span>}
             {!embedded && (
               <span className="font-mono text-xs text-muted-foreground">
@@ -207,6 +212,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
             <CodeEditor value={draft} onChange={setDraft} filename={file.path} onSave={save} />
           </Suspense>
         </div>
+        {confirmEl}
       </div>
     )
   }
@@ -235,7 +241,7 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
           <IconBtn onClick={() => setCreating('dir')} active={creating === 'dir'} title={t('files.newDir')}>
             <FolderPlus className="h-4 w-4" />
           </IconBtn>
-          <IconBtn onClick={load} title="atualizar">
+          <IconBtn onClick={load} title={t('common.refresh')}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </IconBtn>
         </div>
@@ -303,11 +309,11 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
               actions={
                 <>
                   {e.type === 'file' && !e.outside ? (
-                    <a href={api.fsDownloadUrl(full)} onClick={(ev) => ev.stopPropagation()} title="baixar" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+                    <a href={api.fsDownloadUrl(full)} onClick={(ev) => ev.stopPropagation()} title={t('files.download')} aria-label={t('files.download')} className={ACT}>
                       <Download className="h-3.5 w-3.5" />
                     </a>
                   ) : (
-                    <span aria-hidden="true" className="pointer-events-none rounded p-1 opacity-0">
+                    <span aria-hidden="true" className={`pointer-events-none opacity-0 ${ACT_BASE}`}>
                       <Download className="h-3.5 w-3.5" />
                     </span>
                   )}
@@ -317,8 +323,9 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
                       ev.stopPropagation()
                       setRenaming(e.name)
                     }}
-                    title="renomear"
-                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    title={t('files.rename')}
+                    aria-label={t('files.rename')}
+                    className={ACT}
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
@@ -328,8 +335,9 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
                       ev.stopPropagation()
                       setDeleting(e.name)
                     }}
-                    title="excluir"
-                    className="rounded p-1 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-300"
+                    title={t('files.delete')}
+                    aria-label={t('files.delete')}
+                    className={`${ACT_BASE} hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-300`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -344,21 +352,32 @@ export default function Files({ path: cur = '', onNavigate, onFlash, embedded = 
   )
 }
 
+// row action button (download / rename / delete): small on a mouse, a >= 40px target on a finger
+const ACT_BASE = 'inline-flex items-center justify-center rounded p-1 text-muted-foreground pointer-coarse:size-10'
+const ACT = `${ACT_BASE} hover:bg-accent hover:text-foreground`
+
+// A row of the listing. Its actions show on hover with a mouse; on a touch screen there is no
+// hover, so they stay visible (pointer-coarse).
 function Row({ onOpen, icon, name, right, actions, muted }) {
   return (
     <div
       role="button"
       tabIndex={0}
+      data-testid="file-row"
       onClick={onOpen}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') onOpen()
+        if (e.target !== e.currentTarget) return // keys typed on an action button are its own
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen()
+        }
       }}
       className={`group flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm transition hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${muted ? 'text-muted-foreground' : 'text-foreground'}`}
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{name}</span>
       {right}
-      {actions && <span className="flex items-center gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">{actions}</span>}
+      {actions && <span data-testid="row-actions" className="flex items-center gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">{actions}</span>}
     </div>
   )
 }

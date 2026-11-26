@@ -105,11 +105,21 @@ function pausedFlag(sess) {
   try { return fs.existsSync(pausedFlagPath(sess)); } catch { return false; }
 }
 
+// another existing project whose tmux session would be the SAME one as `name`'s: validName accepts '.',
+// sessionName turns it into '_' ("a.b" and "a_b" both -> claude-a_b), so two projects would share
+// one terminal/Claude and every action on one would hit the other. -> the clashing name | ''
+function sessionClash(name, except) {
+  const sess = sessionName(name);
+  return listProjects().find((p) => p !== name && p !== except && sessionName(p) === sess) || '';
+}
+
 // ---------- acoes ----------
 async function createProject(name, autoStartClaude, autoRemote) {
   if (!validName(name)) return { ok: false, msg: tr('srv.badNameHint') };
   const dir = path.join(cfg.PROJECTS_DIR, name);
   if (fs.existsSync(dir)) return { ok: false, msg: tr('srv.exists') };
+  const clash = sessionClash(name);
+  if (clash) return { ok: false, msg: tr('srv.sessionClash', { name: clash }) };
   fs.mkdirSync(dir, { recursive: true });
   await sh('git', ['-C', dir, 'init', '-q']);
   setProjConfig(name, { enabled: true, autoStartClaude: !!autoStartClaude, autoRemote: !!autoRemote });
@@ -157,6 +167,8 @@ async function renameProject(oldName, newName) {
   const newDir = path.join(cfg.PROJECTS_DIR, newName);
   if (!fs.existsSync(oldDir)) return { ok: false, msg: tr('srv.noFolder') };
   if (fs.existsSync(newDir)) return { ok: false, msg: tr('srv.projectExists', { name: newName }) };
+  const clash = sessionClash(newName, oldName);
+  if (clash) return { ok: false, msg: tr('srv.sessionClash', { name: clash }) };
   await killSession(oldName);
   try { fs.renameSync(oldDir, newDir); }
   catch (e) { return { ok: false, msg: tr('srv.renameFailed') + e.message }; }

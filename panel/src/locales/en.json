@@ -544,6 +544,8 @@
   "srv.bad2fa": "invalid 2FA code",
   "srv.sessionNotFound": "session not found",
   "srv.useLogout": "use \"sign out\" to end the current session",
+  "srv.panelSignedOut": "this panel session was signed out",
+  "srv.sessionClash": "the project \"{name}\" already uses the same terminal session ('.' and '_' count as the same character) — pick another name",
   "srv.sessionEnded": "session ended",
   "srv.notAFile": "not a file",
   "srv.tooBig": "file too big to edit here (>2MB) — use download",
@@ -668,6 +670,7 @@
   "srv.renamed": "renamed: {path}",
   "srv.uploadTooBig": "upload too big (>{mb}MB) or interrupted",
   "srv.uploaded": "uploaded: {path} ({size} bytes)",
+  "srv.uploadStalled": "upload stopped: no data for {s}s",
   "srv.uploadBroken": "upload interrupted",
   "srv.unknownLog": "unknown log",
   "srv.textTooLong": "text too long",
@@ -888,5 +891,12 @@
   "srv.acct.tokenRemoved": "token removed",
   "srv.acct.same": "\"{name}\" already uses \"{label}\"",
   "srv.acct.switched": "\"{name}\" now runs with \"{label}\" (session restarted)",
-  "srv.acct.switchedOff": "\"{name}\" will run with \"{label}\" when it is turned on"
+  "srv.acct.switchedOff": "\"{name}\" will run with \"{label}\" when it is turned on",
+  "files.discardAsk": "\"{name}\" has unsaved changes. Leave and discard them?",
+  "files.discard": "Discard",
+  "files.rename": "rename",
+  "files.delete": "delete",
+  "dash.projectPlaceholder": "my-project",
+  "dash.backupGit": "Backup (git)",
+  "chatlink.copyFailed": "Could not copy: the link is selected, copy it by hand"
 }

@@ -9,6 +9,7 @@
 // Usage: npm run build && node test/ui.test.mjs   (npm test runs it; no Chrome -> SKIP, but in CI it fails)
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
+import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,7 +25,9 @@ if (!CHROME || !chromium || !fs.existsSync(path.join(PANEL, 'dist', 'index.html'
 
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-ui-'))
 fs.mkdirSync(path.join(ROOT, 'projects', 'demo'), { recursive: true })
-const PORT = 7900 + Math.floor(Math.random() * 90), BASE = `http://127.0.0.1:${PORT}`
+// a port the OS says is free right now (listen on 0), instead of a random pick from a small range
+// that collided with other test servers now and then
+const PORT = await new Promise((resolve, reject) => { const s = net.createServer().once('error', reject).listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)) }) }), BASE = `http://127.0.0.1:${PORT}`
 const PASS = 'ui-test-only-password'
 // isolated tmux socket + no-op session script + fake `claude`: choosing an account restarts the
 // project's session and logging an account in starts `claude` — nothing real may run or be touched
@@ -104,6 +107,21 @@ try {
   // ---- Drawer "Configure project"
   const cfg = page.locator('button[title^="configure"]:visible').first()
   if (await cfg.count()) {
+    // the keys list loaded when the drawer opens answers LATE (after the reload done by "create"):
+    // that old answer must not replace the newer list
+    let releaseOld
+    const gate = new Promise((r) => { releaseOld = r; setTimeout(r, 15000) })
+    let keyCalls = 0
+    await page.route('**/api/chat/keys?*', async (route) => {
+      if (++keyCalls === 1) {
+        await gate
+        await new Promise((r) => setTimeout(r, 200))
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, keys: [{ id: 'stale1', label: 'STALE-KEY', role: 'owner', createdAt: new Date().toISOString() }] }) })
+      }
+      const r = await route.fetch()
+      await route.fulfill({ response: r })
+      releaseOld()
+    })
     await cfg.click()
     const drawer = page.locator('[data-slot="drawer"]')
     await drawer.waitFor({ timeout: 5000 })
@@ -124,6 +142,17 @@ try {
       const row = sec.locator('[data-testid="chatlink-key"]', { hasText: 'Guest UI' })
       await row.waitFor({ timeout: 5000 }).catch(() => {})
       ok('chat link: listed with its role', /limited/i.test(await row.innerText().catch(() => '')))
+      await page.waitForTimeout(600)
+      ok('chat link: a late answer of an older keys load is ignored', keyCalls >= 2 && !(await sec.getByText('STALE-KEY').count()) && (await row.count()) === 1, String(keyCalls))
+      await page.unroute('**/api/chat/keys?*')
+      // copy fails (no clipboard, execCommand refused): says so and leaves the link selected to copy by hand
+      await page.evaluate(() => {
+        try { Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('denied')) }, configurable: true }) } catch { /* ignore */ }
+        document.execCommand = () => false
+      })
+      await sec.getByRole('button', { name: /^copy$/i }).click()
+      ok('chat link: failed copy shows an error', await page.getByText(/could not copy/i).first().waitFor({ timeout: 3000 }).then(() => true).catch(() => false))
+      ok('chat link: failed copy selects the link for a manual copy', await sec.locator('[data-testid="chatlink-url"]').evaluate((el) => el === document.activeElement && el.selectionStart === 0 && el.selectionEnd === el.value.length && el.value.length > 0))
       await row.getByRole('button', { name: /revoke/i }).click()
       await page.locator('[role="dialog"]').last().getByRole('button', { name: /^revoke$/i }).click()
       await row.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
@@ -179,7 +208,64 @@ try {
     for (let i = 0; i < 20 && fs.readFileSync(path.join(ROOT, 'projects', 'demo', 'same.txt'), 'utf8') !== 'new'; i++) await page.waitForTimeout(150)
     ok('"Replace" overwrites the file', fs.readFileSync(path.join(ROOT, 'projects', 'demo', 'same.txt'), 'utf8') === 'new')
   }
+  // ---- leaving the editor with unsaved edits asks first (panel modal); Cancel keeps the edits
+  fs.writeFileSync(path.join(ROOT, 'projects', 'demo', 'edit.txt'), 'hello')
+  await page.goto(BASE + '/files/projects/demo/edit.txt')
+  const cm = page.locator('.cm-content')
+  await cm.waitFor({ timeout: 10000 })
+  await cm.click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' world')
+  await page.getByRole('button', { name: /^back$/i }).click()
+  ok('unsaved edits: leaving asks in the panel modal', await ask.waitFor({ timeout: 3000 }).then(() => true).catch(() => false) && !nativeDialog)
+  await ask.getByRole('button', { name: /cancel/i }).click()
+  await ask.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+  ok('unsaved edits: Cancel stays in the editor with the edits', page.url().endsWith('/files/projects/demo/edit.txt') && /hello world/.test(await cm.innerText()), page.url())
+  await page.locator('nav, main').getByRole('button', { name: 'demo' }).first().click() // breadcrumb
+  await ask.waitFor({ timeout: 3000 }).catch(() => {})
+  ok('unsaved edits: the breadcrumb asks too', (await ask.count()) === 1)
+  await ask.getByRole('button', { name: /discard/i }).click()
+  ok('unsaved edits: Discard leaves', await page.waitForURL(/\/files\/projects\/demo$/, { timeout: 5000 }).then(() => true).catch(() => false), page.url())
+  ok('unsaved edits: the file is not changed', fs.readFileSync(path.join(ROOT, 'projects', 'demo', 'edit.txt'), 'utf8') === 'hello')
+  // keyboard: Space opens a row too (role=button)
+  await page.locator('[data-testid="file-row"]', { hasText: 'edit.txt' }).focus()
+  await page.keyboard.press(' ')
+  ok('file row opens with Space', await page.waitForURL(/edit\.txt$/, { timeout: 5000 }).then(() => true).catch(() => false), page.url())
   await page.goto(BASE + '/dashboard')
+
+  // ---- phone (touch): row actions visible and big enough, editor at 16px, status bar by theme
+  {
+    const state = await page.context().storageState()
+    for (const scheme of ['light', 'dark']) {
+      const tctx = await browser.newContext({ storageState: state, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, colorScheme: scheme })
+      const tp = await tctx.newPage()
+      await tp.addInitScript(() => { try { localStorage.setItem('cr.theme', 'system') } catch { /* ignore */ } })
+      await tp.goto(BASE + '/files/projects/demo')
+      const bar = await tp.evaluate(() => document.querySelector('meta[name=apple-mobile-web-app-status-bar-style]')?.content)
+      ok(`status bar on ${scheme}: ${scheme === 'light' ? 'default (dark text)' : 'black-translucent'}`, bar === (scheme === 'light' ? 'default' : 'black-translucent'), bar)
+      if (scheme === 'light') {
+        ok('apple-touch-icon is the PNG and it exists', (await tp.evaluate(() => document.querySelector('link[rel=apple-touch-icon]')?.getAttribute('href'))) === '/apple-touch-icon.png' && (await tp.request.get(BASE + '/apple-touch-icon.png')).ok())
+        const row = tp.locator('[data-testid="file-row"]', { hasText: 'edit.txt' })
+        await row.waitFor({ timeout: 8000 })
+        const acts = await row.locator('[data-testid="row-actions"]').evaluate((box) => ({
+          opacity: getComputedStyle(box).opacity,
+          sizes: [...box.querySelectorAll('a, button')].map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)] }),
+          labels: [...box.querySelectorAll('a, button')].map((e) => e.getAttribute('aria-label')),
+        }))
+        ok('touch: row actions visible without hover', acts.opacity === '1', JSON.stringify(acts))
+        ok('touch: row actions are >= 40px targets', acts.sizes.length === 3 && acts.sizes.every(([w, h]) => w >= 40 && h >= 40), JSON.stringify(acts))
+        ok('row actions have aria-labels', acts.labels.every(Boolean), JSON.stringify(acts))
+        const ov = await tp.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)
+        ok('touch: files list has no horizontal overflow at 390px', ov)
+        await row.click()
+        const cm2 = tp.locator('.cm-content')
+        await cm2.waitFor({ timeout: 10000 })
+        const fz = await cm2.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))
+        ok(`touch: editor text is 16px (no iOS zoom on focus): ${fz}`, fz >= 16, String(fz))
+      }
+      await tctx.close()
+    }
+  }
 
   // ---- Settings > Update the panel (shown only with DEPLOY_WEBHOOK_URL)
   await page.goto(BASE + '/settings')

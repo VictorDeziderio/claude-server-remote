@@ -33,7 +33,7 @@ ensure_one() {  # $1 = project
   [ -f "$RUN_DIR/$sess.lock" ] && return 0
 
   load_proj_config "$name"
-  [ "$CFG_ENABLED" = "true" ] || return 0              # desligado -> continua desligado
+  [ "$CFG_ENABLED" = "true" ] || return 0              # off -> stays off
   # NEVER recreates the folder: a deleted project must stay deleted. There used to be a mkdir -p
   # here, and a terminal tab still open (or the watchdog in the middle of a deletion) brought
   # the deleted project back (bug of the "codigo" project, 2026-11-24). Who creates folders: the panel

@@ -7,7 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const cfg = require('./config');
-const { sh, validName, log } = require('./util');
+const { pipeline } = require('stream');
+const { sh, validName, log, sendStream } = require('./util');
 const { listProjects } = require('./projects-list');
 
 // backup.log has lines "[YYYY-MM-DD HH:MM:SS] ok    name: msg" / "WARN  name: ..." / "skip  name: ..."
@@ -78,8 +79,8 @@ function downloadConfig(res, file, full) {
     if (!/^config-[A-Za-z0-9_.-]+\.tgz$/.test(file)) { res.writeHead(400); return res.end(tr('srv.badName')); }
     const p = path.join(cfg.CONFIG_BACKUP_DIR, file);
     let st; try { st = fs.statSync(p); } catch { res.writeHead(404); return res.end(tr('srv.notFound')); }
-    res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': st.size, 'Content-Disposition': `attachment; filename="${file}"`, 'Cache-Control': 'no-store' });
-    return fs.createReadStream(p).pipe(res);
+    if (!st.isFile()) { res.writeHead(404); return res.end(tr('srv.notFound')); }
+    return sendStream(res, p, { headers: { 'Content-Type': 'application/gzip', 'Content-Length': st.size, 'Content-Disposition': `attachment; filename="${file}"`, 'Cache-Control': 'no-store' } });
   }
   // +PID: same reason as in backup.sh (found by @qa 2026-09-28) -- avoids a name collision if
   // two generations land in the same second
@@ -91,7 +92,8 @@ function downloadConfig(res, file, full) {
   args.push('.claude', '.claude.json', '.claude-accounts');
   res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'no-store' });
   const tar = spawn('tar', args, { cwd: cfg.HOME });
-  tar.stdout.pipe(res);
+  // pipeline, not .pipe(): an error on either side ends the response instead of an uncaught 'error'
+  pipeline(tar.stdout, res, () => {});
   tar.stderr.on('data', () => {});
   tar.on('error', (e) => { log('error', 'tar', { err: e.message }); res.end(); });
   res.on('close', () => { try { tar.kill(); } catch { /* */ } });

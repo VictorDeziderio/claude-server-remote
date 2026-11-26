@@ -195,6 +195,36 @@ for (const f of walk(path.join(PANEL, 'src'))) {
   })
 }
 eq('no component declared inside another component', innerComp, [])
+// texts go through i18n: no hard-coded Portuguese in JSX text or in aria-label/placeholder/title/alt
+// (accented letters or common words are enough to catch it; "atualizar"/"fechar" slipped through before)
+{
+  const PT = /[ãõçáéíóúâêôàÃÕÇÁÉÍÓÚÂÊÔ]|\b(atualizar|baixar|renomear|excluir|fechar|salvar|cancelar|voltar|enviar|copiar|abrir|arquivos?|pasta|projetos?|nenhum|carregando|erro|sim|não|meu|minha)\b/i
+  const hard = []
+  for (const f of walk(path.join(PANEL, 'src')).filter((x) => x.endsWith('.jsx'))) {
+    const src = fs.readFileSync(f, 'utf8').replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
+    src.split('\n').forEach((l, i) => {
+      if (/^\s*\/\//.test(l)) return
+      const code = l.replace(/\s\/\/ .*$/, '')
+      for (const m of code.matchAll(/\b(?:aria-label|placeholder|title|alt)="([^"]*)"/g)) if (PT.test(m[1])) hard.push(`${path.basename(f)}:${i + 1} ${m[0]}`)
+      for (const m of code.matchAll(/>([^<>{}]*[A-Za-zÀ-ú][^<>{}]*)</g)) if (PT.test(m[1])) hard.push(`${path.basename(f)}:${i + 1} >${m[1].trim()}<`)
+    })
+  }
+  eq('no hard-coded Portuguese in JSX (use t())', hard, [])
+}
+// the PWA manifest is in English and lists PNG icons (192 + 512) that exist
+{
+  const man = JSON.parse(fs.readFileSync(path.join(PANEL, 'public', 'manifest.webmanifest'), 'utf8'))
+  const pngs = man.icons.filter((i) => i.type === 'image/png')
+  eq('manifest lists PNG icons 192x192 and 512x512', ['192x192', '512x512'].every((s) => pngs.some((i) => i.sizes === s && i.purpose.includes('any'))), true)
+  eq('manifest PNG icons exist in public/', pngs.filter((i) => !fs.existsSync(path.join(PANEL, 'public', i.src))).map((i) => i.src), [])
+  eq('manifest description has no Portuguese', /[ãõçáéíóúâêô]|\bpainel|arquivos|projetos\b/i.test(man.description), false)
+  const idx = fs.readFileSync(path.join(PANEL, 'index.html'), 'utf8')
+  eq('index.html apple-touch-icon is the PNG', /<link rel="apple-touch-icon"[^>]*href="\/apple-touch-icon\.png"/.test(idx), true)
+  eq('index.html: theme-init.js runs after the status-bar meta (it sets it)', idx.indexOf('/theme-init.js') > idx.indexOf('apple-mobile-web-app-status-bar-style'), true)
+  const chat = fs.readFileSync(path.join(PANEL, 'chat.html'), 'utf8')
+  eq('chat.html shares /theme-init.js (data-system), after the status-bar meta', /<script src="\/theme-init\.js" data-system><\/script>/.test(chat) && chat.indexOf('/theme-init.js') > chat.indexOf('apple-mobile-web-app-status-bar-style'), true)
+  eq('status bar: default on light, black-translucent on dark', [T.STATUS_BAR.light, T.STATUS_BAR.dark], ['default', 'black-translucent'])
+}
 eq('chaves usadas no codigo existem no en.json', [...used].filter((k) => !(k in (locs.en || {}))), [])
 
 // server notices translated in the browser (lib/notice.js): key + vars, English as the fallback
@@ -209,5 +239,179 @@ eq('chaves usadas no codigo existem no en.json', [...used].filter((k) => !(k in 
   eq('alerta (SSE) com alertKind', N.noticeText({ kind: 'alert', alertKind: 'disk', level: 'warn', msg: 'disk at 93% used', key: 'srv.diskFull', vars: { pct: 93 } }, tOrPt).body, 'disco em 93% de uso')
   eq('alerta de tipo desconhecido: mostra o tipo e a msg', N.noticeLine({ kind: 'alert', level: 'info', alertKind: 'custom', msg: 'hello' }, tOrPt), 'custom — hello')
 }
+// ---------------------------------------------------------------- server modules
+// the server modules read their paths from the environment when first loaded (server/config.js):
+// a throwaway HOME, so nothing here ever touches the real ~/.claude (sessions store, logs)
+{
+  const os = await import('node:os')
+  const H = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-unit-home-'))
+  process.env.HOME = H
+  for (const k of ['PROJECTS_DIR', 'PANEL_CONFIG', 'PANEL_SECRET_FILE']) delete process.env[k]
+  process.on('exit', () => { try { fs.rmSync(H, { recursive: true, force: true }) } catch { /* */ } })
+}
+// ---------------------------------------------------------------- server: file streams
+console.log('\n== server: sendStream (a file that passed stat but cannot be opened must not crash the panel)')
+{
+  const req = (await import('node:module')).createRequire(import.meta.url)
+  const http = await import('node:http')
+  const os = await import('node:os')
+  const U = req('../server/util.js')
+  const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-unit-stream-'))
+  const F = path.join(TMP, 'f.txt')
+  const reset = () => { fs.rmSync(F, { recursive: true, force: true }); fs.writeFileSync(F, 'hello world') }
+  // each route does what the real handlers do: stat succeeds, THEN something happens to the file
+  const srv = http.createServer((rq, res) => {
+    const u = new URL(rq.url, 'http://x')
+    const st = fs.statSync(F) // the caller's check
+    const headers = { 'Content-Type': 'text/plain', 'Content-Length': st.size }
+    if (u.pathname === '/gone') fs.rmSync(F)
+    if (u.pathname === '/dir') { fs.rmSync(F); fs.mkdirSync(F) }
+    if (u.pathname === '/noperm') fs.chmodSync(F, 0)
+    if (u.pathname === '/range') return U.sendStream(res, F, { status: 206, headers: { 'Content-Length': 5 }, start: 6, end: 10 })
+    U.sendStream(res, F, { headers })
+  })
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r))
+  const base = `http://127.0.0.1:${srv.address().port}`
+  const get = async (p) => { const r = await fetch(base + p); return [r.status, await r.text()] }
+  reset(); eq('normal file streamed with its headers', await get('/ok'), [200, 'hello world'])
+  reset(); eq('byte range', await get('/range'), [206, 'world'])
+  reset(); eq('deleted between stat and open -> 404, no crash', (await get('/gone'))[0], 404)
+  reset(); eq('swapped for a directory between stat and open -> 404, no crash', (await get('/dir'))[0], 404)
+  reset()
+  if (process.getuid && process.getuid() === 0) console.log('  SKIP no read permission -> 500 (running as root: chmod 000 does not block reading)')
+  else eq('no read permission -> 500, no crash', (await get('/noperm'))[0], 500)
+  reset(); eq('server still alive afterwards', await get('/ok'), [200, 'hello world'])
+  srv.close()
+  fs.rmSync(TMP, { recursive: true, force: true })
+
+  // repo check: server code never pipes a stream straight into a response (no 'error' handler there;
+  // one failed open took the whole panel down). Use util.sendStream (files) or stream.pipeline.
+  const SRV = [path.join(PANEL, 'server.js'), ...fs.readdirSync(path.join(PANEL, 'server')).filter((f) => f.endsWith('.js')).map((f) => path.join(PANEL, 'server', f))]
+  const bare = []
+  for (const f of SRV) {
+    fs.readFileSync(f, 'utf8').split('\n').forEach((l, i) => {
+      const code = l.replace(/\/\/.*$/, '')
+      if (/\.pipe\(\s*res\b/.test(code) || /createReadStream\([^)]*\)\s*\.pipe\(/.test(code)) bare.push(path.basename(f) + ':' + (i + 1))
+    })
+  }
+  eq('no bare .pipe(res) / createReadStream().pipe() in panel/server', bare, [])
+  eq('server.js lifts Node\'s 300 s requestTimeout (big slow uploads)', /server\.requestTimeout\s*=\s*REQUEST_TIMEOUT_MS/.test(fs.readFileSync(path.join(PANEL, 'server.js'), 'utf8')) && /REQUEST_TIMEOUT_MS = [^;]*3600/.test(fs.readFileSync(path.join(PANEL, 'server.js'), 'utf8')), true)
+}
+
+console.log('\n== server: streamUpload (async writes, backpressure, inactivity timeout)')
+{
+  const req = (await import('node:module')).createRequire(import.meta.url)
+  const os = await import('node:os')
+  const { PassThrough } = await import('node:stream')
+  const Fm = req('../server/files.js')
+  const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'cr-unit-upload-'))
+  const temps = () => fs.readdirSync(TMP).filter((f) => f.endsWith('.tmp'))
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  // 8 MB in 64 KB chunks: more than the write stream's buffer, so backpressure really kicks in
+  {
+    const body = new PassThrough()
+    const p = Fm.streamUpload(path.join(TMP, 'big.bin'), body, false)
+    const chunk = Buffer.alloc(64 * 1024, 7)
+    for (let i = 0; i < 128; i++) if (!body.write(chunk)) await new Promise((r) => body.once('drain', r))
+    body.end()
+    const r = await p
+    eq('upload: whole body written, size reported', [r.ok, r.size, fs.statSync(path.join(TMP, 'big.bin')).size], [true, 8 * 1024 * 1024, 8 * 1024 * 1024])
+    eq('upload: no temp file left', temps(), [])
+  }
+  {
+    fs.writeFileSync(path.join(TMP, 'keep.txt'), 'original')
+    const body = new PassThrough()
+    const p = Fm.streamUpload(path.join(TMP, 'keep.txt'), body, false)
+    body.end('new content')
+    const r = await p
+    eq('upload: existing file without overwrite -> EXISTS, original kept', [r.ok, r.code, fs.readFileSync(path.join(TMP, 'keep.txt'), 'utf8')], [false, 'EXISTS', 'original'])
+    const body2 = new PassThrough()
+    const p2 = Fm.streamUpload(path.join(TMP, 'keep.txt'), body2, true)
+    body2.end('new content')
+    eq('upload: overwrite=1 replaces it', [(await p2).ok, fs.readFileSync(path.join(TMP, 'keep.txt'), 'utf8')], [true, 'new content'])
+    eq('upload: no temp file left (EXISTS / overwrite)', temps(), [])
+  }
+  {
+    // client stops sending (no end, no close): fails after the idle time, temp file removed, slot freed
+    const body = new PassThrough()
+    const p = Fm.streamUpload(path.join(TMP, 'stalled.bin'), body, false, { idleMs: 300 })
+    body.write(Buffer.from('some data'))
+    await sleep(100)
+    eq('upload: temp file exists while receiving', temps().length, 1)
+    const r = await Promise.race([p, sleep(3000).then(() => ({ timeout: true }))])
+    eq('upload: no data for idleMs -> fails with 408', [r.ok, r.status], [false, 408])
+    eq('upload: stalled upload leaves no temp file and no final file', [temps(), fs.existsSync(path.join(TMP, 'stalled.bin'))], [[], false])
+  }
+  {
+    // data that keeps coming slowly (each gap shorter than idleMs) is never cut
+    const body = new PassThrough()
+    const p = Fm.streamUpload(path.join(TMP, 'slow.bin'), body, false, { idleMs: 300 })
+    for (let i = 0; i < 6; i++) { body.write(Buffer.from('x')); await sleep(150) }
+    body.end()
+    eq('upload: slow but steady body is not cut by the inactivity timeout', (await p).ok && fs.readFileSync(path.join(TMP, 'slow.bin'), 'utf8'), 'xxxxxx')
+  }
+  {
+    // client goes away mid-body: fails, temp file removed
+    const body = new PassThrough()
+    const p = Fm.streamUpload(path.join(TMP, 'aborted.bin'), body, false)
+    body.write(Buffer.from('partial'))
+    await sleep(50)
+    body.destroy()
+    const r = await p
+    eq('upload: aborted body -> failure, nothing left behind', [r.ok, temps(), fs.existsSync(path.join(TMP, 'aborted.bin'))], [false, [], false])
+  }
+  {
+    // over MAX_UPLOAD: stops writing but drains the body to the end, then answers "too big"
+    const body = new PassThrough()
+    const p = Fm.streamUpload(path.join(TMP, 'huge.bin'), body, false)
+    const chunk = Buffer.alloc(1024 * 1024)
+    let drained = true
+    for (let i = 0; i < Fm.MAX_UPLOAD / chunk.length + 3; i++) if (!body.write(chunk)) await new Promise((r) => body.once('drain', r))
+    body.end()
+    const r = await Promise.race([p, sleep(20000).then(() => ({ timeout: true }))])
+    drained = body.readableEnded
+    eq('upload: over the limit -> "too big" after the body drained, nothing kept', [r.ok, /too big|MB/i.test(r.msg || ''), drained, temps(), fs.existsSync(path.join(TMP, 'huge.bin'))], [false, true, true, [], false])
+  }
+  eq('upload: default inactivity timeout is 120 s', Fm.UPLOAD_IDLE_MS, 120000)
+  fs.rmSync(TMP, { recursive: true, force: true })
+}
+
+// ---------------------------------------------------------------- server: session connections
+console.log('\n== server: revoking a panel session closes its open connections')
+{
+  const req = (await import('node:module')).createRequire(import.meta.url)
+  const S = req('../server/sessions.js')
+  const a = S.create('127.0.0.1', 'unit'), b = S.create('127.0.0.1', 'unit')
+  const closed = []
+  S.track(a.id, () => closed.push('a-term'))
+  S.track(a.id, () => closed.push('a-sse'))
+  const untrackB = S.track(b.id, () => closed.push('b-sse'))
+  const gone = S.track(b.id, () => closed.push('b-gone'))
+  gone() // a connection that ended by itself is not closed again
+  eq('connections tracked per session', [S.openConnections(a.id), S.openConnections(b.id)], [2, 1])
+  S.revoke(a.id)
+  eq('revoke closes ALL of that session\'s connections (and nothing else)', closed, ['a-term', 'a-sse'])
+  eq('registry forgets the revoked session', S.openConnections(a.id), 0)
+  const c = S.create('127.0.0.1', 'unit')
+  S.track(c.id, () => closed.push('c-term'))
+  S.revokeAll(c.id)
+  eq('revokeAll closes the other sessions\' connections, keeps the current one', closed, ['a-term', 'a-sse', 'b-sse'])
+  eq('current session keeps its connection', S.openConnections(c.id), 1)
+  untrackB()
+  S.revoke(c.id)
+  eq('a closer that throws does not stop the others', (() => { const d = S.create('x', 'y'); const seen = []; S.track(d.id, () => { throw new Error('x') }); S.track(d.id, () => seen.push(1)); S.revoke(d.id); return seen })(), [1])
+}
+
+// ---------------------------------------------------------------- server: OAuth login log
+console.log('\n== server: Claude login never logs the pasted code')
+{
+  const req = (await import('node:module')).createRequire(import.meta.url)
+  const L = req('../server/login.js')
+  L._setSentCode('secret-oauth-code-123')
+  const masked = L._safeScreen(' Paste code here if prompted > secret-oauth-code-123\n What\'s new\n last input: secret-oauth-code-123')
+  eq('code masked everywhere on the screen', [masked.includes('secret-oauth-code-123'), masked.includes('[code hidden]'), masked.includes('[code prompt hidden]'), masked.includes("What's new")], [false, true, true, true])
+  L._setSentCode('')
+}
+
 console.log(`\n${passes} PASS, ${fails} FAIL${fails ? '' : ' — TUDO OK'}`)
 process.exit(fails ? 1 : 0)

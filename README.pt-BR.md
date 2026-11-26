@@ -23,8 +23,9 @@ notificações push. Os projetos e o login do Claude ficam num volume, então na
   login necessário, limite de uso, reinícios em loop).
 - **Continua sozinho depois do limite de uso:** quando um projeto bate o limite do plano, o painel espera
   a renovação e digita `continue` na sessão — só se ninguém tiver digitado nada e a tela estiver parada.
-- **Atualiza sem cortar o trabalho:** tarefas interrompidas por um reinício continuam sozinhas, e
-  Configurações → *Atualizar o painel* (com `DEPLOY_WEBHOOK_URL`) pode esperar todos os projetos pararem.
+- **Atualiza sem cortar o trabalho:** Configurações → *Atualizar o painel* (com `DEPLOY_WEBHOOK_URL`) pode
+  esperar todos os projetos pararem. Uma tarefa cortada por um reinício só continua sozinha nos projetos
+  com modo de sessão *continue* ou *pinned* (o padrão, *new*, abre uma conversa nova depois do reinício).
 - **Claude Code sempre atualizado:** o painel confere o npm a cada 6 horas e instala as versões novas
   (volta para a anterior se a nova não abrir). Interruptor em Configurações; `CLAUDE_AUTO_UPDATE=0` desliga.
 - **Disco por projeto:** veja quanto cada projeto e cada cópia de trabalho dos agentes ocupa e remova
@@ -84,6 +85,42 @@ O idioma muda em **Configurações → Idioma**.
 Tudo o que você quer guardar precisa estar dentro de `/root` (o volume): projetos, login do Claude
 (`~/.claude`), configurações do painel e backups. O resto da imagem é recriado a cada deploy.
 
+O `docker compose` monta a imagem localmente a partir deste repositório (não há imagem pronta publicada).
+
+### Arquivo de segredos
+
+Em vez do ambiente (alguns painéis de hospedagem mostram o ambiente no log do build), os segredos podem
+ficar em **`/root/.devbox-secrets.env`** no volume. O `start.sh` lê o arquivo a cada início, ele vale mais
+que o ambiente, e só estas chaves são usadas: `PANEL_LOGIN`, `PANEL_PASSWORD`, `GH_TOKEN`,
+`ANTHROPIC_ADMIN_KEY`, `DEPLOY_WEBHOOK_URL`. Um `CHAVE=valor` por linha; aspas em volta e finais de
+linha do Windows são removidos; o arquivo nunca é executado e fica só para o `root` (600).
+
+```bash
+docker compose exec claude sh -c 'printf "PANEL_PASSWORD=%s\n" "uma-senha-longa-e-aleatoria" > /root/.devbox-secrets.env'
+docker compose restart claude
+```
+
+### Atualizar
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+O volume (projetos, login do Claude, configurações do painel) é mantido. As sessões tmux reiniciam
+junto com o container; veja acima o que continua sozinho conforme o modo de sessão.
+
+### Restaurar
+
+- **Só a configuração** (login do Claude, configurações do painel, sessões): baixe um pacote de configuração
+  em **Backup** (ou pegue um de `/root/.claude-backups/config-*.tgz`) e, no volume novo:
+  `docker compose cp config-XXXX.tgz claude:/tmp/ && docker compose exec claude tar xzf /tmp/config-XXXX.tgz -C /root && docker compose restart claude`.
+- **Projetos:** cada projeto com `origin` é enviado pelo backup de hora em hora; faça `git clone` de novo
+  em `/root/projects/<nome>`.
+- **Volume inteiro** (com `VOLUME_BACKUP_DIR`): cada cópia em `VOLUME_BACKUP_DIR/<data>/` (ou `latest`)
+  é uma pasta completa de `/root`. Pare o container, copie de volta para o volume
+  (ex.: `rsync -aH --delete <backup>/latest/ <caminho do volume>/`) e inicie de novo.
+
 ## Como funciona
 
 ```
@@ -139,7 +176,8 @@ cd panel
 npm install
 npm run dev        # Vite na :5173, com proxy de /api e /ws para `node server.js` na :7001 (precisa de tmux)
 npm run check && npm run build && npm test
-cd .. && bash tests/claude-loop.test.sh && bash tests/gateway.test.sh && bash tests/backup-volume.test.sh && shellcheck -S error *.sh tests/*.sh
+cd .. && for t in claude-loop gateway backup-volume backup-git start repo-hygiene; do bash "tests/$t.test.sh" || break; done
+shellcheck -S error *.sh tests/*.sh
 ```
 
 - Painel: React + Tailwind v4 + shadcn/ui + xterm.js + CodeMirror, com Vite. Servidor: Node

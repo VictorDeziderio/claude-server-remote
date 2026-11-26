@@ -544,6 +544,8 @@
   "srv.bad2fa": "código 2FA inválido",
   "srv.sessionNotFound": "sessão não encontrada",
   "srv.useLogout": "use \"sair\" para encerrar a sessão atual",
+  "srv.panelSignedOut": "esta sessão do painel foi encerrada",
+  "srv.sessionClash": "o projeto \"{name}\" já usa a mesma sessão de terminal ('.' e '_' contam como o mesmo caractere) — escolha outro nome",
   "srv.sessionEnded": "sessão encerrada",
   "srv.notAFile": "não é um arquivo",
   "srv.tooBig": "arquivo muito grande para editar aqui (>2MB) — use o download",
@@ -668,6 +670,7 @@
   "srv.renamed": "renomeado: {path}",
   "srv.uploadTooBig": "upload muito grande (>{mb}MB) ou interrompido",
   "srv.uploaded": "enviado: {path} ({size} bytes)",
+  "srv.uploadStalled": "upload parado: nenhum dado por {s}s",
   "srv.uploadBroken": "upload interrompido",
   "srv.unknownLog": "log desconhecido",
   "srv.textTooLong": "texto muito longo",
@@ -888,5 +891,12 @@
   "srv.acct.tokenRemoved": "token removido",
   "srv.acct.same": "\"{name}\" já usa \"{label}\"",
   "srv.acct.switched": "\"{name}\" agora roda com \"{label}\" (sessão reiniciada)",
-  "srv.acct.switchedOff": "\"{name}\" vai rodar com \"{label}\" quando for ligado"
+  "srv.acct.switchedOff": "\"{name}\" vai rodar com \"{label}\" quando for ligado",
+  "files.discardAsk": "\"{name}\" tem alterações não salvas. Sair e descartar?",
+  "files.discard": "Descartar",
+  "files.rename": "renomear",
+  "files.delete": "excluir",
+  "dash.projectPlaceholder": "meu-projeto",
+  "dash.backupGit": "Backup (git)",
+  "chatlink.copyFailed": "Não deu para copiar: o link está selecionado, copie à mão"
 }

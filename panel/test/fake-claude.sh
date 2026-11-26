@@ -29,7 +29,7 @@ do_login() {
     cls; echo " Browser didn't open? Use the URL below to sign in (c to copy)"
     echo "https://claude.ai/oauth/authorize?code=true&client_id=abc&state=__LONG__"
     printf " Paste code here if prompted > "; read -r code
-    [ "$code" = "good-code" ] && break
+    LAST_CODE="$code"; [ "$code" = "good-code" ] && break
     echo " OAuth error: Invalid code"; sleep 600; exit 1
   done
   mkdir -p "$CFG"; echo '{"ok":1}' > "$CFG/.credentials.json"
@@ -51,5 +51,5 @@ CUR=0 menu terminal " Use Claude Code's terminal setup?\n For the optimal coding
   "1. Yes, use recommended settings" "2. No, maybe later with /terminal-setup"
 CUR=0 menu trust " Accessing workspace:\n $PWD\n Quick safety check: Is this a project you created or one you trust?" "No, exit" "Yes, I trust this folder"
 CUR=0 menu bypass "  WARNING: Claude Code running in Bypass Permissions mode\n  By proceeding, you accept all responsibility" "No, exit" "Yes, I accept"
-cls; printf " What's new in 9.9.9\n  • a brand-new screen the panel does not know yet\n  (tap the big button)\n"; wait_enter; echo "unknown-passed" >> "$PICKS"
+cls; printf " What's new in 9.9.9\n  • a brand-new screen the panel does not know yet\n  (tap the big button)\n  last input: %s\n" "$LAST_CODE"; wait_enter; echo "unknown-passed" >> "$PICKS"
 repl

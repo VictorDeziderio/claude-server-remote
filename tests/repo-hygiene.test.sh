@@ -15,5 +15,13 @@ pt="$(git grep -nIP '(//|#|/\*|^\s*\*).*([ãõçáéíóúâêô]|\b(nao|sessao|
   '*.sh' '*.js' '*.mjs' '*.cjs' '*.jsx' '*.css' Dockerfile tmux.conf .env.example .dockerignore \
   ':!panel/src/locales' ':!tests/repo-hygiene.test.sh' | grep -vE "pt-BR|'pt'|Español" || true)"
 ok "code comments are in English" "$([ -z "$pt" ] && echo 0 || echo 1)" "$pt"
+# messages in English too: ANY line (echo/say/log/alert/ok texts, usage errors, JSON notes) of the
+# shell scripts, the Dockerfile and the shipped config files. Simple heuristics: Portuguese accents
+# or a short list of common Portuguese words. User-facing translations live only in the locale
+# files (panel/src/locales/*.json), which are not scanned here.
+ptmsg="$(git grep --untracked -nIiP '[ãõçáéíóúâêôà]|\b(nao|sessao|painel|projeto|projetos|pasta|arquivo|tentativa|binario|ausente|erro|responde|padrao|dominio|valido|recebeu|ligado|desligado|apagado|pausado|automatico|comando|segundos|usuario|voce|senha|enviado|falhou|aviso|defina|forte)\b' -- \
+  '*.sh' Dockerfile docker-compose.yml .env.example panel.json managed-settings.json tmux.conf \
+  ':!panel/src/locales' ':!tests/repo-hygiene.test.sh' | grep -vE 'pt-BR' || true)"
+ok "shell/Dockerfile messages are in English" "$([ -z "$ptmsg" ] && echo 0 || echo 1)" "$ptmsg"
 echo "$passes PASS, $fails FAIL"
 [ "$fails" = 0 ]

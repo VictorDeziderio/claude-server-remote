@@ -57,10 +57,13 @@ const BASE = `http://127.0.0.1:${srv.address().port}`
 // saved under OTHER ids (the server folds the parts of one reply into one message)
 const SAVED = {}
 let runMsgs = []
+// conversations with a run in progress (after a send, until "done"): their stream stays open;
+// any other one is idle and, like the real server, its stream answers "done" at once
+const activeRuns = new Set()
 const save = (id, msgs) => { SAVED[id] = [...(SAVED[id] || []), ...msgs.map((m) => ({ ...m, id: 'saved-' + m.id }))] }
 const push = (event, data) => {
   if (event === 'message') runMsgs.push(data)
-  if (event === 'done') { save(data.id, runMsgs); runMsgs = [] }
+  if (event === 'done') { save(data.id, runMsgs); runMsgs = []; activeRuns.delete(data.id) }
   for (const res of sse) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
 }
 const endStreams = () => { for (const res of sse) res.end(); sse.clear() }
@@ -135,6 +138,7 @@ async function mockApi(page) {
       if (b.text === 'too many please') return json({ ok: false, msg: 'Too many runs in this project' }, 429)
       if (b.text === 'revoked please') return json({ ok: false, msg: 'bad key' }, 401)
       runMsgs = [{ id: 'sent-' + calls.length, role: 'user', ts: Date.now(), text: b.text || '', tools: [], attachments: [] }]
+      activeRuns.add(b.id || 'new1')
       return json({ ok: true, id: b.id || 'new1' })
     }
     if (p === 'stop') return json({ ok: true })
@@ -151,6 +155,7 @@ async function mockApi(page) {
         if (!SAVED.c2) save('c2', [{ id: 'r2', role: 'assistant', ts: NOW - 30e3, text: 'Running them now.', tools: [{ name: 'Bash', summary: 'npm test', ok: true }], attachments: [] }, { id: 'r3', role: 'assistant', ts: NOW, text: 'All 12 tests pass.', tools: [], attachments: [] }])
         return route.fulfill({ status: 200, contentType: 'text/event-stream', body: ev('message', { id: 'r2', role: 'assistant', ts: NOW - 30e3, text: 'Running them now.', tools: [{ name: 'Bash', summary: 'npm test', ok: true }], attachments: [] }) + ev('delta', { text: 'All 12 tests pass.' }) + ev('message', { id: 'r3', role: 'assistant', ts: NOW, text: 'All 12 tests pass.', tools: [], attachments: [] }) + ev('done', { id: 'c2' }) })
       }
+      if (!activeRuns.has(q.get('id'))) return route.fulfill({ status: 200, contentType: 'text/event-stream', body: `event: done\ndata: ${JSON.stringify({ id: q.get('id') })}\n\n` })
       return route.continue()
     }
     return json({ ok: false }, 404)
@@ -226,6 +231,15 @@ try {
   ok('list header shows the project', await page.getByTestId('list-header').getByText('demo').isVisible())
   ok('list loads 20 first', (await rows.count()) === 20, String(await rows.count()))
   ok('running conversation shows the dot', (await page.locator('[data-id="c2"] [data-testid="running-dot"]').count()) === 1)
+  // a refresh asked while the list is loading is not dropped: it runs right after
+  {
+    const n = () => calls.filter((c) => c.p === 'conversations' && !c.q.before).length
+    const before = n()
+    await page.evaluate(() => { document.dispatchEvent(new Event('visibilitychange')); document.dispatchEvent(new Event('visibilitychange')) })
+    ok('list: a refresh asked during a load runs after it', await waitFor(() => n() === before + 2), `${before} -> ${n()}`)
+    await page.waitForTimeout(200)
+    ok('list: still 20 rows after the refreshes', (await rows.count()) === 20, String(await rows.count()))
+  }
   let o = await noOverflow(page)
   ok('list: no horizontal overflow at 390px', o.ok, JSON.stringify(o))
   ok('header pads the top safe area', await safeArea(page, '[data-testid="list-header"]', 'top'))
@@ -248,6 +262,7 @@ try {
   const bubbles = page.locator('[data-testid="bubble"]')
   await bubbles.first().waitFor({ timeout: 8000 })
   ok('conversation opens with the newest 50 messages', (await bubbles.count()) === 50, String(await bubbles.count()))
+  ok('an idle conversation (running=false in the list) still attaches to the live stream', await waitFor(() => calls.some((c) => c.p === 'stream' && c.q.id === 'c1')))
   ok('URL keeps the place (#/c/<id>)', page.url().endsWith('#/c/c1'), page.url())
   const msgBox = page.getByTestId('messages')
   ok('starts scrolled to the bottom', await waitFor(() => msgBox.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 5)))
@@ -344,6 +359,18 @@ try {
   cb = await page.getByTestId('composer').boundingBox()
   ok('with the keyboard open the composer sits right above it', cb && Math.abs(cb.y + cb.height - 500) <= 1, JSON.stringify(cb))
   ok('keyboard open: bottom safe-area padding is dropped', await page.evaluate(() => document.documentElement.dataset.kb === '1' && getComputedStyle(document.querySelector('[data-testid="composer"]')).paddingBottom === '0px'))
+  // iOS: the layout viewport keeps its height, only the visible area (--app-h) shrinks. A toast
+  // must stay inside the visible app box, not behind the keyboard.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.waitForTimeout(250)
+  await page.evaluate(() => { document.documentElement.style.setProperty('--app-h', '400px'); window.dispatchEvent(new CustomEvent('chat-toast', { detail: 'kb toast' })) })
+  {
+    const tb = await page.getByTestId('toast').filter({ hasText: 'kb toast' }).boundingBox().catch(() => null)
+    const app = await page.locator('.chat-app').boundingBox()
+    ok('toast sits inside the visible app box when the keyboard shrinks it', tb && app && app.height <= 401 && tb.y >= app.y && tb.y + tb.height <= app.y + app.height, JSON.stringify({ tb, app }))
+  }
+  await page.evaluate(() => window.dispatchEvent(new Event('resize'))) // back to the real visible height
+  await page.waitForTimeout(100)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.waitForTimeout(250)
 
@@ -384,7 +411,19 @@ try {
   await page.locator('[data-id="c2"]').click()
   ok('running conversation: replayed messages + text end in the final message', await waitFor(async () => await page.getByText('All 12 tests pass.').isVisible().catch(() => false) && await page.getByText('Running them now.').isVisible().catch(() => false)))
   ok('running conversation: the replayed text is not left as a duplicate', (await page.getByText('All 12 tests pass.').count()) === 1 && !(await page.getByTestId('bubble-live').count()))
-  await page.getByTestId('back-btn').click()
+  // leaving with an upload still running: the upload is aborted and the preview URL freed
+  {
+    await page.evaluate(() => { window.__revoked = 0; const orig = URL.revokeObjectURL.bind(URL); URL.revokeObjectURL = (u) => { window.__revoked++; return orig(u) } })
+    let aborted = false
+    const onFail = (r) => { if (/\/chat-api\/upload/.test(r.url())) aborted = true }
+    page.on('requestfailed', onFail)
+    await page.getByTestId('file-photos').setInputFiles({ name: 'leave.png', mimeType: 'image/png', buffer: PNG })
+    await page.getByTestId('attach-chip').waitFor({ timeout: 3000 }).catch(() => {})
+    await page.getByTestId('back-btn').click()
+    ok('leaving the conversation aborts the running upload', await waitFor(() => aborted))
+    ok('leaving the conversation frees the image preview (revokeObjectURL)', await page.evaluate(() => window.__revoked >= 1))
+    page.off('requestfailed', onFail)
+  }
 
   // ---- new conversation
   await page.getByTestId('new-chat').click()

@@ -12,9 +12,17 @@ const path = require('path');
 const ALLOWED = new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'LS', 'TodoWrite']);
 const PATH_KEYS = ['file_path', 'notebook_path', 'path'];
 const WRITERS = new Set(['Write', 'Edit', 'MultiEdit']);
-// files that make the NEXT Claude/git run execute something (settings hooks, MCP servers, git hooks):
-// writing them from a limited link would turn file access into running commands
-const PROTECTED = [/(^|\/)\.claude(\/|$)/, /(^|\/)\.mcp\.json$/, /(^|\/)\.git(\/|$)/, /(^|\/)CLAUDE(\.local)?\.md$/];
+// files that make the NEXT Claude/git/tool run execute something: writing them from a limited link
+// would turn file access into running commands (paths relative to the project, '/' separators).
+const PROTECTED = [
+  /(^|\/)\.claude(\/|$)/, /(^|\/)\.mcp\.json$/, /(^|\/)CLAUDE(\.local)?\.md$/, // Claude settings hooks, MCP servers, instructions
+  /(^|\/)\.git(\/|$)/, /(^|\/)\.husky(\/|$)/, /(^|\/)\.pre-commit-config\.ya?ml$/, // git hooks (and the hook managers)
+  /(^|\/)\.github(\/|$)/, /(^|\/)\.gitlab-ci\.ya?ml$/, // CI runs it with the repo's secrets
+  /(^|\/)package(-lock)?\.json$/, /(^|\/)npm-shrinkwrap\.json$/, /(^|\/)\.npmrc$/, /(^|\/)(yarn\.lock|pnpm-lock\.yaml)$/, // npm scripts / install sources
+  /(^|\/)\.envrc$/, /(^|\/)(GNUmakefile|makefile|Makefile)$/i, /(^|\/)\.vscode(\/|$)/, /(^|\/)\.devcontainer(\/|$)/, // direnv, make, editor tasks
+  /(^|\/)Dockerfile[^/]*$/i, /(^|\/)(docker-)?compose[^/]*\.ya?ml$/i, // container builds
+  /^[^/]+\.sh$/, // scripts at the project root (the usual ./deploy.sh, ./start.sh)
+];
 
 const inside = (p, base) => p === base || p.startsWith(base + path.sep);
 // realpath of p, or of its nearest existing ancestor + the rest (a file still to be created)
@@ -55,17 +63,28 @@ function check(ev, project) {
   return '';
 }
 
+// raw hook input -> reason to deny ('' = allow). FAIL CLOSED: anything unexpected (bad JSON, an
+// exception inside the checks) denies — exit 0 is the hook protocol for "allow", so a crash that
+// ended with any other code than 2 must never be the way out.
+function decide(raw, project, checkFn = check) {
+  let ev = null;
+  try { ev = JSON.parse(raw); } catch { /* invalid -> deny */ }
+  if (!ev || typeof ev !== 'object') return 'invalid hook input';
+  try { return checkFn(ev, project); } catch (e) { return `chat guard error, tool call refused: ${(e && e.message) || e}`; }
+}
+const deny = (why) => { try { process.stderr.write(why + '\n'); } catch { /* */ } process.exit(2); };
+
 if (require.main === module) {
+  process.on('uncaughtException', (e) => deny(`chat guard error, tool call refused: ${(e && e.message) || e}`));
   const project = path.resolve(process.argv[2] || '/nonexistent');
   let data = '';
   process.stdin.on('data', (c) => { data += c; });
+  process.stdin.on('error', () => deny('chat guard could not read the hook input'));
   process.stdin.on('end', () => {
-    let ev = null;
-    try { ev = JSON.parse(data); } catch { /* invalid -> deny */ }
-    const why = ev ? check(ev, project) : 'invalid hook input';
-    if (why) { process.stderr.write(why + '\n'); process.exit(2); }
+    const why = decide(data, project);
+    if (why) return deny(why);
     process.exit(0);
   });
 }
 
-module.exports = { check };
+module.exports = { check, decide, PROTECTED };

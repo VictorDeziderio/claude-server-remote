@@ -44,13 +44,22 @@ log() {
   fi
 }
 
-# Two calls at the same time (automatic loop + "backup now" in the panel, or the projects
-# loop and the config loop firing together) would run git add/commit/push on the SAME repo in
-# parallel -> race on the git index. Non-blocking lock: if a backup is already running,
-# just skip this pass (it comes back on the next interval/click) instead of piling up.
-exec 9>"$LOG_DIR/backup.lock"
+# Two calls of the SAME kind at the same time (automatic loop + "backup now" in the panel) would
+# run git add/commit/push on the same repo in parallel -> race on the git index. Non-blocking
+# lock: if a backup of that kind is already running, skip this pass (it comes back on the next
+# interval/click) instead of piling up.
+# ONE LOCK PER KIND (projects / config / volume): they touch different things, and with a single
+# shared lock the long volume rsync (can take hours) silently blocked the hourly git backups and
+# the "backup now" button. A skipped run is logged as "skip  (<kind>): ..." (backup.log, shown in
+# the panel's Logs) and printed, so the "backup now" button shows it too.
+case "${1:-}" in
+  --config) KIND=config ;;
+  --volume) KIND=volume ;;
+  *) KIND=projects ;;
+esac
+exec 9>"$LOG_DIR/backup-$KIND.lock"
 if ! flock -n 9; then
-  log "skip: another backup.sh is already running"
+  log "skip  ($KIND): another $KIND backup is still running — this run was skipped"
   exit 0
 fi
 
@@ -130,6 +139,24 @@ backup_repo() {
   git -C "$dir" config user.email >/dev/null 2>&1 || git -C "$dir" config user.email "devbox@localhost"
   git -C "$dir" config user.name  >/dev/null 2>&1 || git -C "$dir" config user.name  "claude-devbox"
 
+  # A merge/rebase/cherry-pick/revert half done (someone or Claude is in the middle of it): an
+  # automatic `add -A` + commit would record the conflict markers and break that operation.
+  # Detached HEAD (bisect, checked-out tag/commit): the commit would land on no branch and the
+  # push would fail or go somewhere unexpected. In both cases: skip, and say why.
+  local gd op=""
+  gd="$(git -C "$dir" rev-parse --absolute-git-dir 2>/dev/null)" || return 0
+  for f in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply BISECT_LOG; do
+    [ -e "$gd/$f" ] && { op="$f"; break; }
+  done
+  if [ -n "$op" ]; then
+    log "skip  $name: a git operation is in progress ($op) — finish or abort it; backup postponed"
+    return 0
+  fi
+  if ! git -C "$dir" symbolic-ref -q HEAD >/dev/null 2>&1; then
+    log "skip  $name: detached HEAD (no branch checked out) — backup postponed"
+    return 0
+  fi
+
   # nothing changed -> nothing to do
   if [ -z "$(git -C "$dir" status --porcelain)" ]; then
     return 0
@@ -142,12 +169,17 @@ backup_repo() {
   # The hook now redacts secrets before writing, but defense in depth:
   # an AUTOMATIC snapshot (with nobody looking) does not take the worklog. Whoever wants to
   # version a specific worklog does it in a manual commit, which goes through review.
-  git -C "$dir" add -A -- ':!docs/worklog'
+  #
+  # Same for .chat-uploads/ (any depth): photos/files sent from the chat or dropped on the
+  # terminal are saved there. They are private and can be big; they are not project code.
+  local skip_uploads=':(glob,exclude)**/.chat-uploads/**'
+  git -C "$dir" add -A -- . ':!docs/worklog' "$skip_uploads"
   # The exclusion above only filters what is staged NOW — it does not undo what was already
   # in the index. Without this reset, a worklog staged before (by another
   # tool, or by a `git add` in a session) went into the snapshot anyway;
   # that is what happened in the 2026-08-09 14:41 snapshot.
   git -C "$dir" reset -q -- docs/worklog 2>/dev/null || true
+  git -C "$dir" reset -q -- ':(glob)**/.chat-uploads/**' 2>/dev/null || true
   # Nothing left to commit after the reset? Then do not create an empty commit.
   if [ -z "$(git -C "$dir" diff --cached --name-only)" ]; then
     return 0

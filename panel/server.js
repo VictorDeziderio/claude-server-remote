@@ -13,6 +13,7 @@
 const http = require('http');
 const fs = require('fs');
 const cfg = require('./server/config');
+const REQUEST_TIMEOUT_MS = 3 * 3600 * 1000;
 const { readJson, sendJson, log } = require('./server/util');
 const auth = require('./server/auth');
 const totp = require('./server/totp');
@@ -224,6 +225,11 @@ async function handle(req, res) {
 }
 // each request is answered in the language of whoever asked (server/i18n.js: cr_lang cookie / Accept-Language)
 const server = http.createServer((req, res) => i18n.withLang(req, () => handle(req, res)));
+// Node's default requestTimeout (300 s for the WHOLE request, body included) cut big uploads on a
+// slow connection (100 MB at 300 KB/s already takes more than that). Uploads have their own
+// inactivity timeout instead (server/files.js streamUpload: no data for UPLOAD_IDLE_MS -> fail);
+// this keeps only a far upper bound against a body trickled forever.
+server.requestTimeout = REQUEST_TIMEOUT_MS;
 
 // terminal WebSocket: same auth (cookie) + same origin
 server.on('upgrade', (req, socket, head) => {
