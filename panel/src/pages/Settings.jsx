@@ -128,6 +128,7 @@ export default function SettingsPage({ onFlash, refresh, notif, onToggleNotif })
           <Toggle icon={Cpu} on={s.settings.notifyDone !== false} busy={busy === 'notifyDone'} onChange={(v) => setPref('notifyDone', v)} label={t('settings.notifyDone')} hint={t('settings.notifyDoneHint')} />
           <Toggle icon={ShieldCheck} on={s.settings.notifyPrompt !== false} busy={busy === 'notifyPrompt'} onChange={(v) => setPref('notifyPrompt', v)} label={t('settings.notifyPrompt')} hint={t('settings.notifyPromptHint')} />
           <Toggle icon={RotateCw} on={s.settings.autoResume !== false} busy={busy === 'autoResume'} onChange={(v) => setPref('autoResume', v)} label={t('settings.autoResume')} hint={t('settings.autoResumeHint')} />
+          <Toggle icon={ArrowUpCircle} on={s.settings.autoUpdateClaude !== false} busy={busy === 'autoUpdateClaude'} onChange={(v) => setPref('autoUpdateClaude', v)} label={t('settings.autoUpdateClaude')} hint={t('settings.autoUpdateClaudeHint')} />
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">{t('settings.installApp')}</p>
       </Card>

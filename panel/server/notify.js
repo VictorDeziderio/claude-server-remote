@@ -43,6 +43,7 @@ const EVENTS = {
   boot: { gapMs: 0 },
   login: { gapMs: 30 * 60e3 },
   usage: { gapMs: 6 * 3600e3 },
+  update: { gapMs: 0 },
 };
 const RATE_MAX = 12, RATE_WINDOW_MS = 10 * 60e3;   // at most 12 pushes per 10 minutes, all events
 const STALE_MS = 5 * 60e3;                          // hook lines older than this are ignored

@@ -296,6 +296,13 @@ try {
   r = await j('GET', '/api/logs/tail?file=audit&lines=50'); ok('audit log registrou acoes', r.data.ok && r.data.lines.some((l) => /"action":"config"/.test(l)) && r.data.lines.some((l) => /login\.ok/.test(l)), JSON.stringify(r.data).slice(0, 300))
   r = await j('GET', '/api/logs/tail?file=nada'); ok('log desconhecido', r.data.ok === false)
   r = await j('GET', '/api/health'); ok('health', r.data.ok && r.data.mem && Array.isArray(r.data.load) && r.data.claude, JSON.stringify(r.data).slice(0, 200))
+  ok('health: Claude auto-update status (on by default)', r.data.claude && r.data.claude.auto && r.data.claude.auto.enabled === true && r.data.claude.auto.nextAt > 0, JSON.stringify(r.data.claude && r.data.claude.auto))
+  {
+    await j('POST', '/api/settings', { autoUpdateClaude: false })
+    const h = await j('GET', '/api/health'); ok('settings: auto-update switch turns it off', h.data.claude.auto.enabled === false, JSON.stringify(h.data.claude.auto))
+    const st = await j('GET', '/api/settings'); ok('settings: autoUpdateClaude saved', st.data.settings.autoUpdateClaude === false)
+    await j('POST', '/api/settings', { autoUpdateClaude: true })
+  }
   ok('health: cpu/top/history (sampler D)', typeof r.data.cpu?.pct === 'number' && Array.isArray(r.data.top) && Array.isArray(r.data.history), JSON.stringify({ cpu: r.data.cpu, topLen: r.data.top?.length, histLen: r.data.history?.length }))
   // @panel-ui contract: ps gives rss in KB, top[].rss must be in BYTES (x1024) — pcpu stays a number
   ok('health: top[].rss em bytes (nao KB)', r.data.top.length === 0 || (typeof r.data.top[0].rss === 'number' && r.data.top[0].rss >= 1024 && typeof r.data.top[0].pcpu === 'number'), JSON.stringify(r.data.top[0]))

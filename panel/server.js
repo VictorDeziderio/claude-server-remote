@@ -28,6 +28,7 @@ const events = require('./server/events');
 const history = require('./server/history');
 const logs = require('./server/logs');
 const health = require('./server/health');
+const claudeUpdate = require('./server/claude-update');
 const backup = require('./server/backup');
 const settings = require('./server/settings');
 const alerts = require('./server/alerts');
@@ -99,7 +100,7 @@ const POST = {
   '/api/term/exit': (b) => term.termExit(b.name),
   '/api/term/window': (b) => term.windowAction(b.name, b.action, b.index),
   '/api/claude/logout': () => claude.claudeLogout(),
-  '/api/claude/update': () => health.updateClaude(),
+  '/api/claude/update': () => claudeUpdate.updateNow(),
   '/api/claude/login/start': () => claudeLogin.start(),
   '/api/claude/login/code': (b) => claudeLogin.sendCode(b.code),
   '/api/claude/login/key': (b) => claudeLogin.sendKey(b.key),
@@ -213,6 +214,7 @@ server.listen(cfg.PORT, cfg.BIND, () => {
   events.start(projects.buildState); // watcher + SSE
   limits.start(); // plan limits / API spend poller (server/limits.js)
   notify.start(); // Web Push: hooks, alerts, login, boot
+  claudeUpdate.start(); // Claude Code automatic update (server/claude-update.js)
   require('./server/autoresume').start(); // "continue" by itself after a usage-limit reset
 });
 
@@ -220,7 +222,7 @@ server.listen(cfg.PORT, cfg.BIND, () => {
 for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => {
     log('info', 'encerrando', { sig });
-    term.shutdown(); events.stop(); limits.stop(); notify.stop(); require('./server/autoresume').stop();
+    term.shutdown(); events.stop(); limits.stop(); notify.stop(); claudeUpdate.stop(); require('./server/autoresume').stop();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();
   });

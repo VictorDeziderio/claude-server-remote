@@ -173,6 +173,9 @@ ENV \
     PANEL_ENABLED=true \
     GATEWAY_PORT=8080 \
     PROJECTS_DIR=/root/projects \
+    # Claude Code updates: the panel installs new versions itself (panel/server/claude-update.js),
+    # because Claude's own updater cannot write to the root-owned global install.
+    DISABLE_AUTOUPDATER=1 \
     # AUTH: panel via PANEL_LOGIN+PANEL_PASSWORD (+ optional 2FA turned on in the panel).
     # PANEL_PASSWORD and GH_TOKEN have NO ENV here on purpose: without a password the panel REFUSES to start
     # (fail-closed in panel/server/auth.js). Right place: /root/.devbox-secrets.env on the volume

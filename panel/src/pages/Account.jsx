@@ -155,6 +155,10 @@ function ClaudeVersionCard({ onFlash, refresh }) {
                   {t('acc.installed')} <code className="font-mono text-xs text-foreground">{c.current || '?'}</code>
                 </div>
                 <div className="font-mono text-xs text-muted-foreground">{t('acc.npmLatest')} {c.latest ? <code>{c.latest}</code> : <span className="font-sans text-amber-600 dark:text-amber-300">{t('acc.npmFail')}</span>}</div>
+                <div data-testid="claude-auto" className="text-xs text-muted-foreground">
+                  {c.auto?.enabled ? t('acc.autoOn', { time: c.auto.nextAt ? new Date(c.auto.nextAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—' }) : t('acc.autoOff')}
+                  {c.auto?.last && <span className={c.auto.last.ok ? '' : 'text-destructive'}> · {t('acc.autoLast', { from: c.auto.last.from, to: c.auto.last.to })}{c.auto.last.ok ? '' : ' ✕'}</span>}
+                </div>
               </div>
             </div>
             <div className="ml-auto flex items-center gap-2">

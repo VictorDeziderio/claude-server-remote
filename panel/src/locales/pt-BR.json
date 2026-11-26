@@ -753,5 +753,17 @@
   "cmd.terminalOf": "Terminal · {name}",
   "cmd.filesOf": "Arquivos · {name}",
   "cmd.theme": "Trocar tema (sistema / claro / escuro)",
-  "cmd.hint": "↑ ↓ para mover · Enter para abrir · Esc para fechar"
+  "cmd.hint": "↑ ↓ para mover · Enter para abrir · Esc para fechar",
+  "push.event.update": "O Claude Code foi atualizado (ou a atualização falhou)",
+  "srv.update.rolledBack": "{why} — voltou para a {v}",
+  "srv.update.noLatest": "não consegui ler a versão mais nova no npm",
+  "srv.update.upToDate": "O Claude Code está atualizado ({v})",
+  "srv.update.autoTitle": "Claude Code atualizado para {v}",
+  "srv.update.autoBody": "Estava na {from}. Sessões novas e reinícios já usam a versão nova.",
+  "srv.update.failedTitle": "Falha ao atualizar o Claude Code",
+  "settings.autoUpdateClaude": "Atualizar o Claude Code sozinho",
+  "settings.autoUpdateClaudeHint": "Confere a cada poucas horas e instala as versões novas; se a nova não abrir, volta para a anterior. As sessões abertas mudam quando reiniciam.",
+  "acc.autoOn": "Atualização automática ligada · próxima verificação {time}",
+  "acc.autoOff": "Atualização automática desligada (Configurações)",
+  "acc.autoLast": "Última: {from} → {to}"
 }

@@ -13,8 +13,8 @@ const alerts = require('./alerts');
 let latestCache = { t: 0, v: '' };
 let latestInflight = null; // found by @perf 2026-10-09: several tabs/components may land here
 // with the cache expired at the same time (1x/hour) — without this, each one fires its own `npm view`
-async function latestClaude() {
-  if (latestCache.v && Date.now() - latestCache.t < 3600 * 1000) return latestCache.v;
+async function latestClaude(force = false) {
+  if (!force && latestCache.v && Date.now() - latestCache.t < 3600 * 1000) return latestCache.v;
   if (latestInflight) return latestInflight;
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   latestInflight = (async () => {
@@ -60,7 +60,7 @@ async function health() {
     uptime: os.uptime(),
     hostname: os.hostname(),
     node: process.version,
-    claude: { current, currentNum: curNum, latest, updateAvailable: !!(latest && curNum && latest !== curNum) },
+    claude: { current, currentNum: curNum, latest, updateAvailable: !!(latest && curNum && latest !== curNum), auto: require('./claude-update').status() },
     tmuxSessions: tmux.ok ? tmux.stdout.trim().split('\n').filter(Boolean) : [],
     panel: { pid: process.pid, uptime: Math.round(process.uptime()), rss: process.memoryUsage().rss },
     cpu: { pct: lastCpuPct, cores: os.cpus().length },
@@ -127,26 +127,4 @@ async function sample() {
 setInterval(() => { sample().catch((e) => log('error', 'health sampler', { err: e.message })); }, 60000).unref();
 sample().catch(() => { /* first sample: only fills the ring, no alarm if it fails */ });
 
-let updating = null; // promise in progress
-async function updateClaude() {
-  if (updating) return { ok: false, msg: tr('srv.updateRunning') };
-  updating = (async () => {
-    log('info', 'atualizando Claude Code');
-    // global npm belongs to root -> sudo -n (NOPASSWD in the Dockerfile). Generous timeout (it downloads the package).
-    const r = await sh('sudo', ['-n', 'npm', 'install', '-g', '@anthropic-ai/claude-code@latest'], { timeout: 5 * 60 * 1000 });
-    claude.resetVersionCache();
-    latestCache = { t: 0, v: '' };
-    const v = await claude.claudeVersion();
-    // since 2.1.28x `claude` is a native binary (optional dependency): if its download
-    // failed, npm "passes" but claude does not run -> fail instead of saying "updated"
-    if (r.ok && !/\d+\.\d+\.\d+/.test(v)) {
-      return { ok: false, msg: tr('srv.npmNoBinary'), output: (r.stdout + r.stderr).slice(-2000) };
-    }
-    return r.ok
-      ? { ok: true, msg: tr('srv.updated', { v }), output: (r.stdout + r.stderr).slice(-2000) }
-      : { ok: false, msg: tr('srv.updateFailed') + (r.stderr || '').slice(-500), output: (r.stdout + r.stderr).slice(-2000) };
-  })();
-  try { return await updating; } finally { updating = null; }
-}
-
-module.exports = { health, updateClaude };
+module.exports = { health, latestClaude };
