@@ -179,6 +179,22 @@ const item = (p = 'demo') => AR.list().find((x) => x.project === p);
     D.limits = keepLimits; D.account = keepAccount;
   }
 
+  out('\n== a `claude -p` run (no terminal) never leaves a turn open (bug: deploy typed "continue")')
+  reset()
+  {
+    const N = require('../server/notify')
+    const cwd = path.join(TMP, 'projects', 'demo')
+    const T0 = Date.now()
+    N.handleHook({ ev: 'UserPromptSubmit', tty: 0, src: '', sid: 'p1', cwd, t: T0 }, T0)
+    N.handleHook({ ev: 'Stop', tty: 0, src: '', sid: 'p1', cwd, t: T0 + 1000, msg: 'done' }, T0 + 1000)
+    ok('headless run: no turn kept for the restart', AR.busyProjects().length === 0, JSON.stringify(AR.busyProjects()))
+    ok('headless run: restart schedules nothing', AR.scheduleAfterRestart(T0 + 2000).length === 0)
+    N.handleHook({ ev: 'UserPromptSubmit', tty: 1, src: '', sid: 'i1', cwd, t: T0 + 3000 }, T0 + 3000)
+    ok('terminal session: turn in progress is kept', AR.busyProjects().includes('demo'))
+    N.handleHook({ ev: 'Stop', tty: 1, src: '', sid: 'i1', cwd, t: T0 + 4000, msg: 'ok' }, T0 + 4000)
+    ok('terminal session: its Stop closes the turn', AR.busyProjects().length === 0)
+  }
+
   fs.rmSync(TMP, { recursive: true, force: true });
   out(`${passes} PASS, ${fails} FAIL${fails ? '' : ' — TUDO OK'}`);
   process.exit(fails ? 1 : 0);

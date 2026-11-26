@@ -128,6 +128,10 @@ const clip = (s, n) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); 
 const AUTH_ERR = new Set(['authentication_failed', 'oauth_org_not_allowed', 'account_on_hold', 'verification_required', 'cloud_credential_error']);
 const LIMIT_ERR = new Set(['rate_limit', 'billing_error']);
 
+// `claude -p` / Agent SDK runs (scripts, a Claude calling another Claude) are not "your" sessions.
+// One rule for the start (UserPromptSubmit) and the end (Stop) of a turn.
+const isNonInteractive = (h, turn) => (turn && turn.src === 'sdk') || (h.tty === 0 && !(turn && turn.src === 'user'));
+
 function handleHook(h, now = Date.now()) {
   if (!h || typeof h !== 'object' || typeof h.ev !== 'string') return null;
   if (typeof h.t === 'number' && now - h.t > STALE_MS) return null;
@@ -138,14 +142,17 @@ function handleHook(h, now = Date.now()) {
   const sid = String(h.sid || '');
   if (h.agent) return null; // subagent: the main thread reports for it
   if (h.ev === 'UserPromptSubmit') {
-    if (sid) turns.set(sid, { start: t, src: String(h.src || '') });
-    if (project && String(h.src || '') !== 'sdk') autoresume.onHook(h, project, t);
+    const src = String(h.src || '');
+    if (sid) turns.set(sid, { start: t, src });
+    // only YOUR sessions start a turn the auto-resume keeps: a `claude -p` / SDK run (no terminal)
+    // is skipped here exactly as its Stop is skipped below, or its turn would never be closed and a
+    // restart would type "continue" into an idle Claude
+    if (project && !isNonInteractive(h, { src })) autoresume.onHook(h, project, t);
     if (turns.size > 200) turns.delete(turns.keys().next().value);
     return null;
   }
   const turn = turns.get(sid);
-  // `claude -p` / Agent SDK runs (scripts, a Claude calling another Claude) are not "your" sessions
-  const nonInteractive = (turn && turn.src === 'sdk') || (h.tty === 0 && !(turn && turn.src === 'user'));
+  const nonInteractive = isNonInteractive(h, turn);
   if (h.ev === 'Stop' || h.ev === 'StopFailure') {
     turns.delete(sid);
     if (nonInteractive) return null;
