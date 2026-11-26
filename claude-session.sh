@@ -50,13 +50,23 @@ ensure_one() {  # $1 = project
   fi
 }
 
+# same rule as panel/server/projects-list.js: hidden folders, linked git worktrees (.git is a file)
+# and "<project>.<x>" next to an existing <project> are not projects (Claude makes worktrees there)
+is_project_dir() {
+  local n="$1"
+  case "$n" in .*) return 1 ;; esac
+  [ -f "$PROJECTS_DIR/$n/.git" ] && return 1
+  case "$n" in *.*) [ -d "$PROJECTS_DIR/${n%%.*}" ] && return 1 ;; esac
+  return 0
+}
+
 ensure_all() {
   shopt -s nullglob
   local any=0 d n
   mkdir -p "$PROJECTS_DIR"
   for d in "$PROJECTS_DIR"/*/; do
     n="$(basename "${d%/}")"
-    case "$n" in .*) continue ;; esac                  # ignora pastas ocultas
+    is_project_dir "$n" || continue
     any=1
     # the failure of ONE session never aborts the others (nor the boot)
     ensure_one "$n" || echo "[session] warning: project '$n' failed to start" >&2

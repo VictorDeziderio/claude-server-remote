@@ -214,6 +214,11 @@ try {
 
   await new Promise((s) => setTimeout(s, 2500)) // the watcher runs its first tick
   r = await j('GET', '/api/state'); ok('state com auth', r.status === 200 && Array.isArray(r.data.projects) && r.data.projects[0]?.name === 'demo', JSON.stringify(r.data).slice(0, 200))
+  // folders Claude makes next to a project (git worktrees) are not projects
+  fs.mkdirSync(path.join(ROOT, 'projects', 'demo.gate-wt'), { recursive: true })
+  fs.mkdirSync(path.join(ROOT, 'projects', 'wtx'), { recursive: true }); fs.writeFileSync(path.join(ROOT, 'projects', 'wtx', '.git'), 'gitdir: /x/.git/worktrees/wtx\n')
+  r = await j('GET', '/api/state'); ok('worktrees next to a project are not listed', !r.data.projects.some((p) => p.name === 'demo.gate-wt' || p.name === 'wtx'), JSON.stringify(r.data.projects.map((p) => p.name)))
+  fs.rmSync(path.join(ROOT, 'projects', 'demo.gate-wt'), { recursive: true, force: true }); fs.rmSync(path.join(ROOT, 'projects', 'wtx'), { recursive: true, force: true })
   ok('state: shellSession + settings', r.data.shellSession === 'cr-shell' && typeof r.data.settings === 'object')
   r = await j('GET', '/api/report?from=2026-01-01&to=2026-12-31'); ok('report', r.data.ok === true && 'cost' in r.data.usage.total && Array.isArray(r.data.usage.unknownModels))
   r = await j('GET', '/api/report?from=xx'); ok('report data invalida', r.data.ok === false)

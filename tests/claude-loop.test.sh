@@ -126,6 +126,15 @@ tmux kill-server >/dev/null 2>&1
 bash "$HERE/claude-session.sh" fantasma </dev/null >/dev/null 2>&1
 [ ! -d "$T/projects/fantasma" ]; ok "pasta apagada nao e recriada" $?
 tmux has-session -t '=claude-fantasma' 2>/dev/null; [ $? -ne 0 ]; ok "sessao do projeto apagado nao sobe" $?
+echo "== worktree do Claude ao lado do projeto nao vira projeto (bug do 'app.gate-wt')"
+tmux kill-server >/dev/null 2>&1
+mkdir -p "$T/projects/app" "$T/projects/app.gate-wt" "$T/projects/wt2"
+echo "gitdir: $T/projects/app/.git/worktrees/wt2" > "$T/projects/wt2/.git"
+bash "$HERE/claude-session.sh" --all </dev/null >/dev/null 2>&1
+tmux has-session -t '=claude-app_gate-wt' 2>/dev/null; [ $? -ne 0 ]; ok "pasta <projeto>.<x> nao ganha sessao" $?
+tmux has-session -t '=claude-wt2' 2>/dev/null; [ $? -ne 0 ]; ok "worktree git (.git arquivo) nao ganha sessao" $?
+tmux kill-server >/dev/null 2>&1
+rm -rf "$T/projects/app" "$T/projects/app.gate-wt" "$T/projects/wt2"
 echo
 echo "$pass PASS, $fail FAIL"
 [ "$fail" = "0" ]
