@@ -13,6 +13,7 @@ const C = await load('src/lib/clipboard.js')
 const T = await load('src/lib/theme.js')
 const I = await load('src/lib/i18n-core.js')
 const N = await load('src/lib/notice.js')
+const CA = await load('src/chat/api.js')
 
 let fails = 0, passes = 0
 const eq = (name, got, want) => {
@@ -107,6 +108,20 @@ eq('index.html sem <script> inline (CSP)', [...html.matchAll(/<script(?![^>]*\ss
 eq('index.html carrega /theme-init.js antes do app', html.indexOf('/theme-init.js') > 0 && html.indexOf('/theme-init.js') < html.indexOf('/src/main.jsx'), true)
 const init = fs.readFileSync(path.join(PANEL, 'public', 'theme-init.js'), 'utf8')
 eq('theme-init usa a mesma chave do theme.js', init.includes("'" + T.THEME_KEY + "'"), true)
+
+console.log('\n== chat: key from the URL and the SSE parser (src/chat/api.js)')
+eq('key from /c/<key>', CA.keyFromPath('/c/AbC-_09xyz'), 'AbC-_09xyz')
+eq('key from /c/<key>/ (trailing slash)', CA.keyFromPath('/c/AbC/'), 'AbC')
+eq('no key outside /c/', CA.keyFromPath('/dashboard'), '')
+{
+  const got = []
+  const rest = CA.parseSse('event: delta\ndata: {"text":"Hel"}\n\n: keep-alive\n\nevent: done\r\ndata: {"id":"s1"}\r\n\r\nevent: delta\ndata: {"te', (e, d) => got.push([e, d]))
+  eq('SSE: events parsed in order, comments skipped, CRLF ok', got, [['delta', { text: 'Hel' }], ['done', { id: 's1' }]])
+  eq('SSE: an incomplete event stays in the buffer', rest, 'event: delta\ndata: {"te')
+  const more = []
+  CA.parseSse(rest + 'xt":"lo"}\n\n', (e, d) => more.push([e, d]))
+  eq('SSE: the rest completes with the next chunk', more, [['delta', { text: 'lo' }]])
+}
 
 console.log('\n== idiomas (src/locales/*.json)')
 eq('idioma salvo vence', I.pickLang('pt-BR', ['en-US'], ['en', 'pt-BR'], 'en'), 'pt-BR')

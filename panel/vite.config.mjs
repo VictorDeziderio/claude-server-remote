@@ -15,8 +15,19 @@ const pkgVersion = JSON.parse(fs.readFileSync(new URL('./package.json', import.m
 
 // SPA of the "Claude Remote" panel. Build -> dist/ (served by server.js in production).
 // In dev (`npm run dev`), API and WebSocket are forwarded to a local server.js on 7001.
+// dev only: /c/<key> opens the public chat page (in production server/static.js does this)
+const chatDevFallback = {
+  name: 'chat-dev-fallback',
+  configureServer(server) {
+    server.middlewares.use((req, _res, next) => {
+      if (/^\/c\/[^/]+\/?(\?.*)?$/.test(req.url || '')) req.url = '/chat.html'
+      next()
+    })
+  },
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), chatDevFallback],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },
@@ -27,12 +38,20 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // two pages: the panel (index.html) and the public project chat (chat.html, served for /c/<key>)
+    rollupOptions: {
+      input: {
+        index: path.resolve(__dirname, 'index.html'),
+        chat: path.resolve(__dirname, 'chat.html'),
+      },
+    },
     // no manualChunks: a forced "xterm" chunk was preloaded on EVERY page (index.html
     // modulepreload). Without it xterm goes with the lazy TerminalPage and loads only there.
   },
   server: {
     proxy: {
       '/api': 'http://127.0.0.1:7001',
+      '/chat-api': 'http://127.0.0.1:7001',
       '/ws': { target: 'ws://127.0.0.1:7001', ws: true },
     },
   },
