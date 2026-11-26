@@ -98,7 +98,7 @@ export default function HistoryPage({ data, onFlash, refresh }) {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-mono text-xs text-muted-foreground">
-              {fmtInt(c.messages)} msgs · {fmtTok(c.tokens)} tokens · {shortModel(c.model)} · {fmtIso(c.first)} → {fmtIso(c.last)}
+              {fmtInt(c.messages)}{c.partial ? "+" : ""} msgs · {fmtTok(c.tokens)}{c.partial ? "+" : ""} tokens · {shortModel(c.model)} · {fmtIso(c.first)} → {fmtIso(c.last)}
             </span>
             {pinnedId !== open.id && (
               <Btn size="sm" variant="ghost" busy={busy === 'pin:' + open.id} onClick={() => pin(open.id)} title={t('history.pinTitle')}>
@@ -166,7 +166,7 @@ export default function HistoryPage({ data, onFlash, refresh }) {
                   {pinnedId === s.id && <span className="shrink-0 rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[11px] text-primary">{t('history.pinned')}</span>}
                 </div>
                 <div className="font-mono text-xs text-muted-foreground">
-                  {fmtIso(s.last)} · {fmtInt(s.messages)} msgs · {fmtTok(s.tokens)} tokens · {shortModel(s.model) || '?'} · <span className="text-muted-foreground/70">{s.id.slice(0, 8)}</span>
+                  {fmtIso(s.last)} · {fmtInt(s.messages)}{s.partial ? "+" : ""} msgs · {fmtTok(s.tokens)}{s.partial ? "+" : ""} tokens · {shortModel(s.model) || '?'} · <span className="text-muted-foreground/70">{s.id.slice(0, 8)}</span>
                 </div>
               </button>
               {pinnedId !== s.id && (

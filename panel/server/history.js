@@ -6,6 +6,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const cfg = require('./config');
+const jsonl = require('./jsonl');
 const { sh, validName, sessionName, typeLine } = require('./util');
 
 const encOf = (p) => p.replace(/[^a-zA-Z0-9]/g, '-');
@@ -25,17 +26,25 @@ function textOf(content) {
   }).filter(Boolean).join('\n');
 }
 
-// reads a .jsonl and returns a summary {id, title, first, last, messages, model, tokens}
-// found by @security: readFileSync (up to 64MB) blocked the event loop per file; async
-// (fs/promises) keeps the disk read off the loop — only the line parsing stays synchronous.
+// reads a .jsonl and returns a summary {id, title, first, last, messages, model, tokens, partial}
+// Big files (a conversation always continued grows to gigabytes) are read by their head and their
+// newest window only (server/jsonl.js): messages/tokens then count that part (partial: true).
 async function summarizeFile(file, wantMessages) {
-  let data;
-  try { if ((await fsp.stat(file)).size > 64 * 1024 * 1024) return null; data = await fsp.readFile(file, 'utf8'); } catch { return null; }
+  let entries, partial = false;
+  try {
+    const st = await fsp.stat(file);
+    if (st.size <= jsonl.BIG) entries = await jsonl.all(file);
+    else {
+      partial = true;
+      const w = await jsonl.windowBefore(file, st.size, st.size, 2 * jsonl.WINDOW);
+      entries = [...(await jsonl.head(file, st.size)).filter((e) => e.off < w.start), ...w.lines];
+    }
+  } catch { return null; }
   const id = path.basename(file, '.jsonl');
   let title = '', first = '', last = '', model = '', count = 0;
   let tokens = 0;
   const msgs = [];
-  for (const line of data.split('\n')) {
+  for (const { line } of entries) {
     if (!line) continue;
     let o; try { o = JSON.parse(line); } catch { continue; }
     const m = o && o.message;
@@ -51,7 +60,7 @@ async function summarizeFile(file, wantMessages) {
     if (wantMessages && text) msgs.push({ role: m.role, text: text.slice(0, 4000), ts, model: m.model || '' });
   }
   if (!count) return null;
-  const out = { id, title: title || tr('srv.untitled'), first, last, messages: count, model, tokens };
+  const out = { id, title: title || tr('srv.untitled'), first, last, messages: count, model, tokens, partial };
   if (wantMessages) out.items = msgs.slice(-400);
   return out;
 }

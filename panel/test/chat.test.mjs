@@ -69,6 +69,19 @@ fs.writeFileSync(path.join(HIST, 'mediaconv1.jsonl'), [
   line({ type: 'user', uuid: 'mr2', timestamp: '2025-01-01T00:00:05Z', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't2', is_error: true, content: 'exit 1' }] } }),
 ].join('\n') + '\n')
 
+// a conversation always continued (claude --continue) grows to gigabytes: ~42 MB here, above the
+// whole-file limit of server/jsonl.js, so it is read by windows
+{
+  const pad = 'x'.repeat(70 * 1024)
+  const L = []
+  for (let i = 0; i < 600; i++) {
+    const ts = new Date(Date.UTC(2024, 0, 1, 0, 0, i)).toISOString()
+    L.push(line({ type: 'user', uuid: `bu${i}`, timestamp: ts, message: { role: 'user', content: `big q ${i} ação` } }))
+    L.push(line({ type: 'assistant', uuid: `ba${i}`, timestamp: ts, message: { role: 'assistant', content: [{ type: 'text', text: `big a ${i}` }, { type: 'tool_use', id: `bt${i}`, name: 'Read', input: { file_path: 'x', pad } }] } }))
+  }
+  fs.writeFileSync(path.join(HIST, 'bigconv0001.jsonl'), L.join('\n') + '\n')
+}
+
 // like Claude does, each .jsonl was last written when its last line was (the list is ordered by it)
 for (const f of fs.readdirSync(HIST)) {
   const lines = fs.readFileSync(path.join(HIST, f), 'utf8').trim().split('\n')
@@ -174,7 +187,26 @@ try {
   ok('conversations: newest first', r.data.items[0].id === 'conv0024' && r.data.items[0].title === 'question 24' && r.data.items[0].preview === 'answer 24' && r.data.items[0].messages === 2 && r.data.items[0].running === false, JSON.stringify(r.data.items[0]))
   const page2 = await c(OWNER, 'GET', '/chat-api/conversations?before=' + encodeURIComponent(r.data.next))
   const all = [...r.data.items, ...page2.data.items].map((x) => x.id)
-  ok('conversations: page 2 = the rest, no repeats', page2.data.items.length === 7 && page2.data.next === null && new Set(all).size === 27, JSON.stringify(page2.data).slice(0, 200))
+  ok('conversations: page 2 = the rest, no repeats', page2.data.items.length === 8 && page2.data.next === null && new Set(all).size === 28, JSON.stringify(page2.data).slice(0, 200))
+  {
+    const big = all.length && [...r.data.items, ...page2.data.items].find((x) => x.id === 'bigconv0001')
+    ok('big conversation (42 MB) is listed, title from its first message', big && big.title === 'big q 0 ação' && big.messages === null, JSON.stringify(big))
+    let m = await c(OWNER, 'GET', '/chat-api/messages?id=bigconv0001')
+    ok('big conversation: newest 50 messages, cursor in bytes', m.data.ok && m.data.items.length === 50 && m.data.items[49].text === 'big a 599' && /^o\d+$/.test(m.data.next || ''), JSON.stringify({ n: m.data.items && m.data.items.length, last: m.data.items && m.data.items[49] && m.data.items[49].text, next: m.data.next }))
+    const seen = [...m.data.items].reverse()
+    let pages = 1
+    while (m.data.next && pages < 100) {
+      m = await c(OWNER, 'GET', '/chat-api/messages?id=bigconv0001&before=' + m.data.next)
+      if (!m.data.ok) break
+      seen.push(...[...m.data.items].reverse()); pages++
+    }
+    const texts = seen.reverse().map((x) => x.text)
+    const expected = Array.from({ length: 600 }, (_, i) => [`big q ${i} ação`, `big a ${i}`]).flat()
+    ok('big conversation: scrolling back reaches the first message, none repeated or skipped', JSON.stringify(texts) === JSON.stringify(expected), `pages ${pages}, got ${texts.length}: ${texts.slice(0, 3)} ... ${texts.slice(-2)}`)
+    const h = await j('GET', '/api/history?name=demo')
+    const hb = h.data.sessions && h.data.sessions.find((x) => x.id === 'bigconv0001')
+    ok('History lists the big conversation (partial counts)', hb && hb.title === 'big q 0 ação' && hb.partial === true && hb.messages > 0, JSON.stringify(hb))
+  }
   r = await c(LIM, 'GET', '/chat-api/conversations'); ok('limited key sees none of the owner conversations', r.data.ok && r.data.items.length === 0, JSON.stringify(r.data).slice(0, 200))
   r = await c(LIM, 'GET', '/chat-api/messages?id=conv0001'); ok('limited key cannot read an owner conversation', r.status === 404)
 

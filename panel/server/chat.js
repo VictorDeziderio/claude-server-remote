@@ -31,6 +31,7 @@ const { readJson, sendJson, validName, clampInt, log, TMUX_STRIP_ENV } = require
 const { audit } = require('./audit');
 const auth = require('./auth');
 const files = require('./files');
+const jsonl = require('./jsonl');
 
 const KEYS_FILE = cfg.CHAT_KEYS_FILE;
 const MAX_RUNS_PER_PROJECT = 3;
@@ -188,11 +189,12 @@ function assistantParts(content) {
 }
 
 // parses a .jsonl into Msg[] (+ title, updatedAt, written files)
-function parseLines(data, fallbackTs) {
+function parseLines(entries, fallbackTs) {
+  if (typeof entries === 'string') entries = entries.split('\n').map((line) => ({ line, off: 0 }));
   const msgs = [];
   const toolsById = new Map();
   let title = '', updatedAt = '';
-  for (const line of data.split('\n')) {
+  for (const { line, off } of entries) {
     if (!line) continue;
     let o; try { o = JSON.parse(line); } catch { continue; }
     if (!o || (o.type !== 'user' && o.type !== 'assistant') || o.isMeta || o.isSidechain || o.isCompactSummary) continue;
@@ -208,13 +210,13 @@ function parseLines(data, fallbackTs) {
       if (isNoiseText(raw)) continue; // tool_result-only lines fold into the previous assistant tools
       const { text, paths } = splitAttachments(raw);
       if (!title) title = clip(text.replace(/\s+/g, ' ').trim(), 120) || (paths[0] ? path.basename(paths[0]) : '');
-      msgs.push({ id: o.uuid || 'u' + msgs.length, role: 'user', ts, text, tools: [], attachments: paths.map(attOf), _written: [] });
+      msgs.push({ id: o.uuid || 'u' + msgs.length, role: 'user', ts, text, tools: [], attachments: paths.map(attOf), _written: [], _off: off });
     } else {
       const p = assistantParts(m.content);
       if (!p.text && !p.tools.length) continue; // thinking only
       let last = msgs[msgs.length - 1];
       if (!last || last.role !== 'assistant') {
-        last = { id: o.uuid || 'a' + msgs.length, role: 'assistant', ts, text: '', tools: [], attachments: [], _written: [] };
+        last = { id: o.uuid || 'a' + msgs.length, role: 'assistant', ts, text: '', tools: [], attachments: [], _written: [], _off: off };
         msgs.push(last);
       }
       if (p.text) last.text = last.text ? last.text + '\n\n' + p.text : p.text;
@@ -228,20 +230,36 @@ const cleanMsg = (m) => ({ id: m.id, role: m.role, ts: m.ts, text: m.text, tools
 
 // small cache: file -> {mtimeMs, size, parsed}
 const cache = new Map();
+// -> { id, title, updatedAt, msgs, big, start } (big: only the newest window was read; start = its
+// first byte, the cursor of the older messages)
 async function readConv(project, id) {
   const file = path.join(histDir(project), id + '.jsonl');
   let st;
   try { st = await fsp.stat(file); } catch { return null; }
-  if (!st.isFile() || st.size > 64 * 1024 * 1024) return null;
+  if (!st.isFile()) return null;
   const c = cache.get(file);
   if (c && c.mtimeMs === st.mtimeMs && c.size === st.size) return c.parsed;
-  let data;
-  try { data = await fsp.readFile(file, 'utf8'); } catch { return null; }
-  const parsed = { id, ...parseLines(data, new Date(st.mtimeMs).toISOString()) };
+  const fallback = new Date(st.mtimeMs).toISOString();
+  let parsed;
+  try {
+    if (st.size <= jsonl.BIG) parsed = { id, ...parseLines(await jsonl.all(file), fallback), big: false, start: 0 };
+    else {
+      const w = await jsonl.windowBefore(file, st.size);
+      const tail = parseLines(w.lines, fallback);
+      parsed = { id, title: parseLines(await jsonl.head(file, st.size), fallback).title || tail.title, updatedAt: tail.updatedAt, msgs: tail.msgs, big: true, start: w.start, size: st.size };
+    }
+  } catch { return null; }
   cache.delete(file);
   cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, parsed });
   if (cache.size > 300) cache.delete(cache.keys().next().value);
   return parsed;
+}
+// messages of a big conversation that end before byte `end` (older pages): one window, newest last
+async function olderOf(project, id, end) {
+  const file = path.join(histDir(project), id + '.jsonl');
+  let st; try { st = await fsp.stat(file); } catch { return null; }
+  const w = await jsonl.windowBefore(file, st.size, end);
+  return { msgs: parseLines(w.lines, '').msgs, start: w.start };
 }
 
 // newest first by the .jsonl modification time (a stat per file); only the conversations of the
@@ -279,7 +297,7 @@ async function listConversations(k, q) {
       title: (c && c.title) || (run && clip(run.prompt.replace(/\s+/g, ' '), 120)) || tr('srv.untitled'),
       preview: last ? clip((last.text || (last.tools[0] ? last.tools[0].name : '')).replace(/\s+/g, ' ').trim(), 140) : '',
       updatedAt: t,
-      messages: msgs.length,
+      messages: c && c.big ? null : msgs.length,
       running: !!run,
     });
   }
@@ -298,8 +316,22 @@ async function listMessages(k, q) {
   if (!validId(id) || !canSee(k, id)) return { status: 404, ok: false, msg: tr('srv.convNotFound') };
   const c = await readConv(k.project, id);
   if (!c && !runs.has(id)) return { status: 404, ok: false, msg: tr('srv.convNotFound') };
-  const p = pageFromEnd(c ? c.msgs : [], q, 50);
-  return { ok: true, items: p.items.map(cleanMsg), next: p.next };
+  if (!c || !c.big) {
+    const p = pageFromEnd(c ? c.msgs : [], q, 50);
+    return { ok: true, items: p.items.map(cleanMsg), next: p.next };
+  }
+  // big file: the page ends at a byte offset; messages before it come from one more window
+  const limit = clampInt(q.get('limit'), 1, 200, 50);
+  const before = /^o\d+$/.test(q.get('before') || '') ? Number(q.get('before').slice(1)) : null;
+  let msgs = c.msgs, start = c.start;
+  if (before != null) {
+    const w = await olderOf(k.project, id, before);
+    if (!w) return { status: 404, ok: false, msg: tr('srv.convNotFound') };
+    msgs = w.msgs.filter((m) => m._off < before); start = w.start;
+  }
+  const page = msgs.slice(-limit);
+  const from = page.length ? page[0]._off : start;
+  return { ok: true, items: page.map(cleanMsg), next: from > 0 ? 'o' + from : null };
 }
 
 const URL_RE = /\bhttps?:\/\/[^\s<>()"'`\]]+[^\s<>()"'`\].,;:!?]/g;
