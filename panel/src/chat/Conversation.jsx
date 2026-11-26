@@ -1,18 +1,22 @@
-// Conversation screen: newest 50 messages, older ones on scroll-up, live reply over SSE
-// (delta / tool / message / done / error), stop button, "jump to bottom" and the composer.
+// THE conversation of the project: the one its terminal Claude is on (the server picks it).
+// Newest 50 messages, older ones on scroll-up; live over SSE while Claude works in the terminal
+// (`state`: conversation id, working / asking / idle / off; `messages`: new and grown messages).
+// What is sent here is typed into that terminal. Above the composer: "Claude is not running"
+// (Start) or Claude's question (its options as buttons).
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowDown, ChevronDown, ChevronLeft, Wrench, CircleAlert } from 'lucide-react'
-import { api, stream } from './api.js'
-import { fmtDay, fmtTime, kindOf, mergeById, toMs } from './format.js'
+import { ArrowDown, ChevronDown, CircleAlert, Clock, Info as InfoIcon, Wrench } from 'lucide-react'
+import { ApiError, UNAUTHORIZED, api, stream } from './api.js'
+import { fmtDay, fmtTime, kindOf, mergeById, normText, toMs, upsertById } from './format.js'
 import { Markdown } from './markdown.jsx'
 import { FileRow, Thumb } from './media.jsx'
 import { Composer } from './Composer.jsx'
+import { OffCard, QuestionCard, WorkingBubble } from './cards.jsx'
 import { t } from '../lib/i18n.js'
 import { Header, IconButton, Sentinel, Spinner, cx, toast } from './ui.jsx'
 
 const NEAR_BOTTOM = 80
 
-function ToolChips({ tools, live }) {
+function ToolChips({ tools }) {
   const [open, setOpen] = useState(false)
   if (!tools?.length) return null
   const names = [...new Set(tools.map((x) => x.name))]
@@ -20,8 +24,8 @@ function ToolChips({ tools, live }) {
   return (
     <div className="mb-1">
       <button type="button" data-testid="tool-chip" aria-expanded={open} onClick={() => setOpen((v) => !v)}
-        className="inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted">
-        <Wrench className={cx('size-3.5 shrink-0', live && 'animate-pulse text-brand')} aria-hidden />
+        className="inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted">
+        <Wrench className="size-3.5 shrink-0" aria-hidden />
         <span className="truncate">{names.slice(0, 3).join(' · ')}{names.length > 3 ? ' …' : ''}</span>
         <span className="shrink-0 tabular-nums">({tools.length})</span>
         {failed && <CircleAlert className="size-3.5 shrink-0 text-destructive" aria-label={t('chat.toolFailed')} />}
@@ -57,126 +61,109 @@ function Attachments({ list, onView, mine }) {
   )
 }
 
-function Bubble({ m, onView, live }) {
+function Bubble({ m, onView }) {
   const mine = m.role === 'user'
   return (
-    <div data-testid={live ? 'bubble-live' : 'bubble'} data-role={m.role} className={cx('flex w-full', mine ? 'justify-end' : 'justify-start')}>
-      <div className={cx('min-w-0 max-w-[85%] rounded-2xl px-3 py-2 text-[15px] leading-relaxed shadow-xs',
+    <div data-testid={m.local ? 'bubble-local' : 'bubble'} data-role={m.role} className={cx('flex w-full', mine ? 'justify-end' : 'justify-start')}>
+      <div className={cx('min-w-0 max-w-[85%] rounded-2xl px-3 py-2 text-[15px] leading-relaxed shadow-xs lg:max-w-[80%] lg:text-base',
         mine ? 'rounded-br-md bg-secondary text-secondary-foreground' : 'rounded-bl-md border bg-card text-card-foreground')}>
-        <ToolChips tools={m.tools} live={live} />
+        <ToolChips tools={m.tools} />
         <Attachments list={m.attachments} onView={onView} mine={mine} />
-        {m.text
-          ? (mine ? <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{m.text}</div> : <Markdown text={m.text} />)
-          : live && <span data-testid="typing" className="inline-flex gap-1 py-1.5" aria-label={t('chat.typing')}>{[0, 1, 2].map((i) => <span key={i} className="size-1.5 animate-pulse rounded-full bg-muted-foreground" style={{ animationDelay: `${i * 160}ms` }} />)}</span>}
-        {!live && m.ts ? <div className={cx('mt-0.5 text-right text-[11px]', 'text-muted-foreground')}>{fmtTime(m.ts)}</div> : null}
+        {m.text && (mine ? <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{m.text}</div> : <Markdown text={m.text} />)}
+        <div className="mt-0.5 flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
+          {m.local ? <><Clock className="size-3" aria-hidden />{t('chat.sent')}</> : fmtTime(m.ts)}
+        </div>
       </div>
     </div>
   )
 }
 
+// a message sent from here shows at once ("sent"); it goes away when the same text shows up in
+// the conversation (Claude Code writes it when it takes the message; a busy Claude queues it)
+function withEchoes(list, locals) {
+  const users = list.filter((m) => m.role === 'user')
+  const left = locals.filter((l) => {
+    const txt = normText(l.text)
+    return !users.some((u) => toMs(u.ts) >= l.ts - 10000 && (txt ? normText(u.text).includes(txt) : true))
+  })
+  return [...list, ...left]
+}
+
 const dayKey = (v) => { const ms = toMs(v); if (!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` }
+const STATUS = { working: 'chat.working', asking: 'chat.asking', off: 'chat.offShort' }
+const initial = (s) => (String(s || '').trim()[0] || '#').toUpperCase()
 
 let localSeq = 0
-export function Conversation({ id: initialId, item, onBack, onInfo, onCreated, onActivity, onView, onMeta }) {
-  const [cid, setCid] = useState(initialId || null)
+export function Conversation({ me, onState, onInfo, onView, wide, bell }) {
   const [msgs, setMsgs] = useState([])
   const [next, setNext] = useState(null)
-  const [loading, setLoading] = useState(!!initialId)
+  const [loading, setLoading] = useState(true)
   const [loadingOlder, setLoadingOlder] = useState(false)
-  const [ready, setReady] = useState(!initialId)
-  const [running, setRunning] = useState(false)
-  const [live, setLive] = useState(null) // { text, tools } while a reply streams
+  const [ready, setReady] = useState(false)
+  const [st, setSt] = useState(null)
   const [atBottom, setAtBottom] = useState(true)
   const scroller = useRef(null)
   const content = useRef(null)
   const stick = useRef(true)
   const prepend = useRef(null)
-  const sse = useRef(null)
-  const cidRef = useRef(cid)
-  cidRef.current = cid
+  const conv = useRef(undefined) // conversation id of the messages on screen
+  const sseRef = useRef(null)
+  const retry = useRef(null)
 
   const toBottom = (smooth) => { const el = scroller.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' }) }
 
-  // newest page again (after a run ends or the app comes back to the foreground).
-  // final: the run is over, so the saved conversation has the whole reply. The streamed messages
-  // go: their ids are not the saved ones (the server folds the parts of one reply into one message),
-  // so keeping them would show the reply twice.
-  const refresh = useCallback(async (id, { final = false } = {}) => {
+  // newest page (first load, and when the terminal Claude moved to another conversation). A
+  // reconnect does not reload: the stream starts with the newest messages, merged by id.
+  const load = useCallback(async () => {
     try {
-      const r = await api.messages(id)
-      const page = r.items || []
-      const ids = new Set(page.map((m) => m.id))
-      const first = toMs(page[0]?.ts)
-      // older pages stay; streamed messages the page does not have yet stay after it; local echoes go
-      setMsgs((prev) => {
-        const keep = prev.filter((m) => !m.local && !ids.has(m.id) && !(final && m.live))
-        return [...keep.filter((m) => !m.live && (!first || toMs(m.ts) <= first)), ...page, ...keep.filter((m) => m.live)]
-      })
-      setNext((n) => n ?? r.next ?? null)
-    } catch { /* keep what is shown */ }
+      const r = await api.messages()
+      conv.current = r.conv || null
+      setMsgs((prev) => withEchoes(r.items || [], prev.filter((m) => m.local)))
+      setNext(r.next || null)
+    } catch (e) { if (!(e instanceof ApiError && e.status === 401)) toast(t('chat.loadFailed')) } finally { setLoading(false) }
   }, [])
 
-  const finish = useCallback((id) => {
-    sse.current?.close(); sse.current = null
-    setRunning(false); setLive(null)
-    onActivity?.()
-    if (id) refresh(id, { final: true })
-  }, [refresh, onActivity])
+  const onEvent = useCallback((ev, d) => {
+    if (ev === 'state' && d) {
+      setSt(d)
+      onState?.(d)
+      // the terminal Claude moved to another conversation (/clear, a new session, --resume)
+      if (conv.current !== undefined && d.conv !== conv.current) {
+        conv.current = d.conv
+        setMsgs((prev) => prev.filter((m) => m.local)); setNext(null); setReady(false); setLoading(true)
+        load()
+      }
+    } else if (ev === 'messages' && d && d.conv === conv.current) {
+      setMsgs((prev) => withEchoes(upsertById(prev.filter((m) => !m.local), d.items || []), prev.filter((m) => m.local)))
+    }
+  }, [load, onState])
 
-  const connect = useCallback((id, { expect } = {}) => {
-    sse.current?.close()
-    let ended = false, got = !!expect
-    // a (re)connect replays the finished messages of the run and then ONE delta with all the text
-    // so far: drop the partial text shown before, or it would appear twice
-    setLive(expect ? { text: '', tools: [] } : null)
-    if (expect) setRunning(true)
-    const end = () => { if (!ended) { ended = true; if (got) finish(id) } }
-    const s = stream(id, (ev, d) => {
-      if (ended) return
-      if (ev === 'delta') { got = true; setRunning(true); setLive((l) => ({ tools: [], ...(l || {}), text: (l?.text || '') + (d.text || '') })) }
-      else if (ev === 'tool') { got = true; setRunning(true); setLive((l) => ({ text: '', ...(l || {}), tools: [...(l?.tools || []), d] })) }
-      else if (ev === 'message' && d?.id) {
-        got = true
-        setMsgs((prev) => {
-          const m = { ...d, live: true }
-          if (m.role === 'user') { const i = prev.findIndex((x) => x.local); if (i >= 0) return [...prev.slice(0, i), m, ...prev.slice(i + 1)] }
-          return mergeById(prev, [m])
-        })
-        if (d.role === 'assistant') setLive({ text: '', tools: [] })
-      } else if (ev === 'done') { got = true; end() }
-      else if (ev === 'error') { toast(d?.msg || t('chat.runFailed')); got = true; end() }
-    })
-    sse.current = s
-    s.done.then(end, (e) => { if (e?.name !== 'AbortError') end() })
-  }, [finish])
+  const connect = useCallback(() => {
+    clearTimeout(retry.current)
+    sseRef.current?.close()
+    const s = stream(onEvent)
+    sseRef.current = s
+    const again = (e) => {
+      if (sseRef.current !== s || e?.name === 'AbortError') return
+      if (e?.status === 401) { try { window.dispatchEvent(new Event(UNAUTHORIZED)) } catch { /* */ } return }
+      retry.current = setTimeout(connect, 3000)
+    }
+    s.done.then(() => again(), again)
+  }, [onEvent])
 
-  // first page + live state (the server replays the partial reply on connect)
   useEffect(() => {
-    if (!initialId) return
-    let live = true
-    api.messages(initialId).then((r) => {
-      if (!live) return
-      // the stream may have delivered messages before this page arrived: keep them after it
-      setMsgs((prev) => mergeById(r.items || [], prev)); setNext(r.next || null)
-    }).catch(() => toast(t('chat.loadFailed'))).finally(() => { if (live) setLoading(false) })
-    // always attach: the list item may be stale (a run started since); idle -> the server answers done at once
-    connect(initialId, { expect: !!item?.running })
-    return () => { live = false }
+    load().then(connect)
+    return () => { clearTimeout(retry.current); sseRef.current?.close(); sseRef.current = null }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => () => sse.current?.close(), [])
-
-  // back from the background (iOS freezes the page): reconnect and catch up
+  // back from the background (iOS freezes the page): reconnect (the stream catches up)
   useEffect(() => {
-    const on = () => {
-      if (document.visibilityState !== 'visible' || !cidRef.current) return
-      refresh(cidRef.current)
-      connect(cidRef.current, { expect: false })
-    }
+    const on = () => { if (document.visibilityState === 'visible' && conv.current !== undefined) connect() }
     document.addEventListener('visibilitychange', on)
     return () => document.removeEventListener('visibilitychange', on)
-  }, [refresh, connect])
+  }, [connect])
 
+  const claude = st?.claude || ''
   // keep the scroll: older messages added on top must not move what is on screen
   useLayoutEffect(() => {
     const el = scroller.current
@@ -184,11 +171,11 @@ export function Conversation({ id: initialId, item, onBack, onInfo, onCreated, o
     if (prepend.current != null) { el.scrollTop = el.scrollHeight - prepend.current; prepend.current = null; return }
     if (!loading && !ready) { toBottom(); setReady(true); return }
     if (stick.current) toBottom()
-  }, [msgs, live, loading, ready])
+  }, [msgs, loading, ready, claude])
 
   // images and code blocks change height after render: follow the bottom while "stuck" there
   useEffect(() => {
-    if (!content.current || typeof ResizeObserver === 'undefined') return
+    if (!content.current || typeof ResizeObserver === 'undefined') return undefined
     const ro = new ResizeObserver(() => { if (stick.current && prepend.current == null) toBottom() })
     ro.observe(content.current)
     return () => ro.disconnect()
@@ -202,10 +189,11 @@ export function Conversation({ id: initialId, item, onBack, onInfo, onCreated, o
   }
 
   const loadOlder = async () => {
-    if (!next || loadingOlder || !cid) return
+    if (!next || loadingOlder) return
     setLoadingOlder(true)
     try {
-      const r = await api.messages(cid, next)
+      const r = await api.messages(next)
+      if (r.conv !== conv.current) return
       const el = scroller.current
       prepend.current = el ? el.scrollHeight - el.scrollTop : null
       setMsgs((prev) => mergeById(prev, r.items || [], true))
@@ -218,54 +206,43 @@ export function Conversation({ id: initialId, item, onBack, onInfo, onCreated, o
     stick.current = true
     setMsgs((prev) => [...prev, local])
     try {
-      const r = await api.send(cid, text, atts.map((a) => a.path))
-      const id = r.id || cid
-      if (!cid && id) { setCid(id); onCreated?.(id) }
-      connect(id, { expect: true })
-      onActivity?.()
+      await api.send(text, atts.map((a) => a.path))
       return true
     } catch (e) {
       setMsgs((prev) => prev.filter((m) => m.id !== local.id))
-      toast(e?.status === 409 ? t('chat.busy') : e?.status === 429 ? (e.message && !/^HTTP/.test(e.message) ? e.message : t('chat.tooMany')) : t('chat.sendFailed'))
+      toast(e?.message && !/^HTTP/.test(e.message) && e.status !== 401 ? e.message : t('chat.sendFailed'))
       return false
     }
   }
-  const stop = async () => {
-    const id = cid
-    try { await api.stop(id) } catch { toast(t('chat.stopFailed')); return }
-    // the run ends with a `done` event; if the stream is gone, do not leave the button stuck
-    setTimeout(() => { if (cidRef.current === id && sse.current) finish(id) }, 5000)
-  }
+  const stop = async () => { try { await api.stop() } catch { toast(t('chat.stopFailed')) } }
 
-  const firstUser = msgs.find((m) => m.role === 'user')?.text
-  // for the info screen: the start date is known only once the oldest page is loaded
-  const first = next ? null : msgs[0]?.ts
-  useEffect(() => { onMeta?.({ first, firstUser }) }, [first, firstUser]) // eslint-disable-line react-hooks/exhaustive-deps
-  const title = item?.title || (firstUser ? firstUser.slice(0, 60) : t('chat.newChat'))
-  const sub = running ? t('chat.typing') : item?.updatedAt ? t('chat.updated', { when: fmtTime(item.updatedAt) }) : cid ? t('chat.tapInfo') : ''
-
+  const mode = claude === 'off' ? 'off' : claude === 'asking' ? 'asking' : claude === 'working' ? 'working' : 'ready'
+  const status = st ? (STATUS[claude] ? t(STATUS[claude]) : st.title || t('chat.idle')) : ''
   let lastDay = ''
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="screen-conversation">
       <Header testid="conv-header"
-        left={<IconButton label={t('chat.back')} onClick={onBack} data-testid="back-btn"><ChevronLeft className="size-7" /></IconButton>}>
-        <button type="button" data-testid="conv-title" disabled={!cid} onClick={() => cid && onInfo(cid)} className="flex min-h-11 w-full min-w-0 flex-col justify-center text-left">
-          <span className="block truncate text-[15px] font-semibold leading-tight">{title}</span>
-          {sub && <span className={cx('block truncate text-xs leading-tight', running ? 'text-brand' : 'text-muted-foreground')}>{sub}</span>}
+        left={<span aria-hidden className="ml-1.5 grid size-9 shrink-0 place-items-center rounded-full bg-brand/15 text-[15px] font-semibold text-brand">{initial(me?.project)}</span>}
+        right={<>{bell}{!wide && <IconButton label={t('chat.info')} onClick={onInfo} data-testid="info-btn"><InfoIcon className="size-5" /></IconButton>}</>}>
+        <button type="button" data-testid="conv-title" onClick={wide ? undefined : onInfo} tabIndex={wide ? -1 : 0}
+          className={cx('flex min-h-11 w-full min-w-0 flex-col justify-center px-1.5 text-left', wide && 'cursor-default')}>
+          <span className="block truncate text-[15px] font-semibold leading-tight lg:text-base">{me?.project || t('chat.title')}</span>
+          <span data-testid="claude-status" data-state={claude} className={cx('block truncate text-xs leading-tight',
+            claude === 'working' ? 'text-brand' : claude === 'asking' ? 'text-warning' : 'text-muted-foreground')}>{status}</span>
         </button>
       </Header>
 
       <div className="relative min-h-0 flex-1">
         <div ref={scroller} onScroll={onScroll} data-testid="messages" className="chat-scroll absolute inset-0 overflow-y-auto overflow-x-hidden">
-          <div ref={content} className="flex min-h-full flex-col justify-end gap-1.5 px-3 py-3">
+          <div ref={content} data-testid="messages-column" className="mx-auto flex min-h-full w-full max-w-[820px] flex-col justify-end gap-1.5 px-3 py-3 lg:gap-2 lg:px-6 lg:py-5">
             <Sentinel enabled={ready && !!next && !loadingOlder} onHit={loadOlder} rootRef={scroller} margin="200px 0px 0px 0px" testid="older-sentinel" />
             {loadingOlder && <div className="flex justify-center py-2"><Spinner /></div>}
             {loading && <div className="flex flex-1 items-center justify-center"><Spinner /></div>}
-            {!loading && !msgs.length && !live && (
+            {!loading && !msgs.length && (
               <div data-testid="conv-empty" className="m-auto max-w-xs py-10 text-center text-sm text-muted-foreground">{t('chat.emptyConversation')}</div>
             )}
             {msgs.map((m) => {
-              const dk = dayKey(m.ts)
+              const dk = m.local ? '' : dayKey(m.ts)
               const sep = dk && dk !== lastDay
               if (dk) lastDay = dk
               return (
@@ -275,18 +252,25 @@ export function Conversation({ id: initialId, item, onBack, onInfo, onCreated, o
                 </React.Fragment>
               )
             })}
-            {live && <Bubble live m={{ id: 'live', role: 'assistant', text: live.text, tools: live.tools }} onView={onView} />}
+            {claude === 'working' && <WorkingBubble />}
           </div>
         </div>
         {!atBottom && (
           <button type="button" data-testid="jump-bottom" aria-label={t('chat.jumpBottom')} onClick={() => { stick.current = true; toBottom(true) }}
-            className="absolute bottom-3 right-3 z-10 grid size-11 place-items-center rounded-full border bg-background text-foreground shadow-md">
+            className="absolute bottom-3 right-3 z-10 grid size-11 place-items-center rounded-full border bg-background text-foreground shadow-md transition-colors hover:bg-accent lg:right-6">
             <ArrowDown className="size-5" />
           </button>
         )}
       </div>
 
-      <Composer running={running} onSend={send} onStop={stop} autoFocus={!initialId} />
+      {(claude === 'off' || claude === 'asking') && (
+        <div data-testid="state-cards" className="chat-scroll max-h-[55%] shrink-0 overflow-y-auto border-t bg-muted/30">
+          <div className="mx-auto w-full max-w-[820px] px-3 py-2 lg:px-6">
+            {claude === 'off' ? <OffCard why={st.why} /> : <QuestionCard q={st.question} />}
+          </div>
+        </div>
+      )}
+      <Composer mode={mode} onSend={send} onStop={stop} autoFocus />
     </div>
   )
 }

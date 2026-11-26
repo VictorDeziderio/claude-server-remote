@@ -24,10 +24,6 @@ export const fmtDay = (v) => {
   const ms = toMs(v)
   return ms ? new Date(ms).toLocaleDateString(getLang(), { day: 'numeric', month: 'long', year: 'numeric' }) : ''
 }
-export const fmtFull = (v) => {
-  const ms = toMs(v)
-  return ms ? new Date(ms).toLocaleString(getLang(), { dateStyle: 'medium', timeStyle: 'short' }) : ''
-}
 export const fmtSize = (n) => (n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : n >= 1e3 ? Math.round(n / 1e3) + ' kB' : (n || 0) + ' B')
 
 export const baseName = (p) => String(p || '').split('/').pop()
@@ -40,6 +36,18 @@ export const kindOfFile = (file) => (/^image\//.test(file?.type) ? 'image' : /^v
 // A link item from /chat-api/media?tab=links may be a bare string or { url, title?, ts? }.
 export const normLink = (it) => (typeof it === 'string' ? { url: it } : it || {})
 export const hostOf = (url) => { try { return new URL(url).host } catch { return '' } }
+
+// Put a page of items into a list: an item already there is REPLACED (a reply grows while Claude
+// writes it), new ones go at the end, in their order.
+export function upsertById(list, page) {
+  const byId = new Map(page.filter(Boolean).map((x) => [x.id, x]))
+  const out = list.map((x) => (byId.has(x.id) ? byId.get(x.id) : x))
+  const have = new Set(list.map((x) => x.id))
+  for (const x of page) if (x && !have.has(x.id)) out.push(x)
+  return out
+}
+// whitespace-insensitive text, to match a sent message with the one saved in the conversation
+export const normText = (s) => String(s || '').replace(/\s+/g, ' ').trim()
 
 // Merge a page of items into a list, keeping the first copy of each id.
 export function mergeById(list, page, atStart = false) {

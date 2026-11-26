@@ -29,9 +29,6 @@ body { margin: 0; overflow: hidden; -webkit-tap-highlight-color: transparent; -w
 html[data-kb] .chat-bottom { padding-bottom: 0; }
 .chat-scroll { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 input, select, textarea { font-size: max(16px, 1rem); }
-@media (min-width: 760px) {
-  body { background: var(--muted); }
-}
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 *::-webkit-scrollbar { width: 8px; height: 8px; }

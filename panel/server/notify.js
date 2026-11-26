@@ -7,7 +7,8 @@ const { tr } = require('./i18n');
  * EVENTS below). Sources wired here:
  *
  *  - Claude Code HOOKS (primary, works with the panel closed): managed-settings.json runs
- *    devbox-hook.sh on Stop / StopFailure / Notification / UserPromptSubmit; the script appends
+ *    devbox-hook.sh on Stop / StopFailure / Notification / UserPromptSubmit / SessionStart and on
+ *    PreToolUse of AskUserQuestion (so the push carries the question); the script appends
  *    one JSON line to RUN_DIR/hooks.jsonl, polled here every 2s (stat only when nothing changed).
  *    Hooks are exact (Claude itself says "turn finished" / "needs permission"), unlike reading
  *    the tmux screen, which only runs while a browser tab is open (events.js pauses without SSE
@@ -18,6 +19,10 @@ const { tr } = require('./i18n');
  *                                       idle_prompt right after a "done" is the same news: skipped)
  *      StopFailure        -> login (authentication errors) | usage (rate_limit/billing) | done
  *      UserPromptSubmit   -> remembers when the turn started and whether it is interactive
+ *      PreToolUse         -> waiting   (AskUserQuestion only: the body is the question)
+ *    Every hook line also goes to the onHookLine listeners (server/chat.js: which conversation the
+ *    project's terminal Claude is on, and whether a turn is running).
+ *    Chat link devices (push.js `chat`) get only done/waiting of THEIR project, opening the chat.
  *  - tmux watcher (events.js 'notify' broadcasts): fallback for done/waiting only while no hook
  *    event was seen in the last 24h (image without the hook, older Claude Code).
  *  - alerts.jsonl (via the same broadcast): crash-loop of a project.
@@ -45,6 +50,7 @@ const EVENTS = {
   usage: { gapMs: 6 * 3600e3 },
   update: { gapMs: 0 },
 };
+const CHAT_EVENTS = new Set(['done', 'waiting']);
 const RATE_MAX = 12, RATE_WINDOW_MS = 10 * 60e3;   // at most 12 pushes per 10 minutes, all events
 const STALE_MS = 5 * 60e3;                          // hook lines older than this are ignored
 const HOOK_FILE = path.join(cfg.RUN_DIR, 'hooks.jsonl');
@@ -97,7 +103,14 @@ async function notify(ev = {}) {
     url: typeof ev.url === 'string' && ev.url.startsWith('/') ? ev.url : urlFor(project),
     tag, event: ev.event, project, t: now,
   });
-  const r = await push.sendAll(payload, { topic: tag, urgency: ev.event === 'waiting' || ev.event === 'crash' ? 'high' : 'normal' });
+  const urgency = ev.event === 'waiting' || ev.event === 'crash' ? 'high' : 'normal';
+  const r = await push.sendAll(payload, { topic: tag, urgency, filter: (d) => !d.chat });
+  // the chat link of the project (installed on a phone): only "finished" / "asking", tap opens the chat
+  if (project && CHAT_EVENTS.has(ev.event)) {
+    const c = await push.sendAll((lang) => ({ ...payload(lang), url: '/remote/' + encodeURIComponent(project), tag: 'cr-chat-' + ev.event + '-' + project, chat: true }),
+      { topic: 'chat-' + tag, urgency, filter: (d) => !!d.chat && d.chat.project === project });
+    r.sent += c.sent; r.failed += c.failed;
+  }
   entry.sent = r.sent; entry.failed = r.failed;
   remember(entry);
   return { ok: true, sent: r.sent, failed: r.failed };
@@ -151,6 +164,10 @@ function handleHook(h, now = Date.now()) {
     if (h.ev === 'StopFailure') return { event: 'done', project, title: L('srv.push.error', { name }), body: clip(h.msg || err.replace(/_/g, ' '), 200) };
     return { event: 'done', project, title: L('srv.doneTitle', { name }), body: clip(h.msg, 200) || (secs != null ? L('srv.push.workedFor', { s: secs }) : L('srv.push.ready')) };
   }
+  if (h.ev === 'PreToolUse') {
+    if (nonInteractive || h.tool !== 'AskUserQuestion') return null;
+    return { event: 'waiting', project, key: project + ':question', title: L('srv.push.wait.question', { name }), body: clip(h.msg, 200) };
+  }
   if (h.ev === 'Notification') {
     if (nonInteractive) return null;
     const type = String(h.type || '');
@@ -189,8 +206,12 @@ function readHookLines() {
   }
   return out;
 }
+// every hook line, before the notification policy (server/chat.js keeps per-project state from it)
+const hookListeners = [];
+const onHookLine = (cb) => { if (typeof cb === 'function') hookListeners.push(cb); };
 async function pollHooks() {
   for (const h of readHookLines()) {
+    for (const cb of hookListeners) { try { cb(h); } catch (e) { log('error', 'hook listener', { err: e.message }); } }
     const ev = handleHook(h);
     if (ev) await notify(ev).catch((e) => log('error', 'notify', { err: e.message }));
   }
@@ -288,4 +309,4 @@ const routes = {
   AUDITED: ['/api/push/subscribe', '/api/push/unsubscribe', '/api/push/prefs', '/api/push/test'],
 };
 
-module.exports = { notify, start, stop, routes, EVENTS, handleHook, projectOf, onThreshold, prefs, setPrefs };
+module.exports = { notify, start, stop, routes, EVENTS, handleHook, projectOf, onHookLine, HOOK_FILE, onThreshold, prefs, setPrefs };

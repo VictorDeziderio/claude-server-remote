@@ -1,0 +1,16 @@
+⏺ Before I start I need to know a couple of things.
+
+────────────────────────────────────────────────────────────────────────────────
+ ☐ Database
+
+Which database should the app use?
+
+❯ 1. PostgreSQL
+     Relational, the usual choice for a web app
+  2. SQLite
+     A single file, no server to run
+  3. Type something.
+────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

@@ -123,5 +123,5 @@ export const updateStatus = () => get('/api/update')
 export const updateRequest = (mode) => post('/api/update', { mode })
 // chat link keys of a project (server/chat.js); the plain key comes back only on create
 export const chatKeys = (name) => get('/api/chat/keys?' + q({ name }))
-export const chatKeyCreate = (name, label, role) => post('/api/chat/keys/create', { name, label, role })
+export const chatKeyCreate = (name, label) => post('/api/chat/keys/create', { name, label })
 export const chatKeyRevoke = (id) => post('/api/chat/keys/revoke', { id })

@@ -246,6 +246,7 @@ server.listen(cfg.PORT, cfg.BIND, () => {
   events.start(projects.buildState); // watcher + SSE
   limits.start(); // plan limits / API spend poller (server/limits.js)
   notify.start(); // Web Push: hooks, alerts, login, boot
+  chat.start(); // project chat links: which conversation the terminal Claude is on (hook lines)
   claudeUpdate.start(); // Claude Code automatic update (server/claude-update.js)
   require('./server/autoresume').start(); // "continue" by itself after a usage-limit reset
 });

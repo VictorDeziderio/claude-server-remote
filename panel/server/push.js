@@ -88,6 +88,8 @@ function checkEndpoint(endpoint) {
 }
 
 // registers (or refreshes) a device. sub = PushSubscription.toJSON()
+// meta.chat = { project, keyId }: a device of a project chat link (server/chat.js). It only gets the
+// pushes of that project, and its taps open the chat; panel devices (no `chat`) get the rest.
 function subscribe(sub, meta = {}) {
   if (!webpush) return { ok: false, msg: tr('srv.pushMissing') };
   if (!sub || typeof sub !== 'object') return { ok: false, msg: tr('srv.noSub') };
@@ -108,9 +110,10 @@ function subscribe(sub, meta = {}) {
   const now = Date.now();
   let d = s.devices.find((x) => x.endpoint === sub.endpoint);
   const lang = require('./i18n').current(); // language of whoever subscribed (cr_lang cookie): the push goes out in it
-  if (d) { d.keys = { p256dh: keys.p256dh, auth: keys.auth }; d.name = name; d.fails = 0; d.lastError = ''; d.lang = lang; }
+  const chat = meta.chat && typeof meta.chat.project === 'string' ? { project: meta.chat.project, keyId: String(meta.chat.keyId || '') } : undefined;
+  if (d) { d.keys = { p256dh: keys.p256dh, auth: keys.auth }; d.name = name; d.fails = 0; d.lastError = ''; d.lang = lang; d.chat = chat; }
   else {
-    d = { id: idOf(sub.endpoint), endpoint: sub.endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth }, name, lang, createdAt: now, lastOkAt: 0, lastError: '', fails: 0 };
+    d = { id: idOf(sub.endpoint), endpoint: sub.endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth }, name, lang, createdAt: now, lastOkAt: 0, lastError: '', fails: 0, chat };
     s.devices.push(d);
     if (s.devices.length > MAX_DEVICES) s.devices.sort((a, b) => (b.lastOkAt || b.createdAt) - (a.lastOkAt || a.createdAt)).splice(MAX_DEVICES);
   }
@@ -130,9 +133,24 @@ function publicDevice(d) {
   let host = '';
   try { host = new URL(d.endpoint).hostname; } catch { /* */ }
   const svc = (SERVICE.find(([rx]) => rx.test(host)) || [null, host])[1];
-  return { id: d.id, name: d.name, lang: d.lang || 'en', service: svc, endpoint: d.endpoint, createdAt: d.createdAt, lastOkAt: d.lastOkAt || 0, lastError: d.lastError || '', fails: d.fails || 0 };
+  return { id: d.id, name: d.name, lang: d.lang || 'en', service: svc, endpoint: d.endpoint, createdAt: d.createdAt, lastOkAt: d.lastOkAt || 0, lastError: d.lastError || '', fails: d.fails || 0, chat: d.chat ? d.chat.project : '' };
 }
 const devices = () => load().devices.map(publicDevice);
+// chat devices: removed with their key / project, follow a project rename
+function removeWhere(pred) {
+  const s = load();
+  const before = s.devices.length;
+  s.devices = s.devices.filter((d) => !pred(d));
+  if (s.devices.length !== before) save();
+  return before - s.devices.length;
+}
+function renameChat(oldName, newName) {
+  const s = load();
+  let n = 0;
+  for (const d of s.devices) if (d.chat && d.chat.project === oldName) { d.chat.project = newName; n++; }
+  if (n) save();
+  return n;
+}
 
 // one delivery -> HTTP status of the push service (0 = network error)
 async function deliver(d, body, opts) {
@@ -153,13 +171,14 @@ async function deliver(d, body, opts) {
   catch (e) { return e.statusCode || 0; }
 }
 
-// sends `payload` ({title, body, url, tag, ...}) to every device (or only `opts.id`).
+// sends `payload` ({title, body, url, tag, ...}) to every device (or only `opts.id`, or the ones
+// `opts.filter(device)` accepts).
 // `payload` can be a function (lang) => payload: each device gets it in its own language.
 // 404/410 = subscription gone (uninstalled app, revoked permission) -> device removed.
 async function sendAll(payload, opts = {}) {
   if (!webpush) return { ok: false, msg: tr('srv.pushUnavailable'), sent: 0, failed: 0, removed: 0 };
   const s = load();
-  const targets = s.devices.filter((d) => !opts.id || d.id === opts.id);
+  const targets = s.devices.filter((d) => (!opts.id || d.id === opts.id) && (!opts.filter || opts.filter(d)));
   if (opts.id && !targets.length) return { ok: false, msg: tr('srv.deviceNotFound'), sent: 0, failed: 0, removed: 0 };
   const bodyFor = (d) => JSON.stringify(typeof payload === 'function' ? payload(d.lang || 'en') : payload);
   let sent = 0, failed = 0;
@@ -185,4 +204,4 @@ const getMeta = (k) => load()[k];
 function setMeta(k, v) { if (['vapid', 'devices', 'prefs'].includes(k)) return false; load()[k] = v; return save(); }
 const _reset = () => { state = null; };
 
-module.exports = { supported, publicKey, subscribe, unsubscribe, devices, sendAll, checkEndpoint, getPref, setPref, getMeta, setMeta, FILE, _reset };
+module.exports = { supported, publicKey, subscribe, unsubscribe, devices, removeWhere, renameChat, sendAll, checkEndpoint, getPref, setPref, getMeta, setMeta, FILE, _reset };

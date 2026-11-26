@@ -1,0 +1,12 @@
+────────────────────────────────────────────────────────────────────────────────
+ Edit file
+ src/app.js
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  12 -  const total = a + b
+  12 +  const total = Number(a) + Number(b)
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Do you want to make this edit to app.js?
+   1. Yes
+ ❯ 2. Yes, allow all edits during this session (shift+tab)
+   3. No, and tell Claude what to do differently (esc)
+

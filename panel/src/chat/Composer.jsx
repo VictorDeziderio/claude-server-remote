@@ -1,5 +1,8 @@
 // Message composer: attach (camera / photos / files), auto-growing textarea, send or stop.
 // Attachments upload right away (XHR, with progress); send waits until all of them are done.
+// mode: 'ready' | 'working' (Stop = Escape in the terminal; typing still sends: Claude queues it) |
+// 'off' / 'asking' (nothing can be typed into the terminal now: the card above explains).
+// Enter sends with a keyboard (Shift+Enter = new line); on a phone Enter is a new line.
 import React, { useEffect, useRef, useState } from 'react'
 import { ArrowUp, Camera, FileUp, Images, Paperclip, Square, X } from 'lucide-react'
 import { upload } from './api.js'
@@ -62,7 +65,7 @@ function AttachMenu({ onPick, onClose }) {
   )
 }
 
-export function Composer({ running, onSend, onStop, autoFocus }) {
+export function Composer({ mode = 'ready', onSend, onStop, autoFocus }) {
   const [text, setText] = useState('')
   const [atts, setAtts] = useState([])
   const [menu, setMenu] = useState(false)
@@ -110,10 +113,12 @@ export function Composer({ running, onSend, onStop, autoFocus }) {
 
   const uploading = atts.some((a) => a.status === 'up')
   const ready = atts.filter((a) => a.status === 'ok')
-  const canSend = !running && !uploading && (text.trim() || ready.length)
+  const blocked = mode === 'off' || mode === 'asking'
+  const canSend = !blocked && !uploading && (text.trim() || ready.length)
+  const showStop = mode === 'working' && !text.trim() && !atts.length
 
   const send = async () => {
-    if (!canSend) { if (uploading) toast(t('chat.waitUploads')); return }
+    if (!canSend) { if (blocked) toast(mode === 'off' ? t('chat.placeholderOff') : t('chat.placeholderAsking')); else if (uploading) toast(t('chat.waitUploads')); return }
     const body = text.trim(), sent = ready
     setText('')
     setAtts((l) => l.filter((a) => a.status !== 'ok'))
@@ -130,24 +135,26 @@ export function Composer({ running, onSend, onStop, autoFocus }) {
   }
 
   return (
-    <div data-testid="composer" className="chat-bottom relative z-10 shrink-0 border-t bg-background">
-      {atts.length > 0 && (
-        <div data-testid="attach-chips" className="no-scrollbar flex gap-2 overflow-x-auto px-3 pt-2">
-          {atts.map((a) => <AttachChip key={a.lid} a={a} onRemove={() => remove(a)} />)}
+    <div data-testid="composer" data-mode={mode} className="chat-bottom relative z-10 shrink-0 border-t bg-background">
+      <div className="mx-auto w-full max-w-[820px]">
+        {atts.length > 0 && (
+          <div data-testid="attach-chips" className="no-scrollbar flex gap-2 overflow-x-auto px-3 pt-2">
+            {atts.map((a) => <AttachChip key={a.lid} a={a} onRemove={() => remove(a)} />)}
+          </div>
+        )}
+        <div className="relative flex items-end gap-1 px-1.5 py-1.5">
+          {menu && <AttachMenu onPick={pick} onClose={() => setMenu(false)} />}
+          <IconButton label={t('chat.attach')} data-testid="attach-btn" aria-expanded={menu} onClick={() => setMenu((v) => !v)} variant="muted"><Paperclip className="size-5" /></IconButton>
+          <input ref={inputs.camera} type="file" accept="image/*" capture="environment" hidden onChange={onFiles} data-testid="file-camera" />
+          <input ref={inputs.photos} type="file" accept="image/*,video/*" multiple hidden onChange={onFiles} data-testid="file-photos" />
+          <input ref={inputs.files} type="file" multiple hidden onChange={onFiles} data-testid="file-files" />
+          <textarea ref={ta} rows={1} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} onPaste={onPaste}
+            placeholder={mode === 'off' ? t('chat.placeholderOff') : mode === 'asking' ? t('chat.placeholderAsking') : t('chat.placeholder')} aria-label={t('chat.placeholder')} enterKeyHint="enter"
+            className="my-0.5 max-h-[168px] min-h-10 min-w-0 flex-1 resize-none rounded-[1.25rem] border bg-muted/40 px-4 py-2 text-base leading-6 outline-none transition-colors placeholder:text-muted-foreground hover:border-ring/60 focus:border-ring" />
+          {showStop
+            ? <IconButton label={t('chat.stop')} data-testid="stop-btn" onClick={onStop} variant="solid"><Square className="size-4 fill-current" /></IconButton>
+            : <IconButton label={t('chat.send')} data-testid="send-btn" disabled={!canSend} onClick={send} variant="brand"><ArrowUp className="size-5" /></IconButton>}
         </div>
-      )}
-      <div className="relative flex items-end gap-1 px-1.5 py-1.5">
-        {menu && <AttachMenu onPick={pick} onClose={() => setMenu(false)} />}
-        <IconButton label={t('chat.attach')} data-testid="attach-btn" aria-expanded={menu} onClick={() => setMenu((v) => !v)} variant="muted"><Paperclip className="size-5" /></IconButton>
-        <input ref={inputs.camera} type="file" accept="image/*" capture="environment" hidden onChange={onFiles} data-testid="file-camera" />
-        <input ref={inputs.photos} type="file" accept="image/*,video/*" multiple hidden onChange={onFiles} data-testid="file-photos" />
-        <input ref={inputs.files} type="file" multiple hidden onChange={onFiles} data-testid="file-files" />
-        <textarea ref={ta} rows={1} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} onPaste={onPaste}
-          placeholder={t('chat.placeholder')} aria-label={t('chat.placeholder')} enterKeyHint="enter"
-          className="my-0.5 max-h-[168px] min-h-10 min-w-0 flex-1 resize-none rounded-[1.25rem] border bg-muted/40 px-4 py-2 text-base leading-6 outline-none placeholder:text-muted-foreground focus:border-ring" />
-        {running
-          ? <IconButton label={t('chat.stop')} data-testid="stop-btn" onClick={onStop} variant="solid"><Square className="size-4 fill-current" /></IconButton>
-          : <IconButton label={t('chat.send')} data-testid="send-btn" disabled={!canSend} onClick={send} variant="brand"><ArrowUp className="size-5" /></IconButton>}
       </div>
     </div>
   )

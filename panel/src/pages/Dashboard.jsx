@@ -440,12 +440,12 @@ function DiskSection({ name, onFlash }) {
   )
 }
 
-// "Chat link" block: private links (/c/<key>) to chat with Claude in this project from a phone.
+// "Chat link" block: private links (/remote/<project>?key=<key>) to chat from a phone with the
+// Claude of this project's terminal. Every link has full power (there are no guest links).
 // The server keeps only a hash: the plain link is shown once, right after it is created.
 function ChatLinkSection({ name, onFlash }) {
   const [keys, setKeys] = useState(null)
   const [label, setLabel] = useState('')
-  const [role, setRole] = useState('limited')
   const [busy, setBusy] = useState(false)
   const [fresh, setFresh] = useState(null) // { id, url } just created
   const [copied, setCopied] = useState('') // '' | 'ok' | 'fail'
@@ -462,7 +462,7 @@ function ChatLinkSection({ name, onFlash }) {
   useEffect(() => { setFresh(null); setKeys(null); load() }, [name]) // eslint-disable-line react-hooks/exhaustive-deps
   const create = async () => {
     setBusy(true)
-    const r = await api.chatKeyCreate(name, label.trim(), role).catch((e) => ({ ok: false, msg: e.message }))
+    const r = await api.chatKeyCreate(name, label.trim()).catch((e) => ({ ok: false, msg: e.message }))
     setBusy(false)
     if (!r.ok) return onFlash?.(r)
     setFresh({ id: r.id, url: r.url }); setCopied(''); setLabel('')
@@ -489,10 +489,6 @@ function ChatLinkSection({ name, onFlash }) {
         <p className="text-muted-foreground">{t('chatlink.hint')}</p>
         <div className="flex flex-wrap items-center gap-2">
           <input value={label} onChange={(e) => setLabel(e.target.value)} maxLength={60} placeholder={t('chatlink.label')} className={`min-w-0 flex-1 ${inputCls}`} data-testid="chatlink-label" />
-          <select value={role} onChange={(e) => setRole(e.target.value)} className={inputCls} data-testid="chatlink-role">
-            <option value="limited">{t('chatlink.limited')}</option>
-            <option value="owner">{t('chatlink.owner')}</option>
-          </select>
           <Btn variant="accent" busy={busy} onClick={create}><Plus className="h-3.5 w-3.5" /> {t('chatlink.create')}</Btn>
         </div>
         {fresh && (
@@ -512,7 +508,7 @@ function ChatLinkSection({ name, onFlash }) {
             {keys.keys.map((k) => (
               <li key={k.id} className="flex items-center justify-between gap-2" data-testid="chatlink-key">
                 <span className="min-w-0 truncate">
-                  <b>{k.label}</b> · {k.role === 'owner' ? t('chatlink.owner') : t('chatlink.limited')}
+                  <b>{k.label}</b>
                   <span className="text-muted-foreground"> · {t('chatlink.created', { date: fmtIso(k.createdAt) })} · {k.lastUsedAt ? t('chatlink.lastUsed', { date: fmtIso(k.lastUsedAt) }) : t('chatlink.never')}</span>
                 </span>
                 <Btn variant="ghost" onClick={() => revoke(k)}><Trash2 className="h-3.5 w-3.5" /> {t('chatlink.revoke')}</Btn>

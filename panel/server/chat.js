@@ -1,56 +1,76 @@
 'use strict';
 /*
- * Project chat behind a public link + key (/c/<key>, API at /chat-api/*).
+ * Project chat behind a link + key (/remote/<project>?key=<key> or /c/<key>; API at /chat-api/*).
  *
+ * ONE conversation per project: the one the project's terminal Claude (tmux session
+ * claude-<project>) is on. The chat shows that conversation and drives that same Claude:
+ *  - which conversation: the session id of the newest interactive hook line (devbox-hook.sh ->
+ *    RUN_DIR/hooks.jsonl: sid + cwd + tty) whose cwd is the project folder. When there is none, or
+ *    it is older than the newest *.jsonl and has no file of its own, the newest *.jsonl of the
+ *    project (by mtime) is shown instead;
+ *  - live: while a chat page is open, a watcher (every TICK_MS) reads the tail of that .jsonl and
+ *    the tmux screen and pushes `state` / `messages` events over SSE (GET /chat-api/stream);
+ *  - send: the text, plus the absolute paths of the uploaded attachments, is TYPED into the tmux
+ *    pane like a person (util.typeText; several lines go in as one bracketed paste);
+ *  - stop: Escape in the pane. Questions on the screen (server/screen.js: permission prompts,
+ *    AskUserQuestion menus) are answered with the arrow keys + Enter, and only while the screen
+ *    still shows the question the person saw (its `sig`);
+ *  - Claude not running (project OFF, paused, session down, shell only): `start` does what the
+ *    panel does (power on / resume / Claude ON / recreate the session).
  * Keys: 32 random bytes (base64url), stored ONLY as sha256 + metadata in CHAT_KEYS_FILE (0600).
- *  - owner: full power on the project (Claude runs like in the panel);
- *  - limited: only sees the conversations it started; Claude runs with --restricted, file tools
- *    only, and the chat-guard.js PreToolUse hook refuses any path outside the project.
- * Conversations are the Claude *.jsonl of the project (same source as server/history.js). Each
- * message runs `claude -p --output-format stream-json --verbose --include-partial-messages`
- * (stdin = prompt; --session-id <new uuid> or --resume <id>), cwd = project, never the tmux terminal.
+ * Every key is an owner key; records of the removed "limited" role are dropped when the file is read.
  *
- * Notes on the contract (spec: chat link), small additions only:
+ * Notes on the contract:
  *  - GET /chat-api/file also accepts the key as ?key=<key> (an <img>/<video> tag cannot send the
  *    Authorization header). Other routes take the Bearer header only.
- *  - /chat-api/stream on (re)connect first replays the current turn: every `message` already
- *    finished in this run, then one `delta` with the text streamed so far. Not running -> `done` at once.
- *    `done` carries {id, stopped?}.
- *  - cursors are opaque strings (conversations: "<updatedAt>|<id>", messages/media: an index).
- *  - 429 {ok:false} for the per-IP bad-key limit and for "3 runs per project" on send.
+ *  - message/media cursors are opaque strings (an index, or "o<byte offset>" for big files).
+ *  - 429 for the per-IP bad-key limit; 409 {code: off|asking|changed} when Claude cannot take a
+ *    message/answer right now.
+ *  - push: /chat-api/push* register this device for the pushes of THIS project only (push.js
+ *    `chat`), and a tap on one opens /remote/<project> (public/chat-sw.js).
  */
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
-const { spawn } = require('child_process');
-const readline = require('readline');
 const cfg = require('./config');
 const { tr } = require('./i18n');
-const { readJson, sendJson, sendStream, validName, clampInt, log, TMUX_STRIP_ENV } = require('./util');
+const { readJson, sendJson, sendStream, validName, sessionName, paneOf, clampInt, log, sh, typeText } = require('./util');
 const { audit } = require('./audit');
 const auth = require('./auth');
 const files = require('./files');
 const jsonl = require('./jsonl');
+const screen = require('./screen');
+const push = require('./push');
+
+// lazy: these modules (directly or not) require this one
+const projects = () => require('./projects');
+const notify = () => require('./notify');
 
 const KEYS_FILE = cfg.CHAT_KEYS_FILE;
-const MAX_RUNS_PER_PROJECT = 3;
-const CLAUDE_BIN = process.env.CHAT_CLAUDE_BIN || 'claude';
-const GUARD = path.join(__dirname, 'chat-guard.js');
 const UPLOAD_DIR = files.UPLOAD_DIR;
+const TICK_MS = Math.max(200, parseInt(process.env.CHAT_TICK_MS || '1000', 10) || 1000);
+const MAX_STREAMS_PER_PROJECT = 10;
 const projectDir = (name) => path.join(cfg.PROJECTS_DIR, name);
 const histDir = (name) => require('./history').dirOf(name);
+const convFile = (project, id) => path.join(histDir(project), id + '.jsonl');
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const validId = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{6,80}$/.test(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------- key store
-// { keys: [{id, hash, project, label, role, createdAt, lastUsedAt, revokedAt}], convs: {project: {convId: keyId}} }
+// { keys: [{id, hash, project, label, role: 'owner', createdAt, lastUsedAt, revokedAt}] }
 let store = null;
 function load() {
   if (store) return store;
   try { store = JSON.parse(fs.readFileSync(KEYS_FILE, 'utf8')); } catch { store = null; }
-  if (!store || !Array.isArray(store.keys)) store = { keys: [], convs: {} };
-  if (!store.convs || typeof store.convs !== 'object') store.convs = {};
+  if (!store || !Array.isArray(store.keys)) store = { keys: [] };
+  // only owner keys exist: an old "limited" key stops working (and leaves the file)
+  const before = store.keys.length;
+  store.keys = store.keys.filter((k) => k && k.role === 'owner');
+  const legacy = 'convs' in store;
+  delete store.convs;
+  if (store.keys.length !== before || legacy) save();
   return store;
 }
 function save() {
@@ -61,7 +81,7 @@ function save() {
     fs.renameSync(tmp, KEYS_FILE);
   } catch (e) { log('error', 'chat keys: could not save', { err: e.message }); }
 }
-const pub = (k) => ({ id: k.id, label: k.label, role: k.role, createdAt: k.createdAt, lastUsedAt: k.lastUsedAt || null });
+const pub = (k) => ({ id: k.id, label: k.label, createdAt: k.createdAt, lastUsedAt: k.lastUsedAt || null });
 
 function linkBase(req) {
   const host = auth.hostOf(req);
@@ -76,14 +96,14 @@ function listKeys(name) {
 function createKey(b, req) {
   const name = b && b.name;
   if (!validName(name) || !fs.existsSync(projectDir(name))) return { ok: false, msg: tr('srv.badName') };
-  const role = b.role === 'owner' ? 'owner' : b.role === 'limited' ? 'limited' : null;
-  if (!role) return { ok: false, msg: tr('srv.badParams') };
-  const label = String(b.label || '').trim().slice(0, 60) || (role === 'owner' ? 'owner' : 'guest');
+  // the "limited" role was removed: a request for anything but an owner link is refused
+  if (b.role != null && b.role !== 'owner') return { ok: false, msg: tr('srv.badParams') };
+  const label = String(b.label || '').trim().slice(0, 60) || 'owner';
   const key = crypto.randomBytes(32).toString('base64url');
-  const rec = { id: crypto.randomBytes(6).toString('hex'), hash: sha(key), project: name, label, role, createdAt: new Date().toISOString(), lastUsedAt: null, revokedAt: null };
+  const rec = { id: crypto.randomBytes(6).toString('hex'), hash: sha(key), project: name, label, role: 'owner', createdAt: new Date().toISOString(), lastUsedAt: null, revokedAt: null };
   load().keys.push(rec);
   save();
-  audit('chat.key.create', { ip: auth.clientIp(req), name, id: rec.id, role });
+  audit('chat.key.create', { ip: auth.clientIp(req), name, id: rec.id });
   return { ok: true, id: rec.id, key, url: `${linkBase(req)}/remote/${encodeURIComponent(name)}?key=${key}` };
 }
 function revokeKey(b, req) {
@@ -91,24 +111,27 @@ function revokeKey(b, req) {
   if (!k) return { ok: false, msg: tr('srv.notFound') };
   k.revokedAt = new Date().toISOString();
   save();
-  for (const r of runs.values()) if (r.keyId === k.id) stopRun(r);
+  push.removeWhere((d) => !!d.chat && d.chat.keyId === k.id); // its phone stops getting pushes
+  for (const w of watchers.values()) for (const c of w.clients) if (c.keyId === k.id) c.end();
   audit('chat.key.revoke', { ip: auth.clientIp(req), name: k.project, id: k.id });
   return { ok: true };
 }
-// project renamed / deleted (server/projects.js): keys follow / are removed
+// project renamed / deleted (server/projects.js): keys and chat devices follow / are removed
 function onRename(oldName, newName) {
   const s = load();
-  for (const r of runs.values()) if (r.project === oldName) stopRun(r);
+  closeWatcher(oldName);
   for (const k of s.keys) if (k.project === oldName) k.project = newName;
-  if (s.convs[oldName]) { s.convs[newName] = s.convs[oldName]; delete s.convs[oldName]; }
   save();
+  push.renameChat(oldName, newName);
+  hookSid.delete(oldName); hookTurn.delete(oldName);
 }
 function onDelete(name) {
   const s = load();
-  for (const r of runs.values()) if (r.project === name) stopRun(r);
+  closeWatcher(name);
   s.keys = s.keys.filter((k) => k.project !== name);
-  delete s.convs[name];
   save();
+  push.removeWhere((d) => !!d.chat && d.chat.project === name);
+  hookSid.delete(name); hookTurn.delete(name);
 }
 
 // ---------------------------------------------------------------- auth of /chat-api
@@ -130,19 +153,11 @@ function keyFor(req, plain) {
   if (!k.lastUsedAt || Date.now() - Date.parse(k.lastUsedAt) > 60000) { k.lastUsedAt = new Date().toISOString(); save(); }
   return { key: k };
 }
-const ownerOf = (project, convId) => (load().convs[project] || {})[convId] || null;
-// can this key see the conversation?
-const canSee = (k, convId) => k.role === 'owner' || ownerOf(k.project, convId) === k.id;
-function claimConv(k, convId) {
-  const s = load();
-  (s.convs[k.project] = s.convs[k.project] || {})[convId] = k.id;
-  save();
-}
 
 // never log a key: /c/<key>... and ?key= are masked
 const redactUrl = (u) => String(u || '').replace(/\/c\/[^/?#]+/g, '/c/[key]').replace(/([?&]key=)[^&#]*/g, '$1[key]');
 
-// ---------------------------------------------------------------- reading the conversations
+// ---------------------------------------------------------------- reading the conversation
 const KIND = {
   image: ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.heif', '.avif', '.bmp', '.svg'],
   video: ['.mp4', '.mov', '.m4v', '.webm', '.mkv'],
@@ -155,11 +170,23 @@ function attOf(p) {
   return { path: p, name: path.basename(p).replace(/^[0-9a-f]{8}-/, ''), kind: kindOf(p), size };
 }
 const ATT_RE = /\n*Attached files:\n((?:- [^\n]+\n?)+)\s*$/;
-// splits "text\n\nAttached files:\n- /a\n- /b" -> {text, paths}
-function splitAttachments(text) {
-  const m = ATT_RE.exec(text || '');
-  if (!m) return { text: text || '', paths: [] };
-  return { text: text.slice(0, m.index), paths: m[1].split('\n').map((l) => l.replace(/^- /, '').trim()).filter(Boolean) };
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// the attachments of a user message -> {text, paths}. Two shapes: the paths the chat types after
+// the text ("look /<project>/.chat-uploads/2026-11/ab12cd34-shot.png", absolute, no spaces: upload
+// names are made safe), and the older "Attached files:\n- /a\n- /b" block.
+function splitAttachments(text, dir) {
+  let t = text || '';
+  const paths = [];
+  const m = ATT_RE.exec(t);
+  if (m) {
+    paths.push(...m[1].split('\n').map((l) => l.replace(/^- /, '').trim()).filter(Boolean));
+    t = t.slice(0, m.index);
+  }
+  if (dir) {
+    const re = new RegExp('(^|\\s)(' + escRe(path.join(dir, UPLOAD_DIR) + path.sep) + '\\S+)', 'g');
+    t = t.replace(re, (all, sp, p) => { paths.push(p); return sp; }).replace(/[ \t]+$/gm, '').trimEnd();
+  }
+  return { text: t, paths };
 }
 const textBlocks = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.filter((b) => b && b.type === 'text').map((b) => b.text || '').join('\n') : '');
 const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
@@ -188,8 +215,9 @@ function assistantParts(content) {
   return out;
 }
 
-// parses a .jsonl into Msg[] (+ title, updatedAt, written files)
-function parseLines(entries, fallbackTs) {
+// parses .jsonl lines into Msg[] (+ title, updatedAt, written files). dir = project folder (to
+// find the attachment paths in the user messages)
+function parseLines(entries, fallbackTs, dir) {
   if (typeof entries === 'string') entries = entries.split('\n').map((line) => ({ line, off: 0 }));
   const msgs = [];
   const toolsById = new Map();
@@ -210,7 +238,7 @@ function parseLines(entries, fallbackTs) {
       for (const r of results) { const t = toolsById.get(r.tool_use_id); if (t && r.is_error) t.ok = false; }
       const raw = textBlocks(c);
       if (isNoiseText(raw)) continue; // tool_result-only lines fold into the previous assistant tools
-      const { text, paths } = splitAttachments(raw);
+      const { text, paths } = splitAttachments(raw, dir);
       names.user(text || (paths[0] ? path.basename(paths[0]) : ''));
       msgs.push({ id: o.uuid || 'u' + msgs.length, role: 'user', ts, text, tools: [], attachments: paths.map(attOf), _written: [], _off: off });
     } else {
@@ -229,83 +257,204 @@ function parseLines(entries, fallbackTs) {
   return { msgs, names: names.state(), title: jsonl.pickTitle(names.state()), updatedAt: updatedAt || fallbackTs };
 }
 const cleanMsg = (m) => ({ id: m.id, role: m.role, ts: m.ts, text: m.text, tools: m.tools.map((t) => ({ name: t.name, summary: t.summary, ok: t.ok })), attachments: m.attachments });
+// changes when a message grows (a reply is several .jsonl lines folded into one message)
+const msgSig = (m) => `${m.text.length}:${m.tools.length}:${m.tools.filter((t) => !t.ok).length}:${m.attachments.length}`;
 
 // small cache: file -> {mtimeMs, size, parsed}
 const cache = new Map();
 // -> { id, title, updatedAt, msgs, big, start } (big: only the newest window was read; start = its
 // first byte, the cursor of the older messages)
 async function readConv(project, id) {
-  const file = path.join(histDir(project), id + '.jsonl');
+  const file = convFile(project, id);
   let st;
   try { st = await fsp.stat(file); } catch { return null; }
   if (!st.isFile()) return null;
   const c = cache.get(file);
   if (c && c.mtimeMs === st.mtimeMs && c.size === st.size) return c.parsed;
   const fallback = new Date(st.mtimeMs).toISOString();
+  const dir = projectDir(project);
   let parsed;
   try {
-    if (st.size <= jsonl.BIG) parsed = { id, ...parseLines(await jsonl.all(file), fallback), big: false, start: 0 };
+    if (st.size <= jsonl.BIG) parsed = { id, ...parseLines(await jsonl.all(file), fallback, dir), big: false, start: 0 };
     else {
       const w = await jsonl.windowBefore(file, st.size);
-      const tail = parseLines(w.lines, fallback);
-      parsed = { id, title: jsonl.pickTitle(parseLines(await jsonl.head(file, st.size), fallback).names, tail.names), updatedAt: tail.updatedAt, msgs: tail.msgs, big: true, start: w.start, size: st.size };
+      const tail = parseLines(w.lines, fallback, dir);
+      parsed = { id, title: jsonl.pickTitle(parseLines(await jsonl.head(file, st.size), fallback, dir).names, tail.names), updatedAt: tail.updatedAt, msgs: tail.msgs, big: true, start: w.start, size: st.size };
     }
   } catch { return null; }
   cache.delete(file);
   cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, parsed });
-  if (cache.size > 300) cache.delete(cache.keys().next().value);
+  if (cache.size > 50) cache.delete(cache.keys().next().value);
   return parsed;
 }
 // messages of a big conversation that end before byte `end` (older pages): one window, newest last
 async function olderOf(project, id, end) {
-  const file = path.join(histDir(project), id + '.jsonl');
+  const file = convFile(project, id);
   let st; try { st = await fsp.stat(file); } catch { return null; }
   const w = await jsonl.windowBefore(file, st.size, end);
-  return { msgs: parseLines(w.lines, '').msgs, start: w.start };
+  return { msgs: parseLines(w.lines, '', projectDir(project)).msgs, start: w.start };
 }
 
-// newest first by the .jsonl modification time (a stat per file); only the conversations of the
-// requested page are parsed, so a project with hundreds of long conversations still answers fast
-async function listConversations(k, q) {
-  const limit = clampInt(q.get('limit'), 1, 100, 20);
-  const before = q.get('before') || '';
-  const dir = histDir(k.project);
+// ---------------------------------------------------------------- which conversation
+// From the hook lines of interactive Claude runs (tty=1, not a subagent, not `claude -p`) whose
+// cwd is the project folder: project -> newest session id, and the last turn event.
+const hookSid = new Map();  // project -> { sid, t }
+const hookTurn = new Map(); // project -> { ev, t }
+function ingestHook(h) {
+  if (!h || typeof h !== 'object' || h.agent || h.tty === 0 || h.src === 'sdk' || typeof h.cwd !== 'string' || !h.cwd) return;
+  const project = notify().projectOf(h.cwd);
+  if (!project || path.resolve(h.cwd) !== projectDir(project)) return;
+  const t = typeof h.t === 'number' ? h.t : Date.now();
+  if (validId(h.sid)) { const cur = hookSid.get(project); if (!cur || cur.t <= t) hookSid.set(project, { sid: h.sid, t }); }
+  if (['UserPromptSubmit', 'Stop', 'StopFailure', 'SessionStart'].includes(h.ev)) hookTurn.set(project, { ev: h.ev, t });
+  const w = watchers.get(project);
+  if (w) setTimeout(() => tickWatcher(w), 50);
+}
+// panel start: the lines written before (hooks.jsonl.old, then hooks.jsonl; the newest 512 KB)
+function scanHooks() {
+  const file = notify().HOOK_FILE;
+  for (const f of [file + '.old', file]) {
+    let buf;
+    try {
+      const st = fs.statSync(f);
+      const len = Math.min(st.size, 512 * 1024);
+      const fd = fs.openSync(f, 'r');
+      try { buf = Buffer.alloc(len); fs.readSync(fd, buf, 0, len, st.size - len); } finally { fs.closeSync(fd); }
+    } catch { continue; }
+    for (const line of buf.toString('utf8').split('\n')) {
+      if (!line.startsWith('{')) continue;
+      try { ingestHook(JSON.parse(line)); } catch { /* cut or broken line */ }
+    }
+  }
+}
+
+// the newest *.jsonl of the project by mtime (a stat per file; cached a moment)
+const newestCache = new Map(); // project -> { at, val }
+async function newestConv(project) {
+  const c = newestCache.get(project);
+  if (c && Date.now() - c.at < 2000) return c.val;
+  let best = null;
+  const dir = histDir(project);
   let names = [];
   try { names = (await fsp.readdir(dir)).filter((f) => f.endsWith('.jsonl')); } catch { /* no history yet */ }
-  const cands = [];
   for (const f of names) {
     const id = f.slice(0, -6);
-    if (!validId(id) || !canSee(k, id)) continue;
+    if (!validId(id)) continue;
     let st; try { st = await fsp.stat(path.join(dir, f)); } catch { continue; }
-    const run = runs.get(id);
-    const t = new Date(Math.max(st.mtimeMs, run ? Date.parse(run.startedAt) : 0)).toISOString();
-    cands.push({ id, t });
+    if (st.isFile() && (!best || st.mtimeMs > best.mtimeMs)) best = { id, mtimeMs: st.mtimeMs };
   }
-  for (const r of runs.values()) if (r.project === k.project && canSee(k, r.id) && !cands.some((c) => c.id === r.id)) cands.push({ id: r.id, t: r.startedAt });
-  const keyOf = (c) => `${c.t}|${c.id}`;
-  cands.sort((a, b) => (keyOf(a) < keyOf(b) ? 1 : keyOf(a) > keyOf(b) ? -1 : 0));
-  const rest = before ? cands.filter((c) => keyOf(c) < before) : cands;
-  const items = [];
-  let i = 0;
-  for (; i < rest.length && items.length < limit; i++) {
-    const { id, t } = rest[i];
-    const c = await readConv(k.project, id);
-    const run = runs.get(id);
-    const msgs = c ? c.msgs : [];
-    if (!msgs.length && !run) continue; // empty / meta-only conversation
-    const last = msgs[msgs.length - 1];
-    items.push({
-      id,
-      title: (c && c.title) || (run && clip(run.prompt.replace(/\s+/g, ' '), 120)) || tr('srv.untitled'),
-      preview: last ? clip((last.text || (last.tools[0] ? last.tools[0].name : '')).replace(/\s+/g, ' ').trim(), 140) : '',
-      updatedAt: t,
-      messages: c && c.big ? null : msgs.length,
-      running: !!run,
-    });
+  newestCache.set(project, { at: Date.now(), val: best });
+  return best;
+}
+async function currentConv(project) {
+  const h = hookSid.get(project);
+  const n = await newestConv(project);
+  if (h) {
+    let has = false;
+    try { has = (await fsp.stat(convFile(project, h.sid))).isFile(); } catch { /* not written yet */ }
+    // a fresh session has no file until its first message: it is still THE conversation
+    if (has || !n || h.t >= n.mtimeMs) return h.sid;
   }
-  return { ok: true, items, next: i < rest.length ? keyOf(rest[i - 1]) : null };
+  return n ? n.id : null;
 }
 
+// ---------------------------------------------------------------- Claude's state
+async function captureScreen(sess) {
+  const r = await sh('tmux', ['capture-pane', '-t', paneOf(sess), '-p', '-J']);
+  return r.ok ? r.stdout || '' : '';
+}
+// -> { claude: 'off'|'idle'|'working'|'asking', why?, question? }
+async function claudeOf(project) {
+  const P = projects();
+  const sess = sessionName(project);
+  if (!P.projConfig(project).enabled) return { claude: 'off', why: 'disabled' };
+  if (!(await P.sessionUp(sess))) return { claude: 'off', why: 'down' };
+  if (P.pausedFlag(sess)) return { claude: 'off', why: 'paused' };
+  if (!P.claudeRunningFlag(sess)) return { claude: 'off', why: 'shell' };
+  const scr = await captureScreen(sess);
+  const q = screen.parseQuestion(scr);
+  if (q) return { claude: 'asking', question: q };
+  if (screen.looksLikePrompt(scr)) return { claude: 'asking', question: { raw: screen.screenTail(scr), options: [] } };
+  const turn = hookTurn.get(project);
+  // the prompt was just sent: the spinner may not be on screen yet
+  const justSent = turn && turn.ev === 'UserPromptSubmit' && Date.now() - turn.t < 15000;
+  return { claude: screen.isWorking(scr) || justSent ? 'working' : 'idle' };
+}
+async function stateOf(project) {
+  const conv = await currentConv(project);
+  const c = conv ? await readConv(project, conv) : null;
+  return { conv, title: (c && c.title) || '', ...(await claudeOf(project)) };
+}
+
+// ---------------------------------------------------------------- live updates (SSE)
+// project -> { project, clients:Set<res>, timer, busy, stateJson, conv, fileSig, sigs }
+const watchers = new Map();
+const sse = (res, event, data) => { try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { /* client gone */ } };
+const emitAll = (w, event, data) => { for (const res of w.clients) sse(res, event, data); };
+async function tickWatcher(w) {
+  if (w.busy || !w.clients.size) return;
+  w.busy = true;
+  try {
+    const st = await stateOf(w.project);
+    const sj = JSON.stringify(st);
+    if (sj !== w.stateJson) { w.stateJson = sj; emitAll(w, 'state', st); }
+    if (st.conv !== w.conv) { w.conv = st.conv; w.sigs = null; w.fileSig = ''; }
+    if (!st.conv) return;
+    let fsig = '';
+    try { const s = await fsp.stat(convFile(w.project, st.conv)); fsig = `${s.size}:${s.mtimeMs}`; } catch { /* not written yet */ }
+    if (fsig === w.fileSig) return;
+    w.fileSig = fsig;
+    const c = await readConv(w.project, st.conv);
+    const tail = c ? c.msgs.slice(-60) : [];
+    const sigs = new Map(tail.map((m) => [m.id, msgSig(m)]));
+    // new messages, and the reply that grew since the last look
+    const changed = w.sigs ? tail.filter((m) => w.sigs.get(m.id) !== sigs.get(m.id)) : [];
+    w.sigs = sigs;
+    if (changed.length) emitAll(w, 'messages', { conv: st.conv, items: changed.map(cleanMsg) });
+  } catch (e) { log('error', 'chat watcher', { project: w.project, err: e.message }); }
+  finally { w.busy = false; }
+}
+const poke = (project) => { const w = watchers.get(project); if (w) setTimeout(() => tickWatcher(w), 100); };
+function closeWatcher(project) {
+  const w = watchers.get(project);
+  if (!w) return;
+  clearInterval(w.timer);
+  for (const res of w.clients) { try { res.end(); } catch { /* */ } }
+  watchers.delete(project);
+}
+function stopAll() { for (const p of [...watchers.keys()]) closeWatcher(p); }
+
+async function stream(k, req, res) {
+  let w = watchers.get(k.project);
+  if (w && w.clients.size >= MAX_STREAMS_PER_PROJECT) return sendJson(res, 429, { ok: false, msg: tr('srv.tooManyEvents') });
+  res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+  res.write(':ok\n\n');
+  res.keyId = k.id;
+  if (!w) {
+    w = { project: k.project, clients: new Set(), timer: null, busy: false, stateJson: '', conv: undefined, fileSig: '', sigs: null };
+    watchers.set(k.project, w);
+  }
+  w.clients.add(res);
+  const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch { /* */ } }, 15000);
+  const bye = () => {
+    clearInterval(ping);
+    w.clients.delete(res);
+    if (!w.clients.size && watchers.get(k.project) === w) { clearInterval(w.timer); watchers.delete(k.project); }
+  };
+  req.on('close', bye);
+  res.on('close', bye);
+  // this client: the state now + the newest messages (anything that changed between its page load
+  // and this connection is in there; the page merges them by id)
+  try {
+    const st = await stateOf(k.project);
+    sse(res, 'state', st);
+    const c = st.conv ? await readConv(k.project, st.conv) : null;
+    if (c) sse(res, 'messages', { conv: st.conv, items: c.msgs.slice(-20).map(cleanMsg) });
+  } catch (e) { log('error', 'chat stream', { err: e.message }); }
+  if (!w.timer) { w.timer = setInterval(() => tickWatcher(w), TICK_MS); w.timer.unref(); tickWatcher(w); }
+}
+
+// ---------------------------------------------------------------- messages / media of THE conversation
 // pages of a list ordered oldest -> newest, read from the END: before = index (exclusive)
 function pageFromEnd(list, q, def) {
   const limit = clampInt(q.get('limit'), 1, 200, def);
@@ -314,35 +463,32 @@ function pageFromEnd(list, q, def) {
   return { items: list.slice(start, end), next: start > 0 ? String(start) : null };
 }
 async function listMessages(k, q) {
-  const id = q.get('id') || '';
-  if (!validId(id) || !canSee(k, id)) return { status: 404, ok: false, msg: tr('srv.convNotFound') };
-  const c = await readConv(k.project, id);
-  if (!c && !runs.has(id)) return { status: 404, ok: false, msg: tr('srv.convNotFound') };
+  const conv = await currentConv(k.project);
+  const c = conv ? await readConv(k.project, conv) : null;
   if (!c || !c.big) {
     const p = pageFromEnd(c ? c.msgs : [], q, 50);
-    return { ok: true, items: p.items.map(cleanMsg), next: p.next };
+    return { ok: true, conv, items: p.items.map(cleanMsg), next: p.next };
   }
   // big file: the page ends at a byte offset; messages before it come from one more window
   const limit = clampInt(q.get('limit'), 1, 200, 50);
   const before = /^o\d+$/.test(q.get('before') || '') ? Number(q.get('before').slice(1)) : null;
   let msgs = c.msgs, start = c.start;
   if (before != null) {
-    const w = await olderOf(k.project, id, before);
+    const w = await olderOf(k.project, conv, before);
     if (!w) return { status: 404, ok: false, msg: tr('srv.convNotFound') };
     msgs = w.msgs.filter((m) => m._off < before); start = w.start;
   }
   const page = msgs.slice(-limit);
   const from = page.length ? page[0]._off : start;
-  return { ok: true, items: page.map(cleanMsg), next: from > 0 ? 'o' + from : null };
+  return { ok: true, conv, items: page.map(cleanMsg), next: from > 0 ? 'o' + from : null };
 }
 
 const URL_RE = /\bhttps?:\/\/[^\s<>()"'`\]]+[^\s<>()"'`\].,;:!?]/g;
 async function listMedia(k, q) {
-  const id = q.get('id') || '';
   const tab = q.get('tab') || 'media';
   if (!['media', 'files', 'links'].includes(tab)) return { status: 400, ok: false, msg: tr('srv.badParams') };
-  if (!validId(id) || !canSee(k, id)) return { status: 404, ok: false, msg: tr('srv.convNotFound') };
-  const c = await readConv(k.project, id);
+  const conv = await currentConv(k.project);
+  const c = conv ? await readConv(k.project, conv) : null;
   const msgs = c ? c.msgs : [];
   const seen = new Set();
   const out = []; // oldest -> newest; the page is read from the end (newest first in each page)
@@ -364,128 +510,127 @@ async function listMedia(k, q) {
     }
   }
   const p = pageFromEnd(out, q, 30);
-  return { ok: true, items: p.items.reverse(), next: p.next };
+  return { ok: true, conv, items: p.items.reverse(), next: p.next };
 }
 
-// ---------------------------------------------------------------- runs
-const runs = new Map(); // convId -> run
-function runEnv() {
-  const env = { ...process.env };
-  for (const k of TMUX_STRIP_ENV) delete env[k];
-  return env;
-}
-// argv of one run (exported for the test of the limited role)
-function claudeArgs({ id, isNew, role, dir }) {
-  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
-  args.push(...(isNew ? ['--session-id', id] : ['--resume', id]));
-  if (role !== 'owner') {
-    const hook = { hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: `"${process.execPath}" "${GUARD}" "${dir}"` }] }] } };
-    args.push(
-      '--restricted',                                  // no Bash/code tools/WebFetch, file tools confined, no bypass
-      '--tools', 'Read,Write,Edit,Glob,Grep',           // the only built-in tools that exist in this run
-      '--disallowedTools', 'Bash,WebFetch,WebSearch,NotebookEdit,Task',
-      '--permission-mode', 'acceptEdits',               // overrides the managed bypassPermissions default
-      '--permission-prompts', 'none',                   // anything that would ask is denied
-      '--strict-mcp-config',                            // no MCP servers
-      '--settings', JSON.stringify(hook),               // chat-guard.js: paths outside the project refused
-      '--append-system-prompt', `You are answering through a limited chat link: only the file tools work, and only inside ${dir}.`,
-    );
-  }
-  return args;
-}
-function emit(run, event, data) {
-  const chunk = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  for (const res of run.clients) { try { res.write(chunk); } catch { /* client gone */ } }
-}
-function stopRun(run) {
-  if (!run || run.stopped) return;
-  run.stopped = true;
-  try { process.kill(-run.proc.pid, 'SIGTERM'); } catch { try { run.proc.kill('SIGTERM'); } catch { /* gone */ } }
-  setTimeout(() => { try { process.kill(-run.proc.pid, 'SIGKILL'); } catch { /* gone */ } }, 3000).unref();
-}
-function stopAll() { for (const r of runs.values()) stopRun(r); }
-
-function startRun(k, id, isNew, prompt) {
-  const dir = projectDir(k.project);
-  const proc = spawn(CLAUDE_BIN, claudeArgs({ id, isNew, role: k.role, dir }), { cwd: dir, env: runEnv(), detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
-  const run = { id, project: k.project, keyId: k.id, proc, prompt, partial: '', turn: [], clients: new Set(), startedAt: new Date().toISOString(), stopped: false, errored: false, stderr: '' };
-  runs.set(id, run);
-  proc.stdin.on('error', () => {});
-  proc.stdin.end(prompt);
-  proc.stderr.on('data', (d) => { run.stderr = (run.stderr + d).slice(-2000); });
-  readline.createInterface({ input: proc.stdout }).on('line', (line) => {
-    let o; try { o = JSON.parse(line); } catch { return; }
-    if (!o || typeof o !== 'object') return;
-    if (o.type === 'stream_event' && o.event) {
-      const e = o.event;
-      if (e.type === 'message_start') run.partial = '';
-      else if (e.type === 'content_block_delta' && e.delta && e.delta.type === 'text_delta' && e.delta.text) {
-        run.partial += e.delta.text;
-        emit(run, 'delta', { text: e.delta.text });
-      }
-    } else if (o.type === 'assistant' && o.message) {
-      const p = assistantParts(o.message.content);
-      for (const t of p.tools) emit(run, 'tool', { name: t.name, summary: t.summary });
-      if (p.text || p.tools.length) {
-        const msg = { id: o.uuid || (o.message.id || 'm') + '-' + run.turn.length, role: 'assistant', ts: new Date().toISOString(), text: p.text, tools: p.tools.map((t) => ({ name: t.name, summary: t.summary, ok: true })), attachments: [] };
-        run.turn.push(msg);
-        emit(run, 'message', msg);
-      }
-      run.partial = '';
-    } else if (o.type === 'result' && o.is_error) {
-      run.errored = true;
-      emit(run, 'error', { msg: clip(String(o.result || o.subtype || 'error'), 500) });
-    }
-  });
-  proc.on('error', (e) => { run.errored = true; emit(run, 'error', { msg: e.message }); });
-  proc.on('close', (code) => {
-    if (code && !run.errored && !run.stopped) emit(run, 'error', { msg: clip(run.stderr.trim() || `claude exited with code ${code}`, 500) });
-    emit(run, 'done', run.stopped ? { id, stopped: true } : { id });
-    for (const res of run.clients) { try { res.end(); } catch { /* */ } }
-    runs.delete(id);
-  });
+// ---------------------------------------------------------------- driving the terminal Claude
+// one typing at a time per project (two sends at once would interleave their keys)
+const locks = new Map();
+function locked(project, fn) {
+  const prev = locks.get(project) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  const tail = run.catch(() => {});
+  locks.set(project, tail);
+  tail.then(() => { if (locks.get(project) === tail) locks.delete(project); });
   return run;
 }
+const busyReply = (st) => (st.claude === 'off'
+  ? { status: 409, ok: false, code: 'off', msg: tr('srv.chatClaudeOff') }
+  : { status: 409, ok: false, code: 'asking', msg: tr('srv.chatAsking') });
 
 async function send(k, b) {
-  const text = typeof b.text === 'string' ? b.text : '';
+  const text = typeof b.text === 'string' ? b.text.replace(/\r\n?/g, '\n').trim() : '';
   const atts = Array.isArray(b.attachments) ? b.attachments.slice(0, 20) : [];
-  if (!text.trim() && !atts.length) return { status: 400, ok: false, msg: tr('srv.badParams') };
-  if (text.length > 100000) return { status: 400, ok: false, msg: tr('srv.contentTooBig') };
-  const dir = projectDir(k.project);
-  const upBase = path.join(dir, UPLOAD_DIR);
+  if (!text && !atts.length) return { status: 400, ok: false, msg: tr('srv.badParams') };
+  if (text.length > 20000) return { status: 400, ok: false, msg: tr('srv.contentTooBig') };
+  const upBase = path.join(projectDir(k.project), UPLOAD_DIR);
   const paths = [];
   for (const a of atts) {
     const p = typeof a === 'string' ? a : a && a.path;
-    if (typeof p !== 'string' || !path.isAbsolute(p) || files.confine(upBase, path.resolve(p)).err || !fs.existsSync(p)) return { status: 400, ok: false, msg: tr('srv.badPath') };
+    if (typeof p !== 'string' || !path.isAbsolute(p) || /\s/.test(p) || files.confine(upBase, path.resolve(p)).err || !fs.existsSync(p)) return { status: 400, ok: false, msg: tr('srv.badPath') };
     paths.push(path.resolve(p));
   }
-  let id = b.id || null, isNew = false;
-  if (id) {
-    if (!validId(id) || !canSee(k, id) || (!runs.has(id) && !(await readConv(k.project, id)))) return { status: 404, ok: false, msg: tr('srv.convNotFound') };
-    if (runs.has(id)) return { status: 409, ok: false, msg: tr('srv.chatBusy') };
-  } else {
-    id = crypto.randomUUID(); isNew = true;
+  return locked(k.project, async () => {
+    const st = await claudeOf(k.project);
+    if (st.claude === 'off' || st.claude === 'asking') return busyReply(st);
+    // the paths go after the text: Claude Code takes an image from its absolute path
+    const line = [text, paths.join(' ')].filter(Boolean).join(text.includes('\n') ? '\n\n' : ' ');
+    if (!(await typeText(sessionName(k.project), line))) return { status: 500, ok: false, msg: tr('srv.chatTypeFailed') };
+    hookTurn.set(k.project, { ev: 'UserPromptSubmit', t: Date.now() });
+    poke(k.project);
+    audit('chat.send', { name: k.project, keyId: k.id, textLen: text.length, files: paths.length });
+    return { ok: true };
+  });
+}
+async function stop(k) {
+  const st = await claudeOf(k.project);
+  if (st.claude === 'off') return busyReply(st);
+  await sh('tmux', ['send-keys', '-t', paneOf(sessionName(k.project)), 'Escape']);
+  poke(k.project);
+  audit('chat.stop', { name: k.project, keyId: k.id });
+  return { ok: true };
+}
+// a button of the question card: option n of the menu on the screen (arrow keys to it + Enter)
+async function answer(k, b) {
+  const n = Number(b && b.n);
+  return locked(k.project, async () => {
+    const sess = sessionName(k.project);
+    const st = await claudeOf(k.project);
+    const q = st.question;
+    if (st.claude !== 'asking' || !q || !q.options.length || (b.sig && q.sig !== b.sig)) return { status: 409, ok: false, code: 'changed', msg: tr('srv.chatQuestionGone') };
+    if (!q.options.some((o) => o.n === n)) return { status: 400, ok: false, msg: tr('srv.badParams') };
+    const delta = n - q.cursor;
+    if (delta) {
+      await sh('tmux', ['send-keys', '-t', paneOf(sess), ...Array(Math.abs(delta)).fill(delta > 0 ? 'Down' : 'Up')]);
+      await sleep(150);
+    }
+    await sh('tmux', ['send-keys', '-t', paneOf(sess), 'Enter']);
+    poke(k.project);
+    audit('chat.answer', { name: k.project, keyId: k.id, n });
+    return { ok: true };
+  });
+}
+// quick keys (the question could not be read: the card shows the screen and these keys)
+const QUICK_KEYS = new Set(['Enter', 'Escape', 'Up', 'Down', 'Left', 'Right', 'Tab', 'Space', 'y', 'n', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
+async function keys(k, b) {
+  const list = Array.isArray(b && b.keys) ? b.keys.slice(0, 10) : [];
+  if (!list.length || !list.every((x) => QUICK_KEYS.has(x))) return { status: 400, ok: false, msg: tr('srv.keyNotAllowed') };
+  return locked(k.project, async () => {
+    const st = await claudeOf(k.project);
+    if (st.claude === 'off') return busyReply(st);
+    const pane = paneOf(sessionName(k.project));
+    for (const x of list) {
+      await sh('tmux', /^[\dyn]$/.test(x) ? ['send-keys', '-t', pane, '-l', x] : ['send-keys', '-t', pane, x]);
+      await sleep(80);
+    }
+    poke(k.project);
+    audit('chat.keys', { name: k.project, keyId: k.id, keys: list.join(' ') });
+    return { ok: true };
+  });
+}
+// "Start Claude": what the panel does for an OFF / paused / stopped project
+async function start(k) {
+  const P = projects();
+  const name = k.project;
+  const sess = sessionName(name);
+  const c = P.projConfig(name);
+  const wasOff = !c.enabled, wasPaused = P.pausedFlag(sess);
+  let r = { ok: true };
+  if (wasOff) r = await P.setPower(name, true);
+  if (r.ok && wasPaused) r = P.unpauseProject(name);
+  if (r.ok && !P.projConfig(name).autoStartClaude) r = await P.setConfig(name, 'autoStartClaude', true); // recreates the session with Claude
+  else if (r.ok && !wasOff && !wasPaused) {
+    if (!(await P.sessionUp(sess))) await P.ensureSession(name);
+    else if (!P.claudeRunningFlag(sess)) await P.recreateSession(name);
   }
-  if ([...runs.values()].filter((r) => r.project === k.project).length >= MAX_RUNS_PER_PROJECT) return { status: 429, ok: false, msg: tr('srv.chatTooMany', { n: MAX_RUNS_PER_PROJECT }) };
-  if (isNew && k.role !== 'owner') claimConv(k, id);
-  const prompt = text + (paths.length ? `${text ? '\n\n' : ''}Attached files:\n${paths.map((p) => '- ' + p).join('\n')}\n` : '');
-  startRun(k, id, isNew, prompt);
-  audit('chat.send', { name: k.project, keyId: k.id, role: k.role, id, textLen: text.length, files: paths.length });
-  return { ok: true, id };
+  if (!r.ok) return { status: 500, ok: false, msg: r.msg };
+  poke(name);
+  audit('chat.start', { name, keyId: k.id });
+  return { ok: true };
 }
 
-function stream(k, q, req, res) {
-  const id = q.get('id') || '';
-  if (!validId(id) || !canSee(k, id)) return sendJson(res, 404, { ok: false, msg: tr('srv.convNotFound') });
-  res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-  const run = runs.get(id);
-  if (!run) { res.write(`event: done\ndata: ${JSON.stringify({ id })}\n\n`); return res.end(); }
-  for (const m of run.turn) res.write(`event: message\ndata: ${JSON.stringify(m)}\n\n`);
-  if (run.partial) res.write(`event: delta\ndata: ${JSON.stringify({ text: run.partial })}\n\n`);
-  run.clients.add(res);
-  const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch { /* */ } }, 15000);
-  req.on('close', () => { clearInterval(ping); run.clients.delete(res); });
+// ---------------------------------------------------------------- push (this device, this project)
+function pushApi(k, url, b, req) {
+  if (url === '/chat-api/push/subscribe') {
+    const name = `Chat · ${k.project}` + (b.name ? ' · ' + String(b.name).slice(0, 40) : '');
+    const r = push.subscribe(b.subscription, { name, host: auth.hostOf(req), chat: { project: k.project, keyId: k.id } });
+    if (r.ok) audit('chat.push.subscribe', { name: k.project, keyId: k.id });
+    return r;
+  }
+  const mine = push.devices().find((d) => d.endpoint === b.endpoint && d.chat === k.project);
+  if (url === '/chat-api/push/status') return { ok: true, registered: !!mine };
+  if (url === '/chat-api/push/unsubscribe') return mine ? push.unsubscribe({ endpoint: mine.endpoint }) : { status: 404, ok: false, msg: tr('srv.deviceNotFound') };
+  return null;
 }
 
 // ---------------------------------------------------------------- upload / file
@@ -543,12 +688,13 @@ async function handleApi(req, res, u) {
   const q = u.searchParams;
   const reply = (r) => { const { status, ...body } = r; return sendJson(res, status || 200, body); };
   if (req.method === 'GET' || req.method === 'HEAD') {
-    if (url === '/chat-api/me') return reply({ ok: true, project: k.project, label: k.label, role: k.role });
-    if (url === '/chat-api/conversations') return reply(await listConversations(k, q));
+    if (url === '/chat-api/me') return reply({ ok: true, project: k.project, label: k.label });
+    if (url === '/chat-api/state') return reply({ ok: true, ...(await stateOf(k.project)) });
     if (url === '/chat-api/messages') return reply(await listMessages(k, q));
     if (url === '/chat-api/media') return reply(await listMedia(k, q));
-    if (url === '/chat-api/stream') return stream(k, q, req, res);
+    if (url === '/chat-api/stream') return stream(k, req, res);
     if (url === '/chat-api/file') return serveFile(k, q, req, res);
+    if (url === '/chat-api/push') return reply({ ok: true, supported: push.supported(), publicKey: push.supported() ? push.publicKey() : '' });
     return sendJson(res, 404, { ok: false, msg: tr('srv.unknownRoute') });
   }
   if (req.method === 'POST') {
@@ -556,12 +702,11 @@ async function handleApi(req, res, u) {
     const b = await readJson(req);
     if (!b) return sendJson(res, 400, { ok: false, msg: tr('srv.badBody') });
     if (url === '/chat-api/send') return reply(await send(k, b));
-    if (url === '/chat-api/stop') {
-      const run = runs.get(b.id);
-      if (!run || run.project !== k.project || !canSee(k, b.id)) return reply({ status: 404, ok: false, msg: tr('srv.chatNotRunning') });
-      stopRun(run);
-      return reply({ ok: true });
-    }
+    if (url === '/chat-api/stop') return reply(await stop(k));
+    if (url === '/chat-api/answer') return reply(await answer(k, b));
+    if (url === '/chat-api/keys') return reply(await keys(k, b));
+    if (url === '/chat-api/start') return reply(await start(k));
+    if (url.startsWith('/chat-api/push/')) { const r = pushApi(k, url, b, req); if (r) return reply(r); }
     return sendJson(res, 404, { ok: false, msg: tr('srv.unknownRoute') });
   }
   return sendJson(res, 405, { ok: false, msg: 'method not allowed' });
@@ -569,11 +714,11 @@ async function handleApi(req, res, u) {
 
 // chat page: /c/<key> or /remote/<project>?key=<key>, and the manifest of each link
 // (/c/<key>/manifest.webmanifest, /remote/<project>/manifest.webmanifest?key=<key>)
-function manifestOf(req, res, plain, project, start, scope) {
+function manifestOf(req, res, plain, project, startUrl, scope) {
   const a = keyFor(req, plain);
   if (!a.key || (project && a.key.project !== project)) { res.writeHead(a.status === 429 ? 429 : 404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('not found'); }
   const body = JSON.stringify({
-    name: `Claude · ${a.key.project}`, short_name: a.key.project, start_url: start, scope,
+    name: `Claude · ${a.key.project}`, short_name: a.key.project, start_url: startUrl, scope,
     display: 'standalone', background_color: '#0b0d12', theme_color: '#0b0d12',
     icons: [
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
@@ -605,9 +750,19 @@ function handlePage(req, res, url, u) {
   return sendStream(res, file, { headers });
 }
 
+// boot: the hook lines already on disk, then every new one (notify.js polls the file)
+let started = false;
+function startChat() {
+  if (started) return;
+  started = true;
+  load();
+  scanHooks();
+  notify().onHookLine(ingestHook);
+}
+
 const routes = {
   GET: { '/api/chat/keys': async (q) => listKeys(q.get('name') || '') },
   POST: { '/api/chat/keys/create': (b, req) => createKey(b, req), '/api/chat/keys/revoke': (b, req) => revokeKey(b, req) },
 };
 
-module.exports = { routes, handleApi, handlePage, redactUrl, onRename, onDelete, stopAll, claudeArgs, parseLines, splitAttachments };
+module.exports = { routes, handleApi, handlePage, redactUrl, onRename, onDelete, stopAll, start: startChat, parseLines, splitAttachments, currentConv, ingestHook };

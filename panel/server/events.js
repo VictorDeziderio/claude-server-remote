@@ -34,9 +34,8 @@ let stateBuilder = null;             // injetado por projects.js (evita ciclo)
 let timer = null;
 let ticking = false;
 
-// patterns on screen that mean "Claude waiting for YOU" (permission/confirmation/choice)
-// (the /remote-control dialog — "Esc to continue" — does NOT count: the loop/panel close it by themselves)
-const PROMPT_RX = /(Do you want to (proceed|allow|make this edit|run|create|continue)|Allow (this|the) |Yes, (and )?(don't|allow|proceed)|^\s*(❯\s*)?1\.\s*Yes\b|\(y\/n\)|\[Y\/n\]|Would you like to|permission to|Waiting for (your )?(input|approval))/im;
+// patterns on screen that mean "Claude waiting for YOU" (permission/confirmation/choice): server/screen.js
+const { PROMPT_RX } = require('./screen');
 const REMOTE_RX = /https:\/\/claude\.ai\/code\/[^\s'"()\]]+/g;
 
 function send(res, event, data) {

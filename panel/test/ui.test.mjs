@@ -129,19 +129,20 @@ try {
     ok('drawer opens on the right side, full height', db && Math.round(db.x + db.width) >= 1279 && db.height >= 790, JSON.stringify(db))
     await drawer.locator('[data-testid="disk-section"]').getByText(/project/i).first().waitFor({ timeout: 8000 }).catch(() => {})
     ok('drawer shows the disk use of the project', await drawer.locator('[data-testid="disk-section"]').getByText(/project/i).first().isVisible().catch(() => false))
-    // "Chat link": create a limited link (shown once), it is listed, revoke removes it
+    // "Chat link": create a link (shown once; no role to pick, every link is an owner link), it is
+    // listed, revoke removes it
     {
       const sec = drawer.locator('[data-testid="chatlink-section"]')
       await sec.scrollIntoViewIfNeeded()
-      await sec.locator('[data-testid="chatlink-label"]').fill('Guest UI')
+      await sec.locator('[data-testid="chatlink-label"]').fill('Phone UI')
       await sec.getByRole('button', { name: /create link/i }).click()
       const fresh = sec.locator('[data-testid="chatlink-fresh"] input')
       await fresh.waitFor({ timeout: 5000 }).catch(() => {})
       const url = await fresh.inputValue().catch(() => '')
       ok('chat link: created link shown once as /remote/<project>?key=<key>', /\/remote\/[^/?]+\?key=[A-Za-z0-9_-]{43}$/.test(url), url)
-      const row = sec.locator('[data-testid="chatlink-key"]', { hasText: 'Guest UI' })
+      const row = sec.locator('[data-testid="chatlink-key"]', { hasText: 'Phone UI' })
       await row.waitFor({ timeout: 5000 }).catch(() => {})
-      ok('chat link: listed with its role', /limited/i.test(await row.innerText().catch(() => '')))
+      ok('chat link: listed, no role picker and no guest/limited wording', (await row.count()) === 1 && !(await sec.locator('select').count()) && !/limited|guest/i.test(await sec.innerText().catch(() => 'x')))
       await page.waitForTimeout(600)
       ok('chat link: a late answer of an older keys load is ignored', keyCalls >= 2 && !(await sec.getByText('STALE-KEY').count()) && (await row.count()) === 1, String(keyCalls))
       await page.unroute('**/api/chat/keys?*')

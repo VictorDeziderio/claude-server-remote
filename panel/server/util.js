@@ -132,4 +132,24 @@ async function typeLine(sess, text) {
   return (await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-m'])).ok;
 }
 
-module.exports = { TMUX_STRIP_ENV, sh, readJson, readRaw, sendJson, sendStream, truthy, validName, sessionName, paneOf, clampInt, log, typeLine };
+// types a message of any shape: one short line goes through typeLine; several lines (or a long
+// text) are PASTED with bracketed paste (tmux paste-buffer -p), so each newline stays inside the
+// message instead of being an Enter that sends half of it. Then the same pause + Enter.
+async function typeText(sess, text) {
+  const s = String(text || '');
+  if (!s.includes('\n') && s.length <= 2000) return typeLine(sess, s);
+  const os = require('os');
+  const path = require('path');
+  const crypto = require('crypto');
+  const buf = 'cr-' + crypto.randomBytes(6).toString('hex');
+  const tmp = path.join(os.tmpdir(), buf + '.txt');
+  try {
+    fs.writeFileSync(tmp, s, { mode: 0o600 });
+    if (!(await sh('tmux', ['load-buffer', '-b', buf, tmp])).ok) return false;
+  } finally { try { fs.rmSync(tmp, { force: true }); } catch { /* */ } }
+  if (!(await sh('tmux', ['paste-buffer', '-p', '-r', '-d', '-b', buf, '-t', paneOf(sess)])).ok) return false;
+  await new Promise((r) => setTimeout(r, 800));
+  return (await sh('tmux', ['send-keys', '-t', paneOf(sess), 'C-m'])).ok;
+}
+
+module.exports = { TMUX_STRIP_ENV, sh, readJson, readRaw, sendJson, sendStream, truthy, validName, sessionName, paneOf, clampInt, log, typeLine, typeText };

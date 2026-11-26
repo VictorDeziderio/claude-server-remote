@@ -1,0 +1,3 @@
+⏺ Bash(./setup.sh)
+
+ Overwrite the existing config file? (y/n)

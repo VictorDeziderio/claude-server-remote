@@ -1,0 +1,12 @@
+⏺ Here is the plan:
+
+  1. Install the dependencies
+  2. Build the app
+  3. Run the tests
+
+  Do you want me to start?
+
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

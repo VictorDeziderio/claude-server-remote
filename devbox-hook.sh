@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Claude Code hook -> panel push notifications.
 #
-# Registered in managed-settings.json for Stop, StopFailure, Notification and UserPromptSubmit.
-# Reads the hook JSON from stdin and appends ONE compact line to RUN_DIR/hooks.jsonl, which the
-# panel (panel/server/notify.js) polls. The prompt text is never stored.
+# Registered in managed-settings.json for Stop, StopFailure, Notification, UserPromptSubmit,
+# SessionStart and PreToolUse (matcher AskUserQuestion only: the question text goes in "msg", so
+# the push says what Claude asks). Reads the hook JSON from stdin and appends ONE compact line to
+# RUN_DIR/hooks.jsonl, which the panel (panel/server/notify.js, server/chat.js) polls. The prompt
+# text is never stored.
 #
 # Must never get in Claude's way: prints nothing (UserPromptSubmit stdout would become context),
 # always exits 0 (exit 2 would block the turn), bounded time, works without jq (minimal line).
@@ -11,9 +13,9 @@
 # "tty": 1/0 = the claude process this hook belongs to has / has no controlling terminal
 # (interactive TUI in tmux vs `claude -p` started by a script or by another Claude); -1 = unknown.
 #
-# Usage: devbox-hook.sh <Stop|StopFailure|Notification|UserPromptSubmit>
+# Usage: devbox-hook.sh <Stop|StopFailure|Notification|UserPromptSubmit|SessionStart|PreToolUse>
 EV="${1:-}"
-case "$EV" in Stop|StopFailure|Notification|UserPromptSubmit) ;; *) exit 0 ;; esac
+case "$EV" in Stop|StopFailure|Notification|UserPromptSubmit|SessionStart|PreToolUse) ;; *) exit 0 ;; esac
 DIR="${DEVBOX_HOOK_DIR:-${HOME:-/root}/.claude/run}"
 OUT="$DIR/hooks.jsonl"
 mkdir -p "$DIR" 2>/dev/null || exit 0
@@ -47,7 +49,8 @@ if command -v jq >/dev/null 2>&1 && [ -n "$input" ]; then
       err: ((.error // "") | tostring | .[0:40]),
       bg: ((.background_tasks // []) | if type == "array" then length else 0 end),
       agent: (.agent_id != null),
-      msg: ((.message // .last_assistant_message // .error_details // "") | tostring | .[0:300])
+      tool: ((.tool_name // "") | tostring | .[0:60]),
+      msg: ((.message // .last_assistant_message // .error_details // (try .tool_input.questions[0].question catch null) // "") | tostring | .[0:300])
     }' 2>/dev/null)"
 fi
 if [ -z "$line" ]; then

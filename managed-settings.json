@@ -7,6 +7,8 @@
     "Stop": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/devbox-hook.sh Stop", "timeout": 5 }] }],
     "StopFailure": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/devbox-hook.sh StopFailure", "timeout": 5 }] }],
     "Notification": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/devbox-hook.sh Notification", "timeout": 5 }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/devbox-hook.sh UserPromptSubmit", "timeout": 5 }] }]
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/devbox-hook.sh UserPromptSubmit", "timeout": 5 }] }],
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "/usr/local/bin/devbox-hook.sh SessionStart", "timeout": 5 }] }],
+    "PreToolUse": [{ "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "/usr/local/bin/devbox-hook.sh PreToolUse", "timeout": 5 }] }]
   }
 }

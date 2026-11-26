@@ -1,6 +1,8 @@
-// Chat API client. The key lives in the page URL (/c/<key>): iOS home-screen apps do not share
-// cookies with Safari, so the saved link carries it. Every call sends it as a Bearer token.
-// No panel cookie is used here (credentials: 'omit').
+// Chat API client. The key lives in the page URL (/remote/<project>?key=<key> or /c/<key>): iOS
+// home-screen apps do not share cookies with Safari, so the saved link carries it. Every call sends
+// it as a Bearer token. No panel cookie is used here (credentials: 'omit').
+// A notification tap may open /remote/<project> without the key: the key of that project saved by
+// an earlier visit (localStorage of this device) is used then.
 
 // the link: /c/<key> or /remote/<project>?key=<key> -> { key, project, manifest }
 export const linkOf = (pathname, search) => {
@@ -12,13 +14,31 @@ export const linkOf = (pathname, search) => {
   return { key: '', project: '', manifest: '' }
 }
 export const keyFromPath = (pathname, search) => linkOf(pathname, search).key
-const LINK = typeof location !== 'undefined' ? linkOf(location.pathname, location.search) : { key: '', project: '', manifest: '' }
+const STORE = 'cr-chat-key:'
+function savedLink(pathname) {
+  const r = /^\/remote\/([^/?#]+)\/?$/.exec(pathname || '')
+  if (!r) return null
+  let k = ''
+  try { k = localStorage.getItem(STORE + decodeURIComponent(r[1])) || '' } catch { /* storage off */ }
+  return /^[A-Za-z0-9_-]+$/.test(k) ? linkOf(pathname, '?key=' + k) : null
+}
+const LINK = typeof location === 'undefined' ? { key: '', project: '', manifest: '' }
+  : (() => { const l = linkOf(location.pathname, location.search); return l.key ? l : savedLink(location.pathname) || l })()
+// after the key worked: remember it for this project (notification taps open the bare link)
+export function rememberKey(project) {
+  try { if (project && LINK.key) localStorage.setItem(STORE + project, LINK.key) } catch { /* storage off */ }
+}
+// the link to give the service worker (it opens it when a notification is tapped)
+export const linkUrl = () => {
+  if (typeof location === 'undefined' || !LINK.key) return ''
+  return location.pathname.startsWith('/c/') ? location.pathname : `${location.pathname}?key=${LINK.key}`
+}
 const KEY = LINK.key
 export const chatKey = () => KEY
 // project named in a /remote/<project> link ('' for /c/<key>): it must be the key's project
 export const linkProject = () => LINK.project
 export const manifestHref = () => LINK.manifest
-const auth = () => ({ Authorization: `Bearer ${KEY}` })
+const auth =() => ({ Authorization: `Bearer ${KEY}` })
 
 export class ApiError extends Error {
   constructor(status, msg) { super(msg || `HTTP ${status}`); this.status = status }
@@ -40,13 +60,22 @@ async function call(path, opts = {}) {
 }
 const qs = (o) => Object.entries(o).filter(([, v]) => v != null && v !== '').map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')
 
+const post = (p, body) => call(p, { method: 'POST', body: JSON.stringify(body || {}) })
+// ONE conversation: the one the project's terminal Claude is on (the server picks it)
 export const api = {
   me: () => call('me'),
-  conversations: (before) => call('conversations?' + qs({ before, limit: 20 })),
-  messages: (id, before) => call('messages?' + qs({ id, before, limit: 50 })),
-  media: (id, tab, before) => call('media?' + qs({ id, tab, before, limit: 30 })),
-  send: (id, text, attachments) => call('send', { method: 'POST', body: JSON.stringify({ id: id || null, text, attachments }) }),
-  stop: (id) => call('stop', { method: 'POST', body: JSON.stringify({ id }) }),
+  state: () => call('state'),
+  messages: (before) => call('messages?' + qs({ before, limit: 50 })),
+  media: (tab, before) => call('media?' + qs({ tab, before, limit: 30 })),
+  send: (text, attachments) => post('send', { text, attachments }),
+  stop: () => post('stop'),
+  answer: (n, sig) => post('answer', { n, sig }),
+  keys: (keys) => post('keys', { keys }),
+  start: () => post('start'),
+  pushInfo: () => call('push'),
+  pushSubscribe: (subscription, name) => post('push/subscribe', { subscription, name }),
+  pushUnsubscribe: (endpoint) => post('push/unsubscribe', { endpoint }),
+  pushStatus: (endpoint) => post('push/status', { endpoint }),
 }
 
 // Upload one file as a raw body, with progress (fetch has no upload progress; XHR does).
@@ -100,10 +129,12 @@ export function parseSse(buffer, onEvent) {
   return buffer
 }
 
-export function stream(id, onEvent) {
+// live events of the project: `state` {conv, title, claude, why?, question?} and `messages`
+// {conv, items} (new messages and the reply that grew)
+export function stream(onEvent) {
   const ctrl = new AbortController()
   const done = (async () => {
-    const r = await fetch('/chat-api/stream?' + qs({ id }), { headers: { ...auth(), Accept: 'text/event-stream' }, credentials: 'omit', signal: ctrl.signal })
+    const r = await fetch('/chat-api/stream', { headers: { ...auth(), Accept: 'text/event-stream' }, credentials: 'omit', signal: ctrl.signal })
     if (!r.ok || !r.body) throw new ApiError(r.status)
     const reader = r.body.getReader()
     const dec = new TextDecoder()

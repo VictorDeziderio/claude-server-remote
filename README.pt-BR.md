@@ -41,10 +41,12 @@ notificações push. Os projetos e o login do Claude ficam num volume, então na
 - **Seguro por padrão:** login próprio com sessões assinadas e revogáveis, 2FA (TOTP) opcional, limite de
   tentativas, checagem de origem (CSRF), CSP e registro de auditoria. Sem senha, o painel não sobe.
 - **Chat do projeto por link + key:** uma tela de conversa por projeto (como um app de mensagens) que dá
-  para pôr na tela de início do iPhone. Todas as conversas do projeto, 20 por vez; fotos e arquivos;
-  página de dados da conversa com Mídia / Arquivos / Links. A key de dono tem poder total; keys limitadas
-  (para outras pessoas) só veem as próprias conversas, e o Claude só usa ferramentas de arquivo dentro do
-  projeto. Configurar → *Link de chat* cria e revoga as keys; o link é `/remote/<projeto>?key=<key>`.
+  para pôr na tela de início do iPhone. Conversa com o MESMO Claude que roda no terminal do projeto (uma
+  conversa, ao vivo): o que você envia é digitado lá, as perguntas do Claude (permissões, múltipla
+  escolha) aparecem como botões, o botão parar manda Esc e um botão inicia o Claude quando ele não está
+  rodando. Fotos e arquivos; Mídia / Arquivos / Links da conversa; notificações quando o Claude termina ou
+  pergunta algo (no iPhone, pelo app adicionado à Tela de Início). Toda key tem poder total no projeto.
+  Configurar → *Link de chat* cria e revoga as keys; o link é `/remote/<projeto>?key=<key>`.
 - **Paleta de comandos** (Ctrl/⌘ + K): vai para qualquer página, terminal ou arquivos de um projeto pelo teclado.
 - **Tema claro/escuro** (shadcn/ui com Tailwind v4) e **vários idiomas** (inglês e português; um idioma novo é só copiar um arquivo JSON).
 - **Qualquer Docker:** amd64 e arm64, `docker compose` simples, HTTPS automático opcional.

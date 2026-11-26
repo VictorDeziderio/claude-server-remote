@@ -31,8 +31,8 @@ function serveStatic(req, res, pathname) {
   const headers = {
     'Content-Type': MIME[ext] || 'application/octet-stream',
     'Content-Length': st.size,
-    // sw.js too: a cached service worker would keep old push/click handlers alive
-    'Cache-Control': ext === '.html' || path.basename(file) === 'sw.js' ? 'no-store' : (hashed ? 'public, max-age=31536000, immutable' : 'public, max-age=3600'),
+    // the service workers too: a cached one would keep old push/click handlers alive
+    'Cache-Control': ext === '.html' || ['sw.js', 'chat-sw.js'].includes(path.basename(file)) ? 'no-store' : (hashed ? 'public, max-age=31536000, immutable' : 'public, max-age=3600'),
   };
   if (req.method === 'HEAD') { res.writeHead(200, headers); return res.end(); }
   return sendStream(res, file, { headers });

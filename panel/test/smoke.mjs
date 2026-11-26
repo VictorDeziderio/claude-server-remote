@@ -618,7 +618,8 @@ l.onThreshold(() => { throw new Error('listener bugado nao derruba o poller'); }
     cookie = keep
     // Claude Code runs devbox-hook.sh from the managed settings baked into the image
     const ms = JSON.parse(fs.readFileSync(path.join(DEVBOX, 'managed-settings.json'), 'utf8'))
-    ok('managed-settings: hook on Stop/StopFailure/Notification/UserPromptSubmit', ['Stop', 'StopFailure', 'Notification', 'UserPromptSubmit'].every((e) => JSON.stringify(ms.hooks[e]).includes(`devbox-hook.sh ${e}`)))
+    ok('managed-settings: hook on Stop/StopFailure/Notification/UserPromptSubmit/SessionStart', ['Stop', 'StopFailure', 'Notification', 'UserPromptSubmit', 'SessionStart'].every((e) => JSON.stringify(ms.hooks[e]).includes(`devbox-hook.sh ${e}`)))
+    ok('managed-settings: PreToolUse hook only for AskUserQuestion (the question reaches the push)', ms.hooks.PreToolUse.length === 1 && ms.hooks.PreToolUse[0].matcher === 'AskUserQuestion' && JSON.stringify(ms.hooks.PreToolUse).includes('devbox-hook.sh PreToolUse'))
     ok('Dockerfile installs devbox-hook.sh', /COPY devbox-hook\.sh \/usr\/local\/bin\/devbox-hook\.sh/.test(fs.readFileSync(path.join(DEVBOX, 'Dockerfile'), 'utf8')))
   }
 

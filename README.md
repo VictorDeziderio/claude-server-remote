@@ -42,10 +42,12 @@ Your projects and your Claude login live in a volume, so nothing is lost on rebu
 - **Secure by default:** own login with signed, revocable sessions, optional 2FA (TOTP), rate limit,
   CSRF/Origin checks, CSP, audit log. The panel refuses to start without a password.
 - **Project chat behind a link + key:** a chat screen per project (like a messaging app) that you can
-  add to the iPhone home screen. All the project conversations, 20 at a time; photos and files; a
-  conversation info page with Media / Files / Links. Owner keys have full power; limited keys (for other
-  people) only see their own conversations and Claude only gets file tools inside the project.
-  Configure → *Chat link* creates and revokes keys; the link is `/remote/<project>?key=<key>`.
+  add to the iPhone home screen. It talks to the SAME Claude that runs in the project's terminal (one
+  conversation, live): what you send is typed there, Claude's questions (permissions, multiple choice)
+  show as buttons, a stop button sends Esc, and a start button brings Claude up when it is not running.
+  Photos and files; Media / Files / Links of the conversation; push notifications when Claude finishes
+  or asks something (on iPhone, from the app added to the Home Screen). Every key has full power on
+  its project. Configure → *Chat link* creates and revokes keys; the link is `/remote/<project>?key=<key>`.
 - **Command palette** (Ctrl/⌘ + K): jump to any page, project terminal or files from the keyboard.
 - **Light/dark theme** (shadcn/ui on Tailwind v4) and **multiple languages** (English and Português; adding one is copying a JSON file).
 - **Any Docker host:** amd64 and arm64, plain `docker compose`, optional automatic HTTPS.
